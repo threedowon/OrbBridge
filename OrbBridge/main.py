@@ -92,7 +92,7 @@ def handle_event(event: dict):
         result     = judge(slave, cell) if game_active else "inactive"
 
         print(f"[added]   slave={slave} cell={cell} Q={q_actual} note={note} voice={voice} → {result}")
-        osc.send_message("/orb/added", [slave, cell, voice, note, result])
+        osc.send_message("/orb/added", [slave, cell, voice, note, result, orb_id])
 
     elif t == "removed":
         orb      = orb_mapping.get(orb_id, {})
@@ -101,7 +101,7 @@ def handle_event(event: dict):
         q_actual = q + (slave - 1) * 2
 
         print(f"[removed] slave={slave} cell={cell} Q={q_actual} note={note} voice={voice}")
-        osc.send_message("/orb/removed", [slave, cell, voice, note])
+        osc.send_message("/orb/removed", [slave, cell, voice, note, orb_id])
 
 # ── 시리얼 수신 루프 ───────────────────────────────────
 def serial_loop():

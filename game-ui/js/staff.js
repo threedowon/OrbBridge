@@ -2,8 +2,8 @@ import { noteAt, durAt, rowCount } from './data.js';
 
 const MARGIN_L = 24;
 const MARGIN_T = 20;
-const R_LARGE = 13;
-const R_SMALL = 4.5;
+const R_SMALL = 4.5;   /* 오답 — 직경 d */
+const R_LARGE = 6.75;  /* 정답 — 직경 1.5d */
 
 const PAL = {
   bg: '#f5f2e9',
@@ -12,7 +12,13 @@ const PAL = {
   playGlow: 'rgba(255, 175, 130, 0.5)',
 };
 
+const GLOW_FILL = 'rgba(99, 179, 237, 0.55)';
+const PATH_STROKE = 18;
+const PATH_BLUR = 22;
+const GLOW_BLEED = 56;
+
 let canvas, ctx, cellH;
+let svgEl, pathLayer, blobLayer;
 let colXs = [];
 let colWs = [];
 let beatN = 0;
@@ -48,88 +54,84 @@ function targetRow(melody, c) {
   return noteAt(melody.notes[c]);
 }
 
-function pathVisible(state) {
-  return state.previewBeat >= 0 || hintOn;
+function correctRow(state, c) {
+  const { melody, grid } = state;
+  const tr = targetRow(melody, c);
+  return grid[c][tr] >= 0 ? tr : -1;
 }
 
 function beatOnPath(state, c) {
-  const { locked, melody, grid, previewBeat } = state;
-  if (previewBeat >= 0 || hintOn) return true;
-  if (locked[c]) return true;
-  return grid[c][targetRow(melody, c)] >= 0;
+  if (hintOn) return true;
+  return correctRow(state, c) >= 0;
+}
+
+function showLargeAtTarget(state, c) {
+  return beatOnPath(state, c);
 }
 
 function drawGlowPath(points) {
   if (points.length < 2) return;
-
-  const W = canvas.width;
-  const H = canvas.height;
-  const jointR = 24;
-  const tubeW = 48;
-
-  if (!drawGlowPath._shape) {
-    drawGlowPath._shape = document.createElement('canvas');
-    drawGlowPath._blur = document.createElement('canvas');
-    drawGlowPath._blur2 = document.createElement('canvas');
-  }
-  const shape = drawGlowPath._shape;
-  const blur1 = drawGlowPath._blur;
-  const blur2 = drawGlowPath._blur2;
-  shape.width = blur1.width = blur2.width = W;
-  shape.height = blur1.height = blur2.height = H;
-
-  const sctx = shape.getContext('2d');
-  sctx.clearRect(0, 0, W, H);
-  sctx.fillStyle = '#3d9eff';
-  sctx.strokeStyle = '#3d9eff';
-  sctx.lineCap = 'round';
-  sctx.lineJoin = 'round';
-  sctx.lineWidth = tubeW;
-
-  sctx.beginPath();
-  sctx.moveTo(points[0].x, points[0].y);
-  for (let i = 1; i < points.length; i++) sctx.lineTo(points[i].x, points[i].y);
-  sctx.stroke();
-
-  for (const p of points) {
-    sctx.beginPath();
-    sctx.arc(p.x, p.y, jointR, 0, Math.PI * 2);
-    sctx.fill();
-  }
-
-  const b1 = blur1.getContext('2d');
-  b1.clearRect(0, 0, W, H);
-  b1.filter = 'blur(22px)';
-  b1.drawImage(shape, 0, 0);
-
-  const b2 = blur2.getContext('2d');
-  b2.clearRect(0, 0, W, H);
-  b2.filter = 'blur(40px)';
-  b2.drawImage(shape, 0, 0);
-
   ctx.save();
-  ctx.globalAlpha = 0.42;
-  ctx.drawImage(blur2, 0, 0);
-  ctx.globalAlpha = 0.62;
-  ctx.drawImage(blur1, 0, 0);
-  ctx.globalAlpha = 0.88;
-  ctx.filter = 'blur(4px)';
-  ctx.drawImage(shape, 0, 0);
-  ctx.filter = 'none';
-  ctx.globalAlpha = 0.95;
-  ctx.drawImage(shape, 0, 0);
+  ctx.strokeStyle = GLOW_FILL;
+  ctx.lineWidth = PATH_STROKE;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.filter = `blur(${PATH_BLUR}px)`;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+  ctx.stroke();
   ctx.restore();
+}
 
+function initGlowLayers() {
+  svgEl = document.getElementById('staff-glow');
+  pathLayer = document.getElementById('path-layer');
+  blobLayer = document.getElementById('glow-blob-layer');
+  ensurePathBlurFilter();
+}
+
+function ensurePathBlurFilter() {
+  if (!svgEl || svgEl.querySelector('#path-blur-filter')) return;
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  defs.innerHTML =
+    `<filter id="path-blur-filter" x="-100%" y="-100%" width="300%" height="300%">` +
+    `<feGaussianBlur stdDeviation="${PATH_BLUR}"/></filter>`;
+  svgEl.prepend(defs);
+}
+
+function syncSvgSize(w, h) {
+  if (!svgEl) return;
+  svgEl.setAttribute('viewBox', `${-GLOW_BLEED} ${-GLOW_BLEED} ${w + GLOW_BLEED * 2} ${h + GLOW_BLEED * 2}`);
+}
+
+function pathD(points) {
+  return `M ${points[0].x} ${points[0].y}` +
+    points.slice(1).map(p => ` L ${p.x} ${p.y}`).join('');
+}
+
+function updateGlowPath(points, w, h) {
+  if (!pathLayer || !blobLayer) return;
+  syncSvgSize(w, h);
+
+  blobLayer.replaceChildren();
   for (const p of points) {
-    ctx.save();
-    const halo = ctx.createRadialGradient(p.x, p.y, jointR * 0.2, p.x, p.y, jointR * 1.8);
-    halo.addColorStop(0, 'rgba(100, 185, 255, 0.55)');
-    halo.addColorStop(1, 'transparent');
-    ctx.fillStyle = halo;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, jointR * 1.8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    const blob = document.createElement('div');
+    blob.className = 'glow-blob';
+    const padW = w + GLOW_BLEED * 2;
+    const padH = h + GLOW_BLEED * 2;
+    blob.style.left = `${((p.x + GLOW_BLEED) / padW) * 100}%`;
+    blob.style.top = `${((p.y + GLOW_BLEED) / padH) * 100}%`;
+    blobLayer.appendChild(blob);
+  }
+
+  if (points.length >= 2) {
+    pathLayer.innerHTML =
+      `<path d="${pathD(points)}" fill="none" stroke="${GLOW_FILL}" ` +
+      `stroke-width="${PATH_STROKE}" stroke-linecap="round" stroke-linejoin="round" ` +
+      `filter="url(#path-blur-filter)"/>`;
+  } else {
+    pathLayer.innerHTML = '';
   }
 }
 
@@ -149,23 +151,34 @@ function drawOrb(x, y, radius, { glow = false } = {}) {
   ctx.fill();
 }
 
+function computeCanvasLayout(melody, wrapW) {
+  const rows = rowCount(melody);
+  const innerW = wrapW - MARGIN_L * 2;
+  const targetH = Math.min(window.innerHeight * 0.62, 560);
+  cellH = Math.max(46, Math.min(58, (targetH - MARGIN_T - 24) / rows));
+  const h = MARGIN_T + cellH * rows + 24;
+  const w = MARGIN_L * 2 + innerW;
+  return { w, h, rows, innerW };
+}
+
 export function initStaff(el, clickCb) {
   canvas = el;
   ctx = canvas.getContext('2d');
   onCellClick = clickCb;
+  initGlowLayers();
 
   const resize = () => {
-    const wrap = canvas.parentElement;
-    const w = Math.max(wrap.clientWidth, 320);
-    cellH = 52;
+    const wrap = canvas.parentElement?.parentElement ?? canvas.parentElement;
+    const wrapW = Math.max(wrap.clientWidth, 320);
     if (lastState?.melody) {
-      rowN = rowCount(lastState.melody);
-      const { xs, widths, n } = computeCols(lastState.melody, w - MARGIN_L * 2);
-      colXs = xs;
-      colWs = widths;
-      beatN = n;
-      canvas.width = MARGIN_L * 2 + (w - MARGIN_L * 2);
-      canvas.height = MARGIN_T + cellH * rowN + 16;
+      const layout = computeCanvasLayout(lastState.melody, wrapW);
+      rowN = layout.rows;
+      const cols = computeCols(lastState.melody, layout.innerW);
+      colXs = cols.xs;
+      colWs = cols.widths;
+      beatN = cols.n;
+      canvas.width = layout.w;
+      canvas.height = layout.h;
     }
     if (lastState) paint(lastState);
   };
@@ -213,15 +226,16 @@ function hitTest(e) {
 export function draw(state) {
   if (!ctx || !state) return;
   lastState = state;
-  const wrap = canvas.parentElement;
-  const w = Math.max(wrap.clientWidth, 320);
-  rowN = rowCount(state.melody);
-  const layout = computeCols(state.melody, w - MARGIN_L * 2);
-  colXs = layout.xs;
-  colWs = layout.widths;
-  beatN = layout.n;
-  canvas.width = MARGIN_L * 2 + (w - MARGIN_L * 2);
-  canvas.height = MARGIN_T + cellH * rowN + 16;
+  const wrap = canvas.parentElement?.parentElement ?? canvas.parentElement;
+  const wrapW = Math.max(wrap.clientWidth, 320);
+  const layout = computeCanvasLayout(state.melody, wrapW);
+  rowN = layout.rows;
+  const cols = computeCols(state.melody, layout.innerW);
+  colXs = cols.xs;
+  colWs = cols.widths;
+  beatN = cols.n;
+  canvas.width = layout.w;
+  canvas.height = layout.h;
   paint(state);
 }
 
@@ -232,34 +246,41 @@ function paint(state) {
   const rows = rowCount(melody);
   const W = canvas.width;
   const H = canvas.height;
-  const showPath = pathVisible({ previewBeat, ...state });
 
   ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = PAL.bg;
-  ctx.fillRect(0, 0, W, H);
 
   ctx.strokeStyle = PAL.track;
   ctx.lineWidth = 1;
   for (let c = 0; c < n; c++) {
     const x = colCenter(c);
     ctx.beginPath();
-    ctx.moveTo(x, MARGIN_T - 4);
-    ctx.lineTo(x, MARGIN_T + rows * cellH + 4);
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
     ctx.stroke();
   }
 
   const pathPoints = [];
   for (let c = 0; c < n; c++) {
-    if (!beatOnPath(state, c)) continue;
-    pathPoints.push(cellCenter(c, targetRow(melody, c)));
+    const r = correctRow(state, c);
+    if (r < 0) continue;
+    pathPoints.push(cellCenter(c, r));
   }
-  if (pathPoints.length >= 2) drawGlowPath(pathPoints);
+  drawGlowPath(pathPoints);
+  updateGlowPath(pathPoints, W, H);
+
+  if (playhead >= 0 && playhead < n) {
+    ctx.save();
+    ctx.fillStyle = previewBeat >= 0
+      ? 'rgba(255, 175, 130, 0.22)'
+      : 'rgba(255, 175, 130, 0.14)';
+    ctx.fillRect(colXs[playhead], MARGIN_T, colWs[playhead], rows * cellH);
+    ctx.restore();
+  }
 
   for (let c = 0; c < n; c++) {
     const tr = targetRow(melody, c);
-    const showTarget = showPath || locked[c] || grid[c][tr] >= 0;
 
-    if (showTarget) {
+    if (showLargeAtTarget(state, c)) {
       const pt = cellCenter(c, tr);
       const isPlay = c === playhead && playhead >= 0;
       drawOrb(pt.x, pt.y, R_LARGE, { glow: isPlay });
@@ -267,7 +288,7 @@ function paint(state) {
 
     for (let r = 0; r < rows; r++) {
       if (grid[c][r] < 0) continue;
-      if (r === tr && showTarget) continue;
+      if (r === tr && showLargeAtTarget(state, c)) continue;
       const pt = cellCenter(c, r);
       drawOrb(pt.x, pt.y, R_SMALL);
     }

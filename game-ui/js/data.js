@@ -1,8 +1,13 @@
 export const VOICES = [
-  { id: 0, name: 'Warm',  color: '#f472b6', wave: 'sine',     mult: 1.0, filter: 900  },
-  { id: 1, name: 'Bright', color: '#5eead4', wave: 'triangle', mult: 1.5, filter: 2200 },
-  { id: 2, name: 'Bold',  color: '#fbbf24', wave: 'sawtooth', mult: 1.0, filter: 1100 },
-  { id: 3, name: 'Soft',  color: '#a78bfa', wave: 'sine',     mult: 1.5, filter: 2000 },
+  { id: 0, name: 'aspa_1',   color: '#f472b6', wave: 'sine',     filter: 900,  gain: 0.20 },
+  { id: 1, name: 'aspa_2',   color: '#5eead4', wave: 'triangle', filter: 2200, gain: 0.18 },
+  { id: 2, name: 'aspa_3',   color: '#fbbf24', wave: 'sawtooth', filter: 1100, gain: 0.16 },
+  { id: 3, name: 'aspa_4',   color: '#a78bfa', wave: 'sine',     filter: 2000, gain: 0.19 },
+  { id: 4, name: 'ive_1',    color: '#60a5fa', wave: 'square',   filter: 1400, gain: 0.14 },
+  { id: 5, name: 'ive_2',    color: '#4ade80', wave: 'triangle', filter: 1600, gain: 0.17 },
+  { id: 6, name: 'ive_3',    color: '#fb923c', wave: 'sine',     filter: 800,  gain: 0.21 },
+  { id: 7, name: 'ive_4',    color: '#f87171', wave: 'sawtooth', filter: 1800, gain: 0.15 },
+  { id: 8, name: 'cortis_1', color: '#c084fc', wave: 'triangle', filter: 2400, gain: 0.18 },
 ];
 
 export const NOTES = [

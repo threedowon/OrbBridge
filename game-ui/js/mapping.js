@@ -4,12 +4,17 @@ import { noteNameToRow } from './data.js';
 export const ROW_NOTES = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'];
 export const ROW_LABELS = ['C', 'D', 'E', 'F', 'G', 'A', 'B', 'C'];
 
-const VOICE_INDEX = {
+/** orb_mapping.json 의 voice 문자열 → VOICES 배열 인덱스 */
+export const VOICE_INDEX = {
   aspa_1: 0,
   aspa_2: 1,
   aspa_3: 2,
   aspa_4: 3,
-  ive_1: 0,
+  ive_1: 4,
+  ive_2: 5,
+  ive_3: 6,
+  ive_4: 7,
+  cortis_1: 8,
 };
 
 export function cellToTableRow(cell) {
@@ -37,5 +42,6 @@ export function tableToStaff(slave, cell, scale) {
 
 export function voiceToIndex(voice) {
   if (voice in VOICE_INDEX) return VOICE_INDEX[voice];
+  console.warn('unknown voice, using default:', voice);
   return 0;
 }

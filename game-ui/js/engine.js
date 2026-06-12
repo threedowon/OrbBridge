@@ -19,6 +19,7 @@ export function createEngine() {
   let resumeAfterPreview = false;
   let autoStart = true;
   let singlePass = false;
+  let orbPositions = new Map();
   let listeners = {};
 
   function beats() {
@@ -62,6 +63,23 @@ export function createEngine() {
     if (!melody || col >= beats()) return;
     const delay = col === 0 ? 250 : beatMs() * durAt(melody.notes[col - 1]);
     timer = setTimeout(() => tick(col), delay);
+  }
+
+  function syncLockedFromGrid() {
+    if (!melody) return;
+    for (let c = 0; c < beats(); c++) {
+      locked[c] = grid[c][noteAt(melody.notes[c])] >= 0;
+    }
+    if (phase === 'finishing' && !locked.every(Boolean)) {
+      phase = 'running';
+      finishCount = 0;
+      emit('phase', 'running');
+    }
+  }
+
+  function clearOrbAt(col, row) {
+    if (col < 0 || col >= beats() || row < 0 || row >= rows()) return;
+    grid[col][row] = -1;
   }
 
   function placedInCol(col) {
@@ -144,6 +162,7 @@ export function createEngine() {
       autoStart = opts.autoStart ?? true;
       grid = emptyGrid();
       locked = new Array(beats()).fill(false);
+      orbPositions = new Map();
       beat = -1;
       phase = 'idle';
       loopCount = 0;
@@ -179,19 +198,46 @@ export function createEngine() {
       redraw();
     },
 
-    placeExternal(col, row, voiceId = 0) {
+    placeExternal(col, row, voiceId = 0, orbId = null) {
       if (!melody || phase === 'done') return;
       if (col < 0 || col >= beats() || row < 0 || row >= rows()) return;
       clearPreview();
+
+      if (orbId && orbPositions.has(orbId)) {
+        const prev = orbPositions.get(orbId);
+        clearOrbAt(prev.col, prev.row);
+      }
+
+      for (let r = 0; r < rows(); r++) clearOrbAt(col, r);
+
       grid[col][row] = voiceId;
+      if (orbId) orbPositions.set(orbId, { col, row });
+
+      syncLockedFromGrid();
       playTone(rowToNoteIn(row, melody.scale).freq, voiceId, 0.28);
+      emit('gridChange');
       redraw();
     },
 
-    removeExternal(col, row) {
+    removeExternal(col, row, orbId = null) {
       if (!melody) return;
       if (col < 0 || col >= beats() || row < 0 || row >= rows()) return;
-      grid[col][row] = -1;
+      clearOrbAt(col, row);
+
+      if (orbId) {
+        const prev = orbPositions.get(orbId);
+        if (prev?.col === col && prev?.row === row) orbPositions.delete(orbId);
+      } else {
+        for (const [id, pos] of orbPositions) {
+          if (pos.col === col && pos.row === row) {
+            orbPositions.delete(id);
+            break;
+          }
+        }
+      }
+
+      syncLockedFromGrid();
+      emit('gridChange');
       redraw();
     },
 
@@ -205,6 +251,7 @@ export function createEngine() {
       phase = 'running';
       if (!startTime) startTime = Date.now();
       emit('phase', 'running');
+      redraw();
       schedule(0);
     },
 

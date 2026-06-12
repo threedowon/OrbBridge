@@ -3,77 +3,30 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Orb Melody — Screen</title>
+  <title>Voice Orb — Screen</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/screen/css/main.css">
-  <style>
-    .badge { font-size: .75rem; padding: 5px 12px; border-radius: 12px; font-weight: 600; }
-    .badge.off { background: rgba(217,83,79,.12); color: #c0392b; }
-    .badge.on  { background: rgba(42,157,106,.12); color: #2a9d6a; }
-    .play-header .conn-wrap { margin-left: auto; }
-    #btn-start { font-weight: 700; }
-  </style>
 </head>
 <body>
-  <div class="bg-glow" aria-hidden="true"></div>
+  <span id="conn-dot" class="conn-dot" title="Disconnected" aria-label="Disconnected"></span>
 
-  <section id="view-play" class="view active">
-    <header class="play-header">
-      <div class="play-title-wrap">
-        <h2 id="play-title">—</h2>
-        <span class="play-artist" id="play-artist"></span>
-        <span class="play-bpm" id="play-bpm">— BPM</span>
-      </div>
-      <div class="play-score">
-        <span id="score-current">0</span>
-        <span class="score-sep">/</span>
-        <span id="score-total">—</span>
-      </div>
-      <div class="conn-wrap">
-        <span id="conn" class="badge off">Disconnected</span>
-      </div>
-    </header>
-
-    <div class="transport-bar">
-      <button class="btn btn-primary" id="btn-start">▶ 시작</button>
-      <button class="btn btn-ghost" id="btn-hint">힌트</button>
-      <button class="btn btn-ghost" id="btn-reset">초기화</button>
-      <div class="phase-pill" id="phase-pill">대기</div>
-    </div>
-
-    <div class="staff-frame">
-      <canvas id="staff-canvas"></canvas>
-    </div>
-
-    <div class="beat-track" id="beat-track"></div>
-
-    <p class="status-line" id="status-line">로딩 중…</p>
-
-    <div class="voice-bar">
-      <span class="voice-label">음색</span>
-      <div class="voice-dots" id="voice-dots"></div>
+  <section id="view-start" class="view view-start active">
+    <div class="start-shell">
+      <h1 class="start-title">Voice Orb</h1>
+      <button type="button" class="btn btn-enter" id="btn-enter">start</button>
     </div>
   </section>
 
-  <section id="view-done" class="view">
-    <div class="done-card">
-      <div class="done-badge">완성</div>
-      <h2 class="done-title" id="done-title">멜로디 완성!</h2>
-      <p class="done-sub" id="done-sub">—</p>
-      <div class="done-stats">
-        <div class="stat">
-          <span class="stat-val" id="stat-time">0</span>
-          <span class="stat-lbl">초</span>
-        </div>
-        <div class="stat">
-          <span class="stat-val" id="stat-loops">0</span>
-          <span class="stat-lbl">루프</span>
-        </div>
-      </div>
-      <div class="done-actions">
-        <button class="btn btn-primary" id="btn-restart">다시 하기</button>
+  <section id="view-play" class="view">
+    <div class="staff-stage">
+      <div class="staff-frame">
+        <svg id="staff-glow" class="staff-glow" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+          <g id="path-layer"></g>
+        </svg>
+        <div id="glow-blob-layer" class="glow-blob-layer" aria-hidden="true"></div>
+        <canvas id="staff-canvas"></canvas>
       </div>
     </div>
   </section>

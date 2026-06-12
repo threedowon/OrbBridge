@@ -10,7 +10,7 @@ export function unlock() {
 
 export function playTone(freq, voiceId, dur = 0.32, when = 0) {
   const c = unlock();
-  const v = VOICES[voiceId];
+  const v = VOICES[voiceId] ?? VOICES[0];
   const t = when > 0 ? when : c.currentTime;
 
   const osc = c.createOscillator();
@@ -18,12 +18,13 @@ export function playTone(freq, voiceId, dur = 0.32, when = 0) {
   const filt = c.createBiquadFilter();
 
   osc.type = v.wave;
-  osc.frequency.setValueAtTime(freq * v.mult, t);
+  osc.frequency.setValueAtTime(freq, t);
   filt.type = 'lowpass';
   filt.frequency.setValueAtTime(v.filter, t);
 
+  const peak = v.gain ?? 0.2;
   gain.gain.setValueAtTime(0, t);
-  gain.gain.linearRampToValueAtTime(0.2, t + 0.015);
+  gain.gain.linearRampToValueAtTime(peak, t + 0.015);
   gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
 
   osc.connect(filt);
@@ -54,7 +55,7 @@ export function playMelody(notes, bpm, voiceId, onBeat) {
   const c = unlock();
   const step = 60 / bpm;
   notes.forEach((noteIdx, i) => {
-    const freq = [261.63,293.66,329.63,349.23,392,440,493.88,523.25][noteIdx];
+    const freq = [261.63, 293.66, 329.63, 349.23, 392, 440, 493.88, 523.25][noteIdx];
     const t = c.currentTime + i * step + 0.15;
     playTone(freq, voiceId, 0.38, t);
     if (onBeat) setTimeout(() => onBeat(i), (i * step + 0.15) * 1000);
