@@ -1,0 +1,18 @@
+{
+  "songId": "love_dive",
+  "title": "LOVE DIVE",
+  "artist": "IVE",
+  "bpm": 118,
+  "range": ["C4", "C5"],
+  "steps": [
+    { "step": 1, "note": "?", "duration": 1 },
+    { "step": 2, "note": "?", "duration": 0.5 },
+    { "step": 3, "note": "?", "duration": 0.5 },
+    { "step": 4, "note": "?", "duration": 1 },
+    { "step": 5, "note": "?", "duration": 1 },
+    { "step": 6, "note": "?", "duration": 0.5 },
+    { "step": 7, "note": "?", "duration": 0.5 },
+    { "step": 8, "note": "?", "duration": 1 },
+    { "step": 9, "note": "?", "duration": 2 }
+  ]
+}

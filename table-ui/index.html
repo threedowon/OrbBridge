@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OrbBridge — Table</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #ececec;
+      --surface: #fff;
+      --ink: #1a1a1a;
+      --accent: #5b8def;
+    }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", system-ui, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+    }
+
+    .board {
+      aspect-ratio: 16 / 10;
+      width: min(calc(100vw - 24px), calc((100vh - 24px) * 16 / 10));
+      background: var(--surface);
+      border: 2px solid var(--ink);
+      border-radius: 10px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      padding: 3% 4% 3.5%;
+      gap: 2.5%;
+      position: relative;
+    }
+
+    .status-dots {
+      position: absolute;
+      top: 2.5%;
+      right: 3%;
+      display: flex;
+      gap: 6px;
+    }
+
+    .dot-status {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      border: 1.5px solid var(--ink);
+      background: var(--surface);
+    }
+
+    .dot-status.ok { background: #4ade80; border-color: #16a34a; }
+    .dot-status.wait { background: #facc15; border-color: #ca8a04; }
+    .dot-status.err { background: #f87171; border-color: #dc2626; }
+
+    .orb-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: clamp(5px, 1.2vw, 10px);
+      min-height: 0;
+    }
+
+    .orb-pick {
+      width: clamp(20px, 3.2vw, 28px);
+      height: clamp(20px, 3.2vw, 28px);
+      border-radius: 50%;
+      border: 2px solid var(--ink);
+      cursor: grab;
+      padding: 0;
+      transition: transform 0.12s, box-shadow 0.12s, opacity 0.12s;
+      box-shadow: inset 0 -2px 4px rgba(0,0,0,.12);
+      touch-action: none;
+    }
+
+    .orb-pick:hover { transform: scale(1.08); }
+
+    .orb-pick.on-table { opacity: 0.45; }
+
+    .orb-pick.dragging,
+    .cell.filled.dragging {
+      opacity: 0.4;
+      cursor: grabbing;
+    }
+
+    .orb-row.drop-target {
+      outline: 2px dashed var(--accent);
+      outline-offset: 4px;
+      border-radius: 8px;
+    }
+
+    .playfield {
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+    }
+
+    body.not-ready .playfield {
+      opacity: 0.45;
+      pointer-events: none;
+    }
+
+    .grid {
+      --cell: 32px;
+      --gap-x: 14px;
+      --gap-y: 10px;
+      display: grid;
+      grid-template-columns: repeat(9, var(--cell));
+      grid-template-rows: repeat(8, var(--cell));
+      column-gap: var(--gap-x);
+      row-gap: var(--gap-y);
+      width: calc(var(--cell) * 9 + var(--gap-x) * 8);
+      height: calc(var(--cell) * 8 + var(--gap-y) * 7);
+    }
+
+    .cell {
+      width: var(--cell);
+      height: var(--cell);
+      border-radius: 50%;
+      border: 2px solid var(--ink);
+      background: var(--surface);
+      cursor: default;
+      padding: 0;
+      transition: background 0.12s, box-shadow 0.12s, border-color 0.12s, opacity 0.12s;
+    }
+
+    .cell.filled { cursor: grab; }
+
+    .cell:hover:not(:disabled):not(.filled) { background: #f3f3f3; }
+    .cell:disabled { cursor: not-allowed; }
+
+    .cell.drag-over {
+      border-color: var(--accent);
+      background: #eef4ff;
+      box-shadow: 0 0 0 2px rgba(91, 141, 239, 0.35);
+    }
+
+    .cell.filled {
+      background: var(--orb-bg, #b8c5d4);
+      border-color: var(--orb-color, var(--ink));
+      box-shadow: inset 0 -2px 4px rgba(0,0,0,.1);
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(9, var(--cell));
+      column-gap: var(--gap-x);
+      align-items: center;
+      width: calc(var(--cell) * 9 + var(--gap-x) * 8);
+      margin: 0 auto;
+      padding-top: 2%;
+    }
+
+    .action-btn {
+      width: var(--action, 52px);
+      height: var(--action, 52px);
+      border-radius: 50%;
+      border: 2px solid var(--ink);
+      background: var(--surface);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      color: var(--ink);
+      transition: background 0.12s, transform 0.12s;
+      justify-self: center;
+    }
+
+    .action-btn.listen { grid-column: 3; }
+    .action-btn.play { grid-column: 7; }
+
+    .action-btn:hover:not(:disabled) {
+      background: #f5f5f5;
+      transform: scale(1.04);
+    }
+
+    .action-btn:active:not(:disabled) { transform: scale(0.97); }
+    .action-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .action-btn svg {
+      width: 42%;
+      height: 42%;
+      fill: currentColor;
+    }
+
+    .action-btn.play svg {
+      width: 38%;
+      height: 38%;
+      margin-left: 6%;
+    }
+  </style>
+</head>
+<body>
+  <main class="board">
+    <div class="status-dots">
+      <span class="dot-status wait" id="status-dot" title="대기 중"></span>
+      <span class="dot-status" id="ws-dot" title="WS"></span>
+    </div>
+
+    <div class="orb-row" id="orb-tray"></div>
+
+    <div class="playfield">
+      <div class="grid" id="grid"></div>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="action-btn listen" id="btn-listen" title="문제 다시듣기" aria-label="문제 다시듣기">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/>
+        </svg>
+      </button>
+      <button type="button" class="action-btn play" id="btn-play" title="재생" aria-label="재생" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M8 5v14l11-7z"/>
+        </svg>
+      </button>
+    </div>
+  </main>
+
+  <script>
+    const COLS = 9;
+    const ROWS = 8;
+    const API = '';
+    const WS_URL = `ws://${location.hostname || '127.0.0.1'}:8765`;
+
+    const ORB_COLORS = ['#f472b6', '#5eead4', '#fbbf24', '#a78bfa', '#60a5fa', '#4ade80', '#fb923c', '#f87171'];
+
+    const boardEl = document.querySelector('.board');
+    const playfieldEl = document.querySelector('.playfield');
+    const gridEl = document.getElementById('grid');
+    const orbTrayEl = document.getElementById('orb-tray');
+    const statusDot = document.getElementById('status-dot');
+    const wsDot = document.getElementById('ws-dot');
+    const btnPlay = document.getElementById('btn-play');
+    const btnListen = document.getElementById('btn-listen');
+
+    /** @type {Map<string, { id: string, voice: string, color: string, idx: number }>} */
+    const placed = new Map();
+    let orbs = [];
+    let ready = false;
+    let ws = null;
+    let dragPayload = null;
+
+    const MIME = 'application/x-orbbridge-orb';
+
+    function colToSlave(col) {
+      return Math.floor(col / 2) + 1;
+    }
+
+    function colToQ(col) {
+      return col % 2 === 0 ? 1 : 2;
+    }
+
+    function posToCell(row, col) {
+      return (row - 1) * 2 + colToQ(col);
+    }
+
+    function key(col, row) {
+      return `${col}-${row}`;
+    }
+
+    function setReady(on) {
+      ready = on;
+      document.body.classList.toggle('not-ready', !on);
+      statusDot.className = 'dot-status ' + (on ? 'ok' : 'wait');
+      statusDot.title = on ? 'READY' : '대기 중';
+      btnPlay.disabled = !on;
+      gridEl.querySelectorAll('.cell').forEach(btn => { btn.disabled = !on; });
+    }
+
+    function setWsStatus(ok) {
+      wsDot.className = 'dot-status ' + (ok ? 'ok' : 'err');
+      wsDot.title = ok ? 'WS 연결됨' : 'WS 끊김';
+    }
+
+    async function sendEvent(event) {
+      const res = await fetch(`${API}/api/event`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(event),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    }
+
+    function getCellEl(col, row) {
+      return gridEl.querySelector(`[data-col="${col}"][data-row="${row}"]`);
+    }
+
+    function setDragData(e, payload) {
+      dragPayload = payload;
+      e.dataTransfer.setData(MIME, JSON.stringify(payload));
+      e.dataTransfer.effectAllowed = 'move';
+    }
+
+    function readDragData(e) {
+      try {
+        const raw = e.dataTransfer.getData(MIME);
+        if (raw) return JSON.parse(raw);
+      } catch { /* ignore */ }
+      return dragPayload;
+    }
+
+    function clearDropHighlight() {
+      gridEl.querySelectorAll('.cell.drag-over').forEach(el => el.classList.remove('drag-over'));
+      orbTrayEl.classList.remove('drop-target');
+    }
+
+    function setDragging(el, on) {
+      el?.classList.toggle('dragging', on);
+    }
+
+    function orbColor(idx) {
+      return ORB_COLORS[idx % ORB_COLORS.length];
+    }
+
+    function findCellWithOrbId(orbId) {
+      for (const [k, state] of placed) {
+        if (state.id === orbId) {
+          const [col, row] = k.split('-').map(Number);
+          return { col, row };
+        }
+      }
+      return null;
+    }
+
+    async function placeOrb(orbIdx, col, row) {
+      if (!ready) return;
+      const orb = orbs[orbIdx];
+      if (!orb) return;
+
+      const k = key(col, row);
+      if (placed.has(k)) return;
+
+      const prev = findCellWithOrbId(orb.id);
+      if (prev) await removeAt(prev.col, prev.row);
+
+      await sendEvent({
+        type: 'added',
+        slave: colToSlave(col),
+        cell: posToCell(row, col),
+        id: orb.id,
+      });
+      placed.set(k, {
+        id: orb.id,
+        voice: orb.voice,
+        color: orbColor(orbIdx),
+        idx: orbIdx,
+      });
+      renderCell(col, row);
+      updateOrbTrayState();
+    }
+
+    async function moveOrb(fromCol, fromRow, toCol, toRow) {
+      if (fromCol === toCol && fromRow === toRow) return;
+      if (placed.has(key(toCol, toRow))) return;
+
+      const fromK = key(fromCol, fromRow);
+      const state = placed.get(fromK);
+      if (!state) return;
+
+      await removeAt(fromCol, fromRow);
+      await placeOrb(state.idx, toCol, toRow);
+    }
+
+    async function handleCellDrop(col, row, data) {
+      if (!ready || !data) return;
+
+      if (data.src === 'tray') {
+        await placeOrb(data.idx, col, row);
+        return;
+      }
+
+      if (data.src === 'cell') {
+        await moveOrb(data.col, data.row, col, row);
+      }
+    }
+
+    function setupOrbTrayDragDrop() {
+      orbTrayEl.addEventListener('dragover', (e) => {
+        if (!ready) return;
+        const data = readDragData(e);
+        if (data?.src !== 'cell') return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        orbTrayEl.classList.add('drop-target');
+      });
+
+      orbTrayEl.addEventListener('dragleave', (e) => {
+        if (!orbTrayEl.contains(e.relatedTarget)) {
+          orbTrayEl.classList.remove('drop-target');
+        }
+      });
+
+      orbTrayEl.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        orbTrayEl.classList.remove('drop-target');
+        const data = readDragData(e);
+        if (data?.src === 'cell') await removeAt(data.col, data.row);
+        dragPayload = null;
+      });
+    }
+
+    function setupGridDragDrop() {
+      gridEl.addEventListener('dragstart', (e) => {
+        const cell = e.target.closest('.cell.filled');
+        if (!cell || !ready) {
+          e.preventDefault();
+          return;
+        }
+
+        const col = Number(cell.dataset.col);
+        const row = Number(cell.dataset.row);
+        const state = placed.get(key(col, row));
+        if (!state) {
+          e.preventDefault();
+          return;
+        }
+
+        setDragData(e, { src: 'cell', col, row, idx: state.idx, id: state.id });
+        setDragging(cell, true);
+      });
+
+      gridEl.addEventListener('dragend', (e) => {
+        setDragging(e.target.closest('.cell'), false);
+        clearDropHighlight();
+        dragPayload = null;
+      });
+
+      gridEl.addEventListener('dragover', (e) => {
+        if (!ready) return;
+        const cell = e.target.closest('.cell');
+        if (!cell || cell.classList.contains('filled')) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        gridEl.querySelectorAll('.cell.drag-over').forEach(el => {
+          if (el !== cell) el.classList.remove('drag-over');
+        });
+        cell.classList.add('drag-over');
+      });
+
+      gridEl.addEventListener('dragleave', (e) => {
+        const cell = e.target.closest('.cell');
+        if (cell && !cell.contains(e.relatedTarget)) {
+          cell.classList.remove('drag-over');
+        }
+      });
+
+      gridEl.addEventListener('drop', async (e) => {
+        const cell = e.target.closest('.cell');
+        if (!cell) return;
+        e.preventDefault();
+        cell.classList.remove('drag-over');
+
+        const col = Number(cell.dataset.col);
+        const row = Number(cell.dataset.row);
+        await handleCellDrop(col, row, readDragData(e));
+        dragPayload = null;
+      });
+    }
+
+    function updateOrbTrayState() {
+      const onTable = new Set([...placed.values()].map(s => s.id));
+      orbTrayEl.querySelectorAll('.orb-pick').forEach((el, i) => {
+        el.classList.toggle('on-table', onTable.has(orbs[i]?.id));
+      });
+    }
+
+    function buildOrbTray() {
+      orbTrayEl.innerHTML = '';
+      orbs.forEach((o, i) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'orb-pick';
+        btn.draggable = true;
+        btn.style.background = orbColor(i);
+        btn.title = `${String.fromCharCode(65 + i)} · ${o.voice} — 드래그해서 배치`;
+        btn.addEventListener('dragstart', (e) => {
+          if (!ready) {
+            e.preventDefault();
+            return;
+          }
+          setDragData(e, { src: 'tray', idx: i, id: o.id });
+          setDragging(btn, true);
+        });
+        btn.addEventListener('dragend', () => {
+          setDragging(btn, false);
+          dragPayload = null;
+        });
+        orbTrayEl.appendChild(btn);
+      });
+      updateOrbTrayState();
+    }
+
+    function applyCellStyle(el, state) {
+      if (state) {
+        el.style.setProperty('--orb-color', state.color);
+        el.style.setProperty('--orb-bg', state.color);
+      } else {
+        el.style.removeProperty('--orb-color');
+        el.style.removeProperty('--orb-bg');
+      }
+    }
+
+    function renderCell(col, row) {
+      const el = getCellEl(col, row);
+      if (!el) return;
+      const state = placed.get(key(col, row));
+      el.className = 'cell' + (state ? ' filled' : '');
+      el.draggable = !!state;
+      applyCellStyle(el, state);
+    }
+
+    function clearAllOrbs() {
+      placed.clear();
+      gridEl.querySelectorAll('.cell').forEach(el => {
+        el.className = 'cell';
+        el.draggable = false;
+        applyCellStyle(el, null);
+      });
+      updateOrbTrayState();
+    }
+
+    async function removeAt(col, row) {
+      const k = key(col, row);
+      const state = placed.get(k);
+      if (!state) return true;
+      await sendEvent({
+        type: 'removed',
+        slave: colToSlave(col),
+        cell: posToCell(row, col),
+        id: state.id,
+      });
+      placed.delete(k);
+      renderCell(col, row);
+      updateOrbTrayState();
+      return true;
+    }
+
+    function buildGrid() {
+      gridEl.innerHTML = '';
+      for (let row = ROWS; row >= 1; row--) {
+        for (let col = 0; col < COLS; col++) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'cell';
+          btn.dataset.col = col;
+          btn.dataset.row = row;
+          renderCell(col, row);
+          gridEl.appendChild(btn);
+        }
+      }
+    }
+    function fitGrid() {
+      const cols = COLS;
+      const rows = ROWS;
+      const w = playfieldEl.clientWidth;
+      const h = playfieldEl.clientHeight;
+      if (w <= 0 || h <= 0) return;
+
+      const base = Math.min(w / cols, h / rows);
+      const gapY = Math.max(10, Math.round(base * 0.32));
+      const gapX = Math.round(gapY * 1.4);
+
+      const cell = Math.floor(Math.min(
+        (w - gapX * (cols - 1)) / cols,
+        (h - gapY * (rows - 1)) / rows,
+      ));
+      if (cell < 12) return;
+
+      gridEl.style.setProperty('--cell', `${cell}px`);
+      gridEl.style.setProperty('--gap-x', `${gapX}px`);
+      gridEl.style.setProperty('--gap-y', `${gapY}px`);
+      boardEl.style.setProperty('--cell', `${cell}px`);
+      boardEl.style.setProperty('--gap-x', `${gapX}px`);
+      boardEl.style.setProperty('--action', `${Math.round(cell * 1.55)}px`);
+    }
+
+    async function loadOrbs() {
+      const res = await fetch(`${API}/api/orbs`);
+      orbs = await res.json();
+      buildOrbTray();
+    }
+
+    function connectWs() {
+      ws = new WebSocket(WS_URL);
+      ws.onopen = () => setWsStatus(true);
+      ws.onclose = () => {
+        setWsStatus(false);
+        setTimeout(connectWs, 2000);
+      };
+      ws.onerror = () => setWsStatus(false);
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.address === '/game/ready') setReady(!!msg.args[0]);
+          if (msg.address === '/game/end') {
+            clearAllOrbs();
+            setReady(false);
+          }
+        } catch { /* ignore */ }
+      };
+    }
+
+    btnListen.addEventListener('click', async () => {
+      try {
+        const res = await fetch(`${API}/api/game/listen`, { method: 'POST' });
+        if (!res.ok) throw new Error(await res.text());
+      } catch (e) {
+        console.error('listen:', e);
+      }
+    });
+
+    btnPlay.addEventListener('click', async () => {
+      if (!ready) return;
+      try {
+        const res = await fetch(`${API}/api/game/play`, { method: 'POST' });
+        if (!res.ok) throw new Error(await res.text());
+      } catch (e) {
+        console.error('play:', e);
+      }
+    });
+
+    buildGrid();
+    setupGridDragDrop();
+    setupOrbTrayDragDrop();
+    fitGrid();
+    new ResizeObserver(fitGrid).observe(playfieldEl);
+    window.addEventListener('resize', fitGrid);
+    setReady(false);
+    connectWs();
+    loadOrbs().catch(() => setWsStatus(false));
+  </script>
+</body>
+</html>

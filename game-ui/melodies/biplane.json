@@ -1,0 +1,18 @@
+{
+  "songId": "biplane",
+  "title": "비행기",
+  "artist": "윤석중",
+  "bpm": 88,
+  "range": ["C4", "C5"],
+  "steps": [
+    { "step": 1, "note": "E4", "duration": 0.5 },
+    { "step": 2, "note": "D4", "duration": 0.5 },
+    { "step": 3, "note": "C4", "duration": 0.5 },
+    { "step": 4, "note": "D4", "duration": 0.5 },
+    { "step": 5, "note": "E4", "duration": 1 },
+    { "step": 6, "note": "E4", "duration": 1 },
+    { "step": 7, "note": "E4", "duration": 1 },
+    { "step": 8, "note": "D4", "duration": 1 },
+    { "step": 9, "note": "D4", "duration": 1 }
+  ]
+}

@@ -1,0 +1,273 @@
+import { FINISH_LOOPS, noteAt, durAt, rowCount, rowToNoteIn } from './data.js';
+import { playTone, unlock } from './audio.js';
+import { draw, flash } from './staff.js';
+
+export function createEngine() {
+  let melody = null;
+  let voice = 0;
+  let grid = [];
+  let locked = [];
+  let beat = -1;
+  let timer = null;
+  let phase = 'idle';
+  let loopCount = 0;
+  let finishCount = 0;
+  let startTime = 0;
+  let hintOn = false;
+  let previewStep = -1;
+  let previewTimers = [];
+  let resumeAfterPreview = false;
+  let autoStart = true;
+  let singlePass = false;
+  let listeners = {};
+
+  function beats() {
+    return melody?.notes.length ?? 0;
+  }
+
+  function rows() {
+    return melody ? rowCount(melody) : 0;
+  }
+
+  function emptyGrid() {
+    return Array.from({ length: beats() }, () => Array(rows()).fill(-1));
+  }
+
+  function beatMs() {
+    return (60 / melody.bpm) * 1000;
+  }
+
+  function emit(evt, data) {
+    listeners[evt]?.forEach(fn => fn(data));
+  }
+
+  function redraw() {
+    draw({ grid, locked, melody, beat, voice, previewBeat: previewStep });
+  }
+
+  function clearPreview() {
+    previewTimers.forEach(t => clearTimeout(t));
+    previewTimers = [];
+    previewStep = -1;
+    resumeAfterPreview = false;
+  }
+
+  function stopTimer() {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    beat = -1;
+  }
+
+  function schedule(col) {
+    if (!melody || col >= beats()) return;
+    const delay = col === 0 ? 250 : beatMs() * durAt(melody.notes[col - 1]);
+    timer = setTimeout(() => tick(col), delay);
+  }
+
+  function placedInCol(col) {
+    const items = [];
+    for (let r = 0; r < rows(); r++) {
+      if (grid[col][r] >= 0) items.push({ row: r, voice: grid[col][r] });
+    }
+    return items;
+  }
+
+  function tick(col) {
+    beat = col;
+    emit('beat', col);
+
+    const entry = melody.notes[col];
+    const targetRow = noteAt(entry);
+    const toneDur = Math.min(0.9, 0.2 + 0.22 * durAt(entry));
+    const balls = placedInCol(col);
+
+    for (const { row, voice: v } of balls) {
+      playTone(rowToNoteIn(row, melody.scale).freq, v, toneDur);
+    }
+
+    const correct = grid[col][targetRow] >= 0;
+    if (correct && !locked[col]) {
+      locked[col] = true;
+      flash(col, targetRow, true);
+      emit('lock', col);
+    }
+
+    emit('tick', { col, correct, hasAny: balls.length > 0, locked: locked[col] });
+    redraw();
+
+    const next = col + 1;
+    if (next >= beats()) {
+      if (singlePass) {
+        singlePass = false;
+        stopTimer();
+        beat = -1;
+        phase = 'idle';
+        emit('playOnceEnd');
+        redraw();
+        return;
+      }
+      loopCount++;
+      emit('loop', loopCount);
+
+      if (phase === 'finishing') {
+        finishCount++;
+        if (finishCount >= FINISH_LOOPS) {
+          phase = 'done';
+          stopTimer();
+          emit('complete', { loops: loopCount, time: Math.round((Date.now() - startTime) / 1000) });
+          redraw();
+          return;
+        }
+      } else if (locked.every(Boolean)) {
+        phase = 'finishing';
+        finishCount = 0;
+        emit('phase', 'finishing');
+      }
+      schedule(0);
+      return;
+    }
+
+    schedule(next);
+  }
+
+  return {
+    on(evt, fn) {
+      (listeners[evt] ??= []).push(fn);
+      return () => { listeners[evt] = listeners[evt].filter(f => f !== fn); };
+    },
+
+    load(m, v = 0, opts = {}) {
+      clearPreview();
+      stopTimer();
+      melody = m;
+      voice = v;
+      autoStart = opts.autoStart ?? true;
+      grid = emptyGrid();
+      locked = new Array(beats()).fill(false);
+      beat = -1;
+      phase = 'idle';
+      loopCount = 0;
+      finishCount = 0;
+      hintOn = false;
+      redraw();
+      emit('phase', 'idle');
+      emit('hint', false);
+    },
+
+    setVoice(v) { voice = v; redraw(); },
+
+    toggleHint() {
+      hintOn = !hintOn;
+      emit('hint', hintOn);
+      return hintOn;
+    },
+
+    get hintOn() { return hintOn; },
+
+    place(col, row) {
+      if (phase === 'done') return;
+      clearPreview();
+      const had = grid[col][row] >= 0;
+      grid[col][row] = had ? -1 : voice;
+      if (!had) playTone(rowToNoteIn(row, melody.scale).freq, voice, 0.28);
+      if (autoStart && phase === 'idle') {
+        phase = 'running';
+        startTime = Date.now();
+        emit('phase', 'running');
+        schedule(0);
+      }
+      redraw();
+    },
+
+    placeExternal(col, row, voiceId = 0) {
+      if (!melody || phase === 'done') return;
+      if (col < 0 || col >= beats() || row < 0 || row >= rows()) return;
+      clearPreview();
+      grid[col][row] = voiceId;
+      playTone(rowToNoteIn(row, melody.scale).freq, voiceId, 0.28);
+      redraw();
+    },
+
+    removeExternal(col, row) {
+      if (!melody) return;
+      if (col < 0 || col >= beats() || row < 0 || row >= rows()) return;
+      grid[col][row] = -1;
+      redraw();
+    },
+
+    playLoop() {
+      if (!melody || phase === 'done') return;
+      clearPreview();
+      stopTimer();
+      beat = -1;
+      singlePass = true;
+      locked = new Array(beats()).fill(false);
+      phase = 'running';
+      if (!startTime) startTime = Date.now();
+      emit('phase', 'running');
+      schedule(0);
+    },
+
+    stop() {
+      clearPreview();
+      stopTimer();
+      phase = 'idle';
+      beat = -1;
+      redraw();
+      emit('phase', 'idle');
+    },
+
+    reset() {
+      if (!melody) return;
+      this.load(melody, voice, { autoStart });
+    },
+
+    listen(onBeat) {
+      if (!melody) return;
+      clearPreview();
+
+      const wasRunning = phase === 'running' || phase === 'finishing';
+      const resumeFrom = beat;
+      if (wasRunning) {
+        resumeAfterPreview = true;
+        stopTimer();
+      }
+
+      const base = unlock().currentTime + 0.1;
+      const step = beatMs() / 1000;
+      let acc = 0;
+
+      melody.notes.forEach((entry, i) => {
+        const d = durAt(entry);
+        const freq = rowToNoteIn(noteAt(entry), melody.scale).freq;
+        playTone(freq, voice, Math.min(0.9, 0.2 + 0.22 * d), base + acc * step);
+
+        const t = setTimeout(() => {
+          previewStep = i;
+          emit('previewBeat', i);
+          redraw();
+          onBeat?.(i);
+        }, acc * step * 1000);
+        previewTimers.push(t);
+        acc += d;
+      });
+
+      const endT = setTimeout(() => {
+        const shouldResume = resumeAfterPreview && phase !== 'done';
+        previewStep = -1;
+        clearPreview();
+        redraw();
+        emit('previewEnd');
+        if (shouldResume) schedule((resumeFrom + 1) % beats());
+      }, acc * step * 1000 + 50);
+      previewTimers.push(endT);
+    },
+
+    redraw,
+    get phase() { return phase; },
+    get beat() { return beat; },
+    get locked() { return [...locked]; },
+    get loopCount() { return loopCount; },
+    get melody() { return melody; },
+  };
+}
