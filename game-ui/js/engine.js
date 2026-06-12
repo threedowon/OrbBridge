@@ -59,9 +59,16 @@ export function createEngine() {
     beat = -1;
   }
 
-  function schedule(col) {
+  function schedule(col, holdAfterCol = null) {
     if (!melody || col >= beats()) return;
-    const delay = col === 0 ? 250 : beatMs() * durAt(melody.notes[col - 1]);
+    let delay;
+    if (col === 0 && holdAfterCol !== null) {
+      delay = beatMs() * durAt(melody.notes[holdAfterCol]);
+    } else if (col === 0) {
+      delay = 250;
+    } else {
+      delay = beatMs() * durAt(melody.notes[col - 1]);
+    }
     timer = setTimeout(() => tick(col), delay);
   }
 
@@ -117,11 +124,14 @@ export function createEngine() {
     if (next >= beats()) {
       if (singlePass) {
         singlePass = false;
-        stopTimer();
-        beat = -1;
-        phase = 'idle';
-        emit('playOnceEnd');
-        redraw();
+        const holdMs = beatMs() * durAt(entry);
+        timer = setTimeout(() => {
+          timer = null;
+          beat = -1;
+          phase = 'idle';
+          emit('playOnceEnd');
+          redraw();
+        }, holdMs);
         return;
       }
       loopCount++;
@@ -141,7 +151,7 @@ export function createEngine() {
         finishCount = 0;
         emit('phase', 'finishing');
       }
-      schedule(0);
+      schedule(0, col);
       return;
     }
 

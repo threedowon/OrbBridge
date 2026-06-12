@@ -427,34 +427,22 @@ body {
   box-sizing: border-box;
 }
 
-.staff-glow {
-  position: absolute;
-  inset: -56px;
-  width: calc(100% + 112px);
-  height: calc(100% + 112px);
-  pointer-events: none;
-  z-index: 1;
-  overflow: visible;
-}
-
 .glow-blob-layer {
   position: absolute;
-  inset: -56px;
-  width: calc(100% + 112px);
-  height: calc(100% + 112px);
+  inset: 0;
   pointer-events: none;
   z-index: 2;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .glow-blob {
   position: absolute;
-  width: 72px;
-  height: 72px;
+  width: 47px;
+  height: 47px;
   transform: translate(-50%, -50%);
-  background: rgba(99, 179, 237, 0.42);
+  background: rgba(99, 179, 237, 0.75);
   border-radius: 50%;
-  filter: blur(44px);
+  filter: blur(28px);
 }
 
 #staff-canvas {
