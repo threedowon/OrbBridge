@@ -1,5 +1,5 @@
 import { FINISH_LOOPS, noteAt, durAt, rowCount, rowToNoteIn } from './data.js';
-import { playTone, unlock } from './audio.js';
+import { playTone, unlock, beginPreviewAudio, stopPreviewAudio } from './audio.js';
 import { draw, flash } from './staff.js';
 
 export function createEngine() {
@@ -16,6 +16,7 @@ export function createEngine() {
   let hintOn = false;
   let previewStep = -1;
   let previewTimers = [];
+  let previewSession = 0;
   let resumeAfterPreview = false;
   let autoStart = true;
   let singlePass = false;
@@ -47,10 +48,13 @@ export function createEngine() {
   }
 
   function clearPreview() {
+    previewSession++;
     previewTimers.forEach(t => clearTimeout(t));
     previewTimers = [];
     previewStep = -1;
     resumeAfterPreview = false;
+    stopPreviewAudio();
+    redraw();
   }
 
   function stopTimer() {
@@ -218,8 +222,6 @@ export function createEngine() {
         clearOrbAt(prev.col, prev.row);
       }
 
-      for (let r = 0; r < rows(); r++) clearOrbAt(col, r);
-
       grid[col][row] = voiceId;
       if (orbId) orbPositions.set(orbId, { col, row });
 
@@ -282,6 +284,8 @@ export function createEngine() {
     listen(onBeat) {
       if (!melody) return;
       clearPreview();
+      const session = previewSession;
+      beginPreviewAudio();
 
       const wasRunning = phase === 'running' || phase === 'finishing';
       const resumeFrom = beat;
@@ -297,9 +301,10 @@ export function createEngine() {
       melody.notes.forEach((entry, i) => {
         const d = durAt(entry);
         const freq = rowToNoteIn(noteAt(entry), melody.scale).freq;
-        playTone(freq, voice, Math.min(0.9, 0.2 + 0.22 * d), base + acc * step);
+        playTone(freq, voice, Math.min(0.9, 0.2 + 0.22 * d), base + acc * step, { preview: true });
 
         const t = setTimeout(() => {
+          if (session !== previewSession) return;
           previewStep = i;
           emit('previewBeat', i);
           redraw();
@@ -310,9 +315,12 @@ export function createEngine() {
       });
 
       const endT = setTimeout(() => {
+        if (session !== previewSession) return;
         const shouldResume = resumeAfterPreview && phase !== 'done';
+        previewTimers = [];
         previewStep = -1;
-        clearPreview();
+        resumeAfterPreview = false;
+        stopPreviewAudio();
         redraw();
         emit('previewEnd');
         if (shouldResume) schedule((resumeFrom + 1) % beats());

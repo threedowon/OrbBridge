@@ -12,6 +12,10 @@
       --surface: #fff;
       --ink: #1a1a1a;
       --accent: #5b8def;
+      --orb-idle: #b4b8c0;
+      --orb-idle-border: #8a8f98;
+      --slot-bg: #f3f3f3;
+      --slot-border: rgba(0, 0, 0, 0.16);
     }
 
     html, body {
@@ -29,17 +33,42 @@
       padding: 12px;
     }
 
-    .board {
-      aspect-ratio: 16 / 10;
+    .table-wrap {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: clamp(10px, 1.8vh, 16px);
       width: min(calc(100vw - 24px), calc((100vh - 24px) * 16 / 10));
+      max-height: calc(100vh - 24px);
+    }
+
+    .ui-box {
       background: var(--surface);
       border: 2px solid var(--ink);
       border-radius: 10px;
-      display: grid;
-      grid-template-rows: auto 1fr auto;
+    }
+
+    .orb-palette {
+      flex-shrink: 0;
+      padding: clamp(10px, 1.6vh, 14px) clamp(16px, 3vw, 28px);
+      display: flex;
+      justify-content: center;
+    }
+
+    .orb-palette.drop-target {
+      outline: 2px dashed var(--accent);
+      outline-offset: 4px;
+    }
+
+    .play-panel {
+      display: flex;
+      flex-direction: column;
       padding: 3% 4% 3.5%;
       gap: 2.5%;
       position: relative;
+      aspect-ratio: 16 / 8;
+      width: 100%;
     }
 
     .status-dots {
@@ -64,39 +93,56 @@
 
     .orb-row {
       display: flex;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       justify-content: center;
       align-items: center;
-      gap: clamp(5px, 1.2vw, 10px);
+      gap: clamp(6px, 1.4vw, 12px);
       min-height: 0;
+    }
+
+    .orb-row.two-rows {
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: calc(9 * clamp(30px, 4.6vw, 40px) + 8 * clamp(6px, 1.4vw, 12px));
+      margin: 0 auto;
+    }
+
+    .orb-slot {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: clamp(30px, 4.6vw, 40px);
+      height: clamp(30px, 4.6vw, 40px);
+      border: 1.5px solid var(--slot-border);
+      border-radius: 50%;
+      background: var(--slot-bg);
     }
 
     .orb-pick {
       width: clamp(20px, 3.2vw, 28px);
       height: clamp(20px, 3.2vw, 28px);
       border-radius: 50%;
-      border: 2px solid var(--ink);
+      border: 2px solid var(--orb-idle-border);
+      background: var(--orb-idle);
       cursor: grab;
       padding: 0;
       transition: transform 0.12s, box-shadow 0.12s, opacity 0.12s;
-      box-shadow: inset 0 -2px 4px rgba(0,0,0,.12);
+      box-shadow: inset 0 -2px 4px rgba(0,0,0,.08);
       touch-action: none;
     }
 
     .orb-pick:hover { transform: scale(1.08); }
 
-    .orb-pick.on-table { opacity: 0.45; }
+    .orb-slot.on-table .orb-pick {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
 
     .orb-pick.dragging,
     .cell.filled.dragging {
       opacity: 0.4;
       cursor: grabbing;
-    }
-
-    .orb-row.drop-target {
-      outline: 2px dashed var(--accent);
-      outline-offset: 4px;
-      border-radius: 8px;
     }
 
     .playfield {
@@ -129,8 +175,8 @@
       width: var(--cell);
       height: var(--cell);
       border-radius: 50%;
-      border: 2px solid var(--ink);
-      background: var(--surface);
+      border: 1.5px solid var(--slot-border);
+      background: var(--slot-bg);
       cursor: default;
       padding: 0;
       transition: background 0.12s, box-shadow 0.12s, border-color 0.12s, opacity 0.12s;
@@ -138,7 +184,7 @@
 
     .cell.filled { cursor: grab; }
 
-    .cell:hover:not(.disabled):not(.filled) { background: #f3f3f3; }
+    .cell:hover:not(.disabled):not(.filled) { background: #ebebeb; }
     .cell.disabled { opacity: 0.35; pointer-events: none; cursor: not-allowed; }
 
     .cell.drag-over {
@@ -204,31 +250,35 @@
   </style>
 </head>
 <body>
-  <main class="board">
-    <div class="status-dots">
-      <span class="dot-status wait" id="status-dot" title="대기 중"></span>
-      <span class="dot-status" id="ws-dot" title="WS"></span>
-    </div>
+  <div class="table-wrap">
+    <section class="ui-box orb-palette" id="orb-palette">
+      <div class="orb-row" id="orb-tray"></div>
+    </section>
 
-    <div class="orb-row" id="orb-tray"></div>
+    <section class="ui-box play-panel" id="play-panel">
+      <div class="status-dots">
+        <span class="dot-status wait" id="status-dot" title="대기 중"></span>
+        <span class="dot-status" id="ws-dot" title="WS"></span>
+      </div>
 
-    <div class="playfield">
-      <div class="grid" id="grid"></div>
-    </div>
+      <div class="playfield">
+        <div class="grid" id="grid"></div>
+      </div>
 
-    <div class="actions">
-      <button type="button" class="action-btn listen" id="btn-listen" title="문제 다시듣기" aria-label="문제 다시듣기">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/>
-        </svg>
-      </button>
-      <button type="button" class="action-btn play" id="btn-play" title="재생" aria-label="재생" disabled>
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M8 5v14l11-7z"/>
-        </svg>
-      </button>
-    </div>
-  </main>
+      <div class="actions">
+        <button type="button" class="action-btn listen" id="btn-listen" title="문제 다시듣기" aria-label="문제 다시듣기">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/>
+          </svg>
+        </button>
+        <button type="button" class="action-btn play" id="btn-play" title="재생" aria-label="재생" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+        </button>
+      </div>
+    </section>
+  </div>
 
   <script>
     const COLS = 9;
@@ -237,8 +287,10 @@
     const WS_URL = `ws://${location.hostname || '127.0.0.1'}:8765`;
 
     const ORB_COLORS = ['#f472b6', '#5eead4', '#fbbf24', '#a78bfa', '#60a5fa', '#4ade80', '#fb923c', '#f87171'];
+    const groupColorMap = new Map();
 
-    const boardEl = document.querySelector('.board');
+    const boardEl = document.getElementById('play-panel');
+    const orbPaletteEl = document.getElementById('orb-palette');
     const playfieldEl = document.querySelector('.playfield');
     const gridEl = document.getElementById('grid');
     const orbTrayEl = document.getElementById('orb-tray');
@@ -373,7 +425,7 @@
 
     function clearDropHighlight() {
       gridEl.querySelectorAll('.cell.drag-over').forEach(el => el.classList.remove('drag-over'));
-      orbTrayEl.classList.remove('drop-target');
+      orbPaletteEl.classList.remove('drop-target');
       dropTarget = null;
     }
 
@@ -381,8 +433,24 @@
       el?.classList.toggle('dragging', on);
     }
 
-    function orbColor(idx) {
-      return ORB_COLORS[idx % ORB_COLORS.length];
+    function voiceGroup(voice) {
+      return String(voice).split('_')[0] || voice;
+    }
+
+    function buildGroupColors() {
+      groupColorMap.clear();
+      const seen = [];
+      for (const o of orbs) {
+        const g = voiceGroup(o.voice);
+        if (!seen.includes(g)) seen.push(g);
+      }
+      seen.forEach((g, i) => {
+        groupColorMap.set(g, ORB_COLORS[i % ORB_COLORS.length]);
+      });
+    }
+
+    function orbColorForVoice(voice) {
+      return groupColorMap.get(voiceGroup(voice)) ?? ORB_COLORS[0];
     }
 
     function findCellWithOrbId(orbId) {
@@ -415,7 +483,7 @@
       placed.set(k, {
         id: orb.id,
         voice: orb.voice,
-        color: orbColor(orbIdx),
+        color: orbColorForVoice(orb.voice),
         idx: orbIdx,
       });
       renderCell(col, row);
@@ -464,22 +532,22 @@
     }
 
     function setupOrbTrayDragDrop() {
-      orbTrayEl.addEventListener('dragover', (e) => {
+      orbPaletteEl.addEventListener('dragover', (e) => {
         if (!ready || dragPayload?.src !== 'cell') return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
-        orbTrayEl.classList.add('drop-target');
+        orbPaletteEl.classList.add('drop-target');
       });
 
-      orbTrayEl.addEventListener('dragleave', (e) => {
-        if (!orbTrayEl.contains(e.relatedTarget)) {
-          orbTrayEl.classList.remove('drop-target');
+      orbPaletteEl.addEventListener('dragleave', (e) => {
+        if (!orbPaletteEl.contains(e.relatedTarget)) {
+          orbPaletteEl.classList.remove('drop-target');
         }
       });
 
-      orbTrayEl.addEventListener('drop', async (e) => {
+      orbPaletteEl.addEventListener('drop', async (e) => {
         e.preventDefault();
-        orbTrayEl.classList.remove('drop-target');
+        orbPaletteEl.classList.remove('drop-target');
         const data = dragPayload ?? readDragData(e);
         if (data?.src === 'cell') await removeAt(data.col, data.row);
         dragPayload = null;
@@ -582,20 +650,23 @@
 
     function updateOrbTrayState() {
       const onTable = new Set([...placed.values()].map(s => s.id));
-      orbTrayEl.querySelectorAll('.orb-pick').forEach((el, i) => {
-        el.classList.toggle('on-table', onTable.has(orbs[i]?.id));
+      orbTrayEl.querySelectorAll('.orb-slot').forEach((slot, i) => {
+        slot.classList.toggle('on-table', onTable.has(orbs[i]?.id));
       });
     }
 
     function buildOrbTray() {
       orbTrayEl.innerHTML = '';
+      orbTrayEl.classList.toggle('two-rows', orbs.length > 9);
       orbs.forEach((o, i) => {
+        const slot = document.createElement('div');
+        slot.className = 'orb-slot';
+
         const btn = document.createElement('div');
         btn.className = 'orb-pick';
         btn.draggable = true;
         btn.role = 'button';
         btn.tabIndex = 0;
-        btn.style.background = orbColor(i);
         btn.title = `${String.fromCharCode(65 + i)} · ${o.voice} — 드래그해서 배치`;
         btn.addEventListener('dragstart', (e) => {
           if (!ready) {
@@ -610,7 +681,9 @@
           setDragging(btn, false);
           dragPayload = null;
         });
-        orbTrayEl.appendChild(btn);
+
+        slot.appendChild(btn);
+        orbTrayEl.appendChild(slot);
       });
       updateOrbTrayState();
     }
@@ -701,6 +774,7 @@
     async function loadOrbs() {
       const res = await fetch(`${API}/api/orbs`);
       orbs = await res.json();
+      buildGroupColors();
       buildOrbTray();
     }
 

@@ -1,6 +1,7 @@
 import { VOICES } from './data.js';
 
 let ctx = null;
+let previewOut = null;
 
 export function unlock() {
   if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -8,7 +9,24 @@ export function unlock() {
   return ctx;
 }
 
-export function playTone(freq, voiceId, dur = 0.32, when = 0) {
+export function beginPreviewAudio() {
+  stopPreviewAudio();
+  const c = unlock();
+  previewOut = c.createGain();
+  previewOut.gain.value = 1;
+  previewOut.connect(c.destination);
+}
+
+export function stopPreviewAudio() {
+  if (!previewOut) return;
+  try {
+    previewOut.gain.cancelScheduledValues(0);
+    previewOut.disconnect();
+  } catch { /* ignore */ }
+  previewOut = null;
+}
+
+export function playTone(freq, voiceId, dur = 0.32, when = 0, { preview = false } = {}) {
   const c = unlock();
   const v = VOICES[voiceId] ?? VOICES[0];
   const t = when > 0 ? when : c.currentTime;
@@ -29,7 +47,7 @@ export function playTone(freq, voiceId, dur = 0.32, when = 0) {
 
   osc.connect(filt);
   filt.connect(gain);
-  gain.connect(c.destination);
+  gain.connect(preview && previewOut ? previewOut : c.destination);
   osc.start(t);
   osc.stop(t + dur + 0.04);
 }

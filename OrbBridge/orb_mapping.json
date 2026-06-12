@@ -7,5 +7,11 @@
   "2D:2E:9A:A1:23:00:00:2B": { "voice": "ive_2" },
   "2D:2E:9A:A1:23:00:00:2C": { "voice": "ive_3" },
   "2D:2E:9A:A1:23:00:00:2D": { "voice": "ive_4" },
-  "2D:2E:9A:A1:23:00:00:2E": { "voice": "cortis_1" }
+  "2D:2E:9A:A1:23:00:00:2E": { "voice": "cortis_1" },
+  "2D:2E:9A:A1:23:00:00:2F": { "voice": "cortis_1" },
+  "2D:2E:9A:A1:23:00:00:2G": { "voice": "cortis_1" },
+  "2D:2E:9A:A1:23:00:00:2H": { "voice": "cortis_1" },
+  "2D:2E:9A:A1:23:00:00:2I": { "voice": "cortis_1" },
+  "2D:2E:9A:A1:23:00:00:2J": { "voice": "bts_1" },
+  "2D:2E:9A:A1:23:00:00:2K": { "voice": "bts_2" }
 }

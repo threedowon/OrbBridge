@@ -111,27 +111,28 @@ function pathD(points) {
 }
 
 function updateGlowPath(points, w, h) {
-  if (!pathLayer || !blobLayer) return;
-  syncSvgSize(w, h);
+  if (!blobLayer) return;
+  if (svgEl) syncSvgSize(w, h);
 
   blobLayer.replaceChildren();
+  const solo = points.length === 1;
   for (const p of points) {
     const blob = document.createElement('div');
-    blob.className = 'glow-blob';
-    const padW = w + GLOW_BLEED * 2;
-    const padH = h + GLOW_BLEED * 2;
-    blob.style.left = `${((p.x + GLOW_BLEED) / padW) * 100}%`;
-    blob.style.top = `${((p.y + GLOW_BLEED) / padH) * 100}%`;
+    blob.className = solo ? 'glow-blob glow-blob--solo' : 'glow-blob';
+    blob.style.left = `${(p.x / w) * 100}%`;
+    blob.style.top = `${(p.y / h) * 100}%`;
     blobLayer.appendChild(blob);
   }
 
-  if (points.length >= 2) {
-    pathLayer.innerHTML =
-      `<path d="${pathD(points)}" fill="none" stroke="${GLOW_FILL}" ` +
-      `stroke-width="${PATH_STROKE}" stroke-linecap="round" stroke-linejoin="round" ` +
-      `filter="url(#path-blur-filter)"/>`;
-  } else {
-    pathLayer.innerHTML = '';
+  if (pathLayer) {
+    if (points.length >= 2) {
+      pathLayer.innerHTML =
+        `<path d="${pathD(points)}" fill="none" stroke="${GLOW_FILL}" ` +
+        `stroke-width="${PATH_STROKE}" stroke-linecap="round" stroke-linejoin="round" ` +
+        `filter="url(#path-blur-filter)"/>`;
+    } else {
+      pathLayer.innerHTML = '';
+    }
   }
 }
 
