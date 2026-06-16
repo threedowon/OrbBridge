@@ -6,8 +6,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TABLE_UI = ROOT / "table-ui"
-GAME_UI = ROOT / "game-ui"
+TABLE_UI = ROOT / "table"
+GAME_UI = ROOT / "screen"
 
 MIME = {
     ".html": "text/html; charset=utf-8",
