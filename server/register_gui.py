@@ -19,23 +19,53 @@ from register_core import (
     update_orb,
 )
 
-# Palette — table UI와 톤 맞춤
+# Wise fintech theme — lime green CTA on sage canvas
+MONO_CANDIDATES = ("JetBrains Mono", "Consolas", "Cascadia Mono", "Courier New")
+UI_CANDIDATES = ("Inter", "Segoe UI", "Helvetica Neue", "Manrope", "Arial")
+
+
+def _pick_font(root: tk.Tk, candidates: tuple[str, ...], fallback: str) -> str:
+    families = set(tkfont.families(root))
+    for name in candidates:
+        if name in families:
+            return name
+    return fallback
+
+
+def _ui_font_family(root: tk.Tk) -> str:
+    return _pick_font(root, UI_CANDIDATES, "TkDefaultFont")
+
+
+def _mono_font_family(root: tk.Tk) -> str:
+    return _pick_font(root, MONO_CANDIDATES, "TkFixedFont")
+
+
 C = {
-    "bg": "#e8eaed",
-    "card": "#ffffff",
-    "ink": "#141414",
-    "muted": "#6b7280",
-    "line": "#d1d5db",
-    "accent": "#5b8def",
-    "accent_soft": "#eef4ff",
-    "ok": "#16a34a",
-    "ok_soft": "#dcfce7",
-    "new": "#dc2626",
-    "new_soft": "#fee2e2",
-    "known": "#15803d",
-    "warn": "#a16207",
-    "warn_soft": "#fef9c3",
-    "tab_track": "#eceef1",
+  # Surface
+    "canvas": "#ffffff",
+    "canvas_soft": "#e8ebe6",
+    # Brand
+    "primary": "#9fe870",
+    "primary_active": "#cdffad",
+    "primary_neutral": "#c5edab",
+    "primary_pale": "#e2f6d5",
+    # Text
+    "ink": "#0e0f0c",
+    "ink_deep": "#163300",
+    "body": "#454745",
+    "mute": "#868685",
+    "on_primary": "#0e0f0c",
+    "on_dark": "#e8ebe6",
+    # Semantic
+    "positive": "#2ead4b",
+    "positive_deep": "#054d28",
+    "warning": "#ffd11a",
+    "warning_deep": "#b86700",
+    "warning_content": "#4a3b1c",
+    "negative": "#d03238",
+    "negative_deep": "#a72027",
+    "negative_darkest": "#a7000d",
+    "negative_bg": "#320707",
 }
 
 
@@ -50,24 +80,31 @@ class RegisterApp:
         self.serial_mgr = serial_mgr
         self.default_port = default_port
         self._port_map: dict[str, str] = {}
+        self._closing = False
 
         self.root = tk.Tk()
         self.list_search_var = tk.StringVar(master=self.root)
-        self.list_edit_id_var = tk.StringVar(master=self.root)
+        self.list_edit_id_var = tk.StringVar(master=self.root, value="목록에서 항목을 선택하세요")
+        ui = _ui_font_family(self.root)
+        mono = _mono_font_family(self.root)
         self.root.title("Orb Register")
-        self.root.configure(bg=C["bg"])
+        self.root.configure(bg=C["canvas_soft"])
         self.root.minsize(700, 680)
         self.root.geometry("760x720")
 
+        # Wise Sans 900 → Inter bold display; Inter 600 labels; Inter 400 body
         self._fonts = {
-            "title": tkfont.Font(family="Segoe UI", size=18, weight="bold"),
-            "section": tkfont.Font(family="Segoe UI", size=11, weight="bold"),
-            "body": tkfont.Font(family="Segoe UI", size=10),
-            "mono": tkfont.Font(family="Consolas", size=11),
-            "badge": tkfont.Font(family="Segoe UI", size=9, weight="bold"),
-            "chip": tkfont.Font(family="Segoe UI", size=9),
-            "tab": tkfont.Font(family="Segoe UI", size=10),
-            "tab_sel": tkfont.Font(family="Segoe UI", size=11, weight="bold"),
+            "title": tkfont.Font(family=ui, size=32, weight="bold"),
+            "section": tkfont.Font(family=ui, size=18, weight="bold"),
+            "body": tkfont.Font(family=ui, size=12),
+            "label": tkfont.Font(family=ui, size=12, weight="bold"),
+            "mono": tkfont.Font(family=mono, size=11),
+            "badge": tkfont.Font(family=ui, size=10, weight="bold"),
+            "chip": tkfont.Font(family=ui, size=11),
+            "tab": tkfont.Font(family=ui, size=10),
+            "tab_sel": tkfont.Font(family=ui, size=10, weight="bold"),
+            "btn": tkfont.Font(family=ui, size=11, weight="bold"),
+            "btn_sm": tkfont.Font(family=ui, size=10, weight="bold"),
         }
 
         self._setup_styles()
@@ -77,8 +114,25 @@ class RegisterApp:
 
         self._refresh_ports(select=default_port)
         self._load_logs()
-        self.root.after(300, self._poll_serial)
+        self._schedule(300, self._poll_serial)
         self._refresh_all()
+
+    def _schedule(self, ms: int, fn) -> None:
+        if self._closing:
+            return
+
+        def job() -> None:
+            if self._closing:
+                return
+            try:
+                fn()
+            except tk.TclError:
+                pass
+
+        try:
+            self.root.after(ms, job)
+        except tk.TclError:
+            pass
 
     def _setup_styles(self) -> None:
         style = ttk.Style()
@@ -89,55 +143,96 @@ class RegisterApp:
 
         style.configure(
             "Card.TLabelframe",
-            background=C["card"],
+            background=C["canvas"],
             bordercolor=C["ink"],
-            relief="solid",
-            borderwidth=2,
+            relief="flat",
+            borderwidth=0,
         )
         style.configure(
             "Card.TLabelframe.Label",
-            background=C["card"],
+            background=C["canvas"],
             foreground=C["ink"],
             font=self._fonts["section"],
         )
         style.configure(
             "TCombobox",
-            fieldbackground=C["card"],
-            background=C["card"],
+            fieldbackground=C["canvas"],
+            background=C["canvas"],
+            foreground=C["ink"],
+            arrowcolor=C["body"],
+            bordercolor=C["ink"],
+            font=self._fonts["body"],
+            padding=(4, 2),
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", C["canvas"])],
+            foreground=[("readonly", C["ink"])],
         )
         style.configure(
             "Treeview",
-            background=C["card"],
-            fieldbackground=C["card"],
-            rowheight=28,
+            background=C["canvas"],
+            fieldbackground=C["canvas"],
+            foreground=C["ink"],
+            rowheight=36,
             font=self._fonts["body"],
+            borderwidth=0,
+            relief="flat",
         )
         style.configure(
             "Treeview.Heading",
-            font=self._fonts["section"],
-            background=C["accent_soft"],
+            font=self._fonts["label"],
+            background=C["canvas_soft"],
+            foreground=C["ink"],
+            relief="flat",
+            borderwidth=0,
+        )
+        style.map(
+            "Treeview",
+            background=[("selected", C["primary_pale"])],
+            foreground=[("selected", C["ink"])],
+        )
+        style.configure(
+            "Vertical.TScrollbar",
+            background=C["canvas_soft"],
+            troughcolor=C["canvas"],
+            bordercolor=C["canvas"],
+            arrowcolor=C["body"],
         )
 
+    def _entry(self, parent: tk.Widget, *, mono: bool = False, **kwargs) -> tk.Entry:
+        opts = dict(
+            font=self._fonts["mono"] if mono else self._fonts["body"],
+            bg=C["canvas"],
+            fg=C["ink"],
+            insertbackground=C["ink"],
+            relief=tk.FLAT,
+            highlightthickness=1,
+            highlightbackground=C["ink"],
+            highlightcolor=C["ink"],
+        )
+        opts.update(kwargs)
+        return tk.Entry(parent, **opts)
+
     def _style_tab_btn(self, btn: tk.Button, *, selected: bool) -> None:
-        track = C["tab_track"]
         if selected:
             btn.configure(
                 font=self._fonts["tab_sel"],
-                bg=C["ink"],
-                fg="#ffffff",
-                activebackground="#2d2d2d",
-                activeforeground="#ffffff",
-                padx=14,
+                bg=C["canvas"],
+                fg=C["ink"],
+                activebackground=C["canvas"],
+                activeforeground=C["ink"],
+                padx=10,
                 pady=4,
             )
         else:
             btn.configure(
                 font=self._fonts["tab"],
-                bg=track,
-                fg=C["muted"],
-                activebackground="#e2e5e9",
-                activeforeground=C["ink"],
-                padx=12,
+                bg=C["canvas_soft"],
+                fg=C["mute"],
+                activebackground=C["canvas_soft"],
+                activeforeground=C["mute"],
+                padx=10,
                 pady=4,
             )
 
@@ -154,17 +249,36 @@ class RegisterApp:
             self._style_tab_btn(self.tab_log_btn, selected=False)
             self._style_tab_btn(self.tab_list_btn, selected=True)
 
-    def _card(self, parent, title: str) -> tk.Frame:
-        outer = tk.Frame(parent, bg=C["ink"], padx=2, pady=2)
-        inner = tk.Frame(outer, bg=C["card"], padx=16, pady=14)
-        inner.pack(fill=tk.BOTH, expand=True)
+    def _card(
+        self,
+        parent,
+        title: str,
+        *,
+        bordered: bool = False,
+        compact: bool = False,
+    ) -> tuple[tk.Frame, tk.Frame]:
+        """card-content (white on sage) or currency-converter-card (ink border)."""
+        bg = C["canvas"]
+        pad = (16, 12) if compact else (24, 24)
+        outer_kw: dict = dict(bg=bg, padx=pad[0], pady=pad[1])
+        if bordered:
+            outer = tk.Frame(
+                parent,
+                highlightthickness=1,
+                highlightbackground=C["ink"],
+                **outer_kw,
+            )
+        else:
+            outer = tk.Frame(parent, **outer_kw)
         tk.Label(
-            inner,
+            outer,
             text=title,
-            font=self._fonts["section"],
-            bg=C["card"],
+            font=self._fonts["label"] if compact else self._fonts["section"],
+            bg=bg,
             fg=C["ink"],
-        ).pack(anchor=tk.W, pady=(0, 10))
+        ).pack(anchor=tk.W, pady=(0, 6 if compact else 10))
+        inner = tk.Frame(outer, bg=bg)
+        inner.pack(fill=tk.BOTH, expand=True)
         return outer, inner
 
     def _pill_btn(
@@ -175,52 +289,55 @@ class RegisterApp:
         *,
         primary: bool = False,
         small: bool = False,
+        outline: bool = False,
+        on_dark: bool = False,
     ) -> tk.Button:
         if primary:
-            bg, fg, hover = C["ink"], "#ffffff", "#333333"
+            bg, fg, pressed = C["primary"], C["on_primary"], C["primary_active"]
+        elif on_dark:
+            bg, fg, pressed = C["primary"], C["on_primary"], C["primary_active"]
+        elif outline:
+            bg, fg, pressed = C["canvas"], C["ink"], C["canvas"]
         else:
-            bg, fg, hover = C["card"], C["ink"], C["accent_soft"]
+            bg, fg, pressed = C["canvas_soft"], C["ink"], C["primary_neutral"]
 
-        btn = tk.Button(
+        return tk.Button(
             parent,
             text=text,
             command=command,
-            font=self._fonts["chip"] if small else self._fonts["body"],
+            font=self._fonts["btn_sm"] if small else self._fonts["btn"],
             bg=bg,
             fg=fg,
-            activebackground=hover,
-            activeforeground="#ffffff" if primary else fg,
+            activebackground=pressed if primary or on_dark else bg,
+            activeforeground=fg,
             relief=tk.FLAT,
             padx=14 if not small else 10,
-            pady=6 if not small else 4,
+            pady=5 if not small else 3,
             cursor="hand2",
-            borderwidth=0 if primary else 1,
-            highlightthickness=1,
-            highlightbackground=C["ink"],
+            borderwidth=1 if outline else 0,
+            highlightthickness=1 if outline else 0,
+            highlightbackground=C["ink"] if outline else bg,
+            highlightcolor=C["ink"] if outline else bg,
         )
-        if primary:
-            btn.bind("<Enter>", lambda e: btn.configure(bg=hover, fg="#ffffff"))
-            btn.bind("<Leave>", lambda e: btn.configure(bg=C["ink"], fg="#ffffff"))
-        else:
-            btn.bind("<Enter>", lambda e: btn.configure(bg=hover))
-            btn.bind("<Leave>", lambda e: btn.configure(bg=bg))
-        return btn
 
     def _build(self) -> None:
-        wrap = tk.Frame(self.root, bg=C["bg"], padx=20, pady=16)
+        wrap = tk.Frame(self.root, bg=C["canvas_soft"], padx=24, pady=20)
         wrap.pack(fill=tk.BOTH, expand=True)
 
-        # Header
-        header = tk.Frame(wrap, bg=C["bg"])
-        header.pack(fill=tk.X, pady=(0, 14))
+        main = tk.Frame(wrap, bg=C["canvas_soft"])
+        main.pack(fill=tk.BOTH, expand=True)
 
-        title_col = tk.Frame(header, bg=C["bg"])
+        # Header — hero-band on sage canvas
+        header = tk.Frame(main, bg=C["canvas_soft"])
+        header.pack(fill=tk.X, pady=(0, 16))
+
+        title_col = tk.Frame(header, bg=C["canvas_soft"])
         title_col.pack(side=tk.LEFT, fill=tk.X, expand=True)
         tk.Label(
             title_col,
             text="Orb Register",
             font=self._fonts["title"],
-            bg=C["bg"],
+            bg=C["canvas_soft"],
             fg=C["ink"],
         ).pack(anchor=tk.W)
         self.count_var = tk.StringVar()
@@ -228,16 +345,16 @@ class RegisterApp:
             title_col,
             textvariable=self.count_var,
             font=self._fonts["body"],
-            bg=C["bg"],
-            fg=C["muted"],
-        ).pack(anchor=tk.W, pady=(2, 0))
+            bg=C["canvas_soft"],
+            fg=C["body"],
+        ).pack(anchor=tk.W, pady=(4, 0))
 
-        self.banner = tk.Frame(wrap, bg=C["new_soft"], padx=14, pady=10)
+        self.banner = tk.Frame(main, bg=C["negative_bg"], padx=16, pady=12)
         self.banner_msg = tk.Label(
             self.banner,
             font=self._fonts["body"],
-            bg=C["new_soft"],
-            fg=C["new"],
+            bg=C["negative_bg"],
+            fg=C["canvas"],
             wraplength=640,
             justify=tk.LEFT,
         )
@@ -247,61 +364,60 @@ class RegisterApp:
             text="✕",
             command=self._hide_banner,
             font=self._fonts["body"],
-            bg=C["new_soft"],
-            fg=C["new"],
+            bg=C["negative_bg"],
+            fg=C["canvas"],
             relief=tk.FLAT,
             borderwidth=0,
             cursor="hand2",
         ).pack(side=tk.RIGHT)
 
-        status_row = tk.Frame(header, bg=C["bg"])
+        status_row = tk.Frame(header, bg=C["canvas_soft"])
         status_row.pack(side=tk.RIGHT)
         self.status_dot = tk.Canvas(
-            status_row, width=12, height=12, bg=C["bg"], highlightthickness=0
+            status_row, width=12, height=12, bg=C["canvas_soft"], highlightthickness=0
         )
-        self.status_dot.pack(side=tk.LEFT, padx=(0, 6))
+        self.status_dot.pack(side=tk.LEFT, padx=(0, 8))
         self._draw_dot(False)
         self.serial_var = tk.StringVar(value="연결 대기")
         tk.Label(
             status_row,
             textvariable=self.serial_var,
             font=self._fonts["body"],
-            bg=C["bg"],
-            fg=C["muted"],
+            bg=C["canvas_soft"],
+            fg=C["body"],
         ).pack(side=tk.LEFT)
 
-        # COM port card
-        port_outer, port_inner = self._card(wrap, "Serial 포트")
-        port_outer.pack(fill=tk.X, pady=(0, 12))
+        # Serial — compact card
+        port_outer, port_inner = self._card(
+            main, "Serial 포트", bordered=True, compact=True
+        )
+        port_outer.pack(fill=tk.X, pady=(0, 8))
 
-        port_row = tk.Frame(port_inner, bg=C["card"])
+        port_row = tk.Frame(port_inner, bg=C["canvas"])
         port_row.pack(fill=tk.X)
 
-        self.port_combo = ttk.Combobox(port_row, state="readonly", width=48)
-        self.port_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+        self.port_combo = ttk.Combobox(port_row, state="readonly", width=36)
+        self.port_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
         self.port_combo.bind("<<ComboboxSelected>>", self._on_port_selected)
 
         self._pill_btn(port_row, "새로고침", self._refresh_ports, small=True).pack(
             side=tk.LEFT, padx=(0, 6)
         )
 
-        # Detection — compact, no section title
-        det_outer = tk.Frame(wrap, bg=C["ink"], padx=2, pady=2)
-        det_outer.pack(fill=tk.X, pady=(0, 12))
+        # Detection — card-content (white on sage)
+        det_outer = tk.Frame(main, bg=C["canvas"], padx=16, pady=12)
+        det_outer.pack(fill=tk.X, pady=(0, 8))
 
-        det_inner = tk.Frame(det_outer, bg=C["card"], padx=12, pady=8)
-        det_inner.pack(fill=tk.X)
-
-        badge_row = tk.Frame(det_inner, bg=C["card"])
+        badge_row = tk.Frame(det_outer, bg=C["canvas"])
         badge_row.pack(fill=tk.X)
 
         self.badge_label = tk.Label(
             badge_row,
             text="대기",
             font=self._fonts["badge"],
-            bg=C["line"],
-            fg=C["muted"],
-            padx=8,
+            bg=C["primary_pale"],
+            fg=C["positive_deep"],
+            padx=10,
             pady=2,
         )
         self.badge_label.pack(side=tk.LEFT)
@@ -311,65 +427,55 @@ class RegisterApp:
             badge_row,
             textvariable=self.id_var,
             font=self._fonts["mono"],
-            bg="#f5f5f5",
+            bg=C["canvas_soft"],
             fg=C["ink"],
-            padx=8,
+            padx=10,
             pady=4,
             anchor=tk.W,
             justify=tk.LEFT,
         ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 0))
 
         self.known_var = tk.StringVar()
-        tk.Label(
-            det_inner,
+        self.known_label = tk.Label(
+            det_outer,
             textvariable=self.known_var,
             font=self._fonts["chip"],
-            bg=C["card"],
-            fg=C["known"],
-        ).pack(anchor=tk.W, pady=(4, 0))
+            bg=C["canvas"],
+            fg=C["ink"],
+        )
 
-        self.form = tk.Frame(det_inner, bg=C["card"])
-        self.form.pack(fill=tk.X, pady=(6, 0))
+        self.form = tk.Frame(det_outer, bg=C["canvas"])
+        self.form.pack(fill=tk.X, pady=(4, 0))
 
         tk.Label(
             self.form,
-            text="voice",
-            font=self._fonts["chip"],
-            bg=C["card"],
-            fg=C["muted"],
+            text="Voice",
+            font=self._fonts["label"],
+            bg=C["canvas"],
+            fg=C["body"],
         ).pack(anchor=tk.W)
 
-        voice_row = tk.Frame(self.form, bg=C["card"])
-        voice_row.pack(fill=tk.X, pady=(2, 4))
-        self.voice_entry = tk.Entry(
-            voice_row,
-            font=self._fonts["mono"],
-            relief=tk.FLAT,
-            highlightthickness=2,
-            highlightbackground=C["line"],
-            highlightcolor=C["accent"],
-        )
-        self.voice_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4)
+        voice_row = tk.Frame(self.form, bg=C["canvas"])
+        voice_row.pack(fill=tk.X, pady=(4, 8))
+        self.voice_entry = self._entry(voice_row)
+        self.voice_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=3)
 
-        self.chip_frame = tk.Frame(self.form, bg=C["card"])
-        self.chip_frame.pack(fill=tk.X, pady=(0, 4))
+        self.chip_frame = tk.Frame(self.form, bg=C["canvas"])
+        self.chip_frame.pack(fill=tk.X, pady=(0, 8))
 
-        btn_row = tk.Frame(self.form, bg=C["card"])
+        btn_row = tk.Frame(self.form, bg=C["canvas"])
         btn_row.pack(fill=tk.X)
-        self.btn_add = self._pill_btn(btn_row, "등록", self._do_add, primary=True)
+        self.btn_add = self._pill_btn(btn_row, "등록", self._do_add, primary=True, small=True)
         self.btn_add.pack(side=tk.LEFT)
 
-        # Log + registered list (tabs)
-        panel_outer = tk.Frame(wrap, bg=C["ink"], padx=2, pady=2)
-        panel_outer.pack(fill=tk.BOTH, expand=True, pady=(0, 12))
+        # Log + list — sage canvas; white card panels
+        panel_outer = tk.Frame(main, bg=C["canvas_soft"], padx=0, pady=0)
+        panel_outer.pack(fill=tk.BOTH, expand=True)
 
-        panel_inner = tk.Frame(panel_outer, bg=C["card"], padx=16, pady=14)
-        panel_inner.pack(fill=tk.BOTH, expand=True)
+        tab_bar = tk.Frame(panel_outer, bg=C["canvas_soft"])
+        tab_bar.pack(fill=tk.X, pady=(0, 6))
 
-        tab_bar = tk.Frame(panel_inner, bg=C["card"])
-        tab_bar.pack(fill=tk.X, pady=(0, 8))
-
-        tab_track = tk.Frame(tab_bar, bg=C["tab_track"], padx=3, pady=3)
+        tab_track = tk.Frame(tab_bar, bg=C["canvas_soft"], padx=0, pady=0)
         tab_track.pack(anchor=tk.W)
 
         tab_kw = dict(
@@ -381,7 +487,7 @@ class RegisterApp:
         self.tab_log_btn = tk.Button(
             tab_track, text="로그", command=lambda: self._switch_tab("log"), **tab_kw
         )
-        self.tab_log_btn.pack(side=tk.LEFT, padx=(0, 2))
+        self.tab_log_btn.pack(side=tk.LEFT, padx=(0, 4))
         self.tab_list_btn = tk.Button(
             tab_track,
             text="등록된 ID",
@@ -390,100 +496,75 @@ class RegisterApp:
         )
         self.tab_list_btn.pack(side=tk.LEFT)
 
-        content_area = tk.Frame(panel_inner, bg=C["card"])
+        content_area = tk.Frame(panel_outer, bg=C["canvas_soft"])
         content_area.pack(fill=tk.BOTH, expand=True)
 
-        self.log_tab = tk.Frame(content_area, bg=C["card"])
-        self.list_tab = tk.Frame(content_area, bg=C["card"])
-
-        self.log_box = tk.Frame(
-            self.log_tab, bg="#f8f9fa", highlightthickness=1, highlightbackground=C["line"]
+        self.log_tab = tk.Frame(
+            content_area,
+            bg=C["canvas"],
+            highlightthickness=1,
+            highlightbackground=C["ink"],
+            padx=16,
+            pady=16,
         )
+        self.list_tab = tk.Frame(
+            content_area,
+            bg=C["canvas"],
+            highlightthickness=1,
+            highlightbackground=C["ink"],
+            padx=16,
+            pady=16,
+        )
+
+        self.log_box = tk.Frame(self.log_tab, bg=C["canvas"])
         self.log_box.pack(fill=tk.BOTH, expand=True)
 
         self.log_text = tk.Text(
             self.log_box,
             height=8,
             font=self._fonts["mono"],
-            bg="#f8f9fa",
-            fg=C["muted"],
+            bg=C["canvas"],
+            fg=C["body"],
             relief=tk.FLAT,
-            padx=10,
+            padx=4,
             pady=8,
             wrap=tk.WORD,
             state=tk.DISABLED,
             cursor="arrow",
+            insertbackground=C["ink"],
         )
         self.log_text.pack(fill=tk.BOTH, expand=True)
-        self.log_text.tag_configure("error", foreground=C["new"])
-        self.log_text.tag_configure("warn", foreground=C["warn"])
-        self.log_text.tag_configure("info", foreground=C["muted"])
-        self.log_text.tag_configure("ok", foreground=C["ok"])
+        self.log_text.tag_configure("error", foreground=C["negative"])
+        self.log_text.tag_configure("warn", foreground=C["warning_deep"])
+        self.log_text.tag_configure("info", foreground=C["mute"])
+        self.log_text.tag_configure("ok", foreground=C["positive"])
 
-        list_toolbar = tk.Frame(self.list_tab, bg=C["card"])
-        list_toolbar.pack(fill=tk.X, pady=(0, 6))
+        # --- 등록된 ID 탭: 검색 → 목록 → 하단 편집 ---
+        list_toolbar = tk.Frame(self.list_tab, bg=C["canvas"])
+        list_toolbar.pack(fill=tk.X, pady=(0, 8))
 
         tk.Label(
             list_toolbar,
-            text="voice 검색",
-            font=self._fonts["chip"],
-            bg=C["card"],
-            fg=C["muted"],
+            text="검색",
+            font=self._fonts["body"],
+            bg=C["canvas"],
+            fg=C["mute"],
         ).pack(side=tk.LEFT)
-        self.list_search_entry = tk.Entry(
-            list_toolbar,
-            textvariable=self.list_search_var,
-            font=self._fonts["mono"],
-            relief=tk.FLAT,
-            highlightthickness=2,
-            highlightbackground=C["line"],
-            highlightcolor=C["accent"],
+        self.list_search_entry = self._entry(
+            list_toolbar, textvariable=self.list_search_var, width=20
         )
-        self.list_search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 0), ipady=4)
+        self.list_search_entry.pack(side=tk.LEFT, padx=(8, 0), ipady=2)
         self.list_search_var.trace_add("write", lambda *_: self._on_list_search())
 
-        edit_row = tk.Frame(self.list_tab, bg=C["card"])
-        edit_row.pack(fill=tk.X, pady=(0, 4))
-
-        tk.Label(
-            edit_row,
-            text="voice",
-            font=self._fonts["chip"],
-            bg=C["card"],
-            fg=C["muted"],
-        ).pack(side=tk.LEFT)
-        self.list_edit_voice = tk.Entry(
-            edit_row,
-            font=self._fonts["mono"],
-            relief=tk.FLAT,
-            highlightthickness=2,
-            highlightbackground=C["line"],
-            highlightcolor=C["accent"],
-        )
-        self.list_edit_voice.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 8), ipady=4)
-        self._pill_btn(edit_row, "저장", self._do_update_voice, primary=True, small=True).pack(
-            side=tk.LEFT, padx=(0, 6)
-        )
-        self._pill_btn(edit_row, "선택 삭제", self._do_remove, small=True).pack(side=tk.LEFT)
-
-        tk.Label(
-            self.list_tab,
-            textvariable=self.list_edit_id_var,
-            font=self._fonts["chip"],
-            bg=C["card"],
-            fg=C["muted"],
-            anchor=tk.W,
-        ).pack(fill=tk.X, pady=(0, 6))
-
-        self.tree_wrap = tk.Frame(self.list_tab, bg=C["card"])
+        self.tree_wrap = tk.Frame(self.list_tab, bg=C["canvas"])
         self.tree_wrap.pack(fill=tk.BOTH, expand=True)
 
         cols = ("id", "voice")
-        self.tree = ttk.Treeview(self.tree_wrap, columns=cols, show="headings")
+        self.tree = ttk.Treeview(self.tree_wrap, columns=cols, show="headings", height=10)
         self.tree.heading("id", text="ID")
-        self.tree.heading("voice", text="voice")
-        self.tree.column("id", width=440, stretch=True)
-        self.tree.column("voice", width=120, stretch=False)
+        self.tree.heading("voice", text="Voice")
+        self.tree.column("id", width=400, stretch=True)
+        self.tree.column("voice", width=100, stretch=False)
         self.tree.bind("<<TreeviewSelect>>", self._on_list_select)
         self.tree_scroll = ttk.Scrollbar(
             self.tree_wrap, orient=tk.VERTICAL, command=self.tree.yview
@@ -492,11 +573,38 @@ class RegisterApp:
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self._switch_tab("log")
+        edit_panel = tk.Frame(self.list_tab, bg=C["canvas_soft"], padx=12, pady=10)
+        edit_panel.pack(fill=tk.X, pady=(10, 0))
 
-        bottom = tk.Frame(wrap, bg=C["bg"])
-        bottom.pack(fill=tk.X, pady=(0, 0))
-        self._pill_btn(bottom, "닫기", self.root.destroy).pack(side=tk.RIGHT)
+        tk.Label(
+            edit_panel,
+            textvariable=self.list_edit_id_var,
+            font=self._fonts["mono"],
+            bg=C["canvas_soft"],
+            fg=C["mute"],
+            anchor=tk.W,
+        ).pack(fill=tk.X, pady=(0, 6))
+
+        edit_row = tk.Frame(edit_panel, bg=C["canvas_soft"])
+        edit_row.pack(fill=tk.X)
+
+        tk.Label(
+            edit_row,
+            text="Voice",
+            font=self._fonts["body"],
+            bg=C["canvas_soft"],
+            fg=C["body"],
+        ).pack(side=tk.LEFT)
+        self.list_edit_voice = self._entry(edit_row, width=18)
+        self.list_edit_voice.pack(side=tk.LEFT, padx=(8, 8), ipady=2)
+        self._pill_btn(
+            edit_row, "저장", self._do_update_voice, primary=True, small=True
+        ).pack(side=tk.LEFT, padx=(0, 6))
+        self._pill_btn(edit_row, "삭제", self._do_remove, small=True, outline=True).pack(
+            side=tk.LEFT
+        )
+
+        self._switch_tab("log")
 
         self._set_form_visible(False)
 
@@ -505,11 +613,11 @@ class RegisterApp:
 
     def _show_banner(self, kind: str, message: str) -> None:
         styles = {
-            "error": (C["new_soft"], C["new"]),
-            "warn": (C["warn_soft"], C["warn"]),
-            "ok": (C["ok_soft"], C["known"]),
+            "error": (C["negative_bg"], C["canvas"]),
+            "warn": (C["warning"], C["warning_content"]),
+            "ok": (C["primary_pale"], C["positive_deep"]),
         }
-        bg, fg = styles.get(kind, (C["line"], C["muted"]))
+        bg, fg = styles.get(kind, (C["ink"], C["primary"]))
         self.banner.configure(bg=bg)
         self.banner_msg.configure(text=message, bg=bg, fg=fg)
         for child in self.banner.winfo_children():
@@ -518,7 +626,9 @@ class RegisterApp:
         self.banner.pack(fill=tk.X, pady=(0, 12))
 
     def _on_log(self, entry: dict) -> None:
-        self.root.after(0, lambda: self._append_log(entry))
+        if self._closing:
+            return
+        self._schedule(0, lambda: self._append_log(entry))
 
     def _format_log_line(self, entry: dict) -> tuple[str, str]:
         ts = datetime.fromtimestamp(entry["at"]).strftime("%H:%M:%S")
@@ -526,11 +636,16 @@ class RegisterApp:
         return f"{ts}  {entry['message']}\n", level
 
     def _append_log(self, entry: dict) -> None:
+        if self._closing:
+            return
         line, level = self._format_log_line(entry)
-        self.log_text.configure(state=tk.NORMAL)
-        self.log_text.insert(tk.END, line, level)
-        self.log_text.see(tk.END)
-        self.log_text.configure(state=tk.DISABLED)
+        try:
+            self.log_text.configure(state=tk.NORMAL)
+            self.log_text.insert(tk.END, line, level)
+            self.log_text.see(tk.END)
+            self.log_text.configure(state=tk.DISABLED)
+        except tk.TclError:
+            pass
 
     def _load_logs(self) -> None:
         self.log_text.configure(state=tk.NORMAL)
@@ -548,11 +663,11 @@ class RegisterApp:
             self._show_banner(kind, msg)
         elif kind == "ok":
             self._show_banner("ok", msg)
-            self.root.after(2500, self._hide_banner)
+            self._schedule(2500, self._hide_banner)
 
     def _draw_dot(self, on: bool) -> None:
         self.status_dot.delete("all")
-        color = C["ok"] if on else "#f87171"
+        color = C["positive"] if on else C["mute"]
         self.status_dot.create_oval(2, 2, 10, 10, fill=color, outline=C["ink"], width=1)
 
     def _refresh_ports(self, select: str | None = None) -> None:
@@ -589,33 +704,41 @@ class RegisterApp:
         self.serial_mgr.set_port(device)
 
     def _on_detection(self, entry: dict) -> None:
-        self.root.after(0, lambda: self._show_pending(entry))
+        if self._closing:
+            return
+        self._schedule(0, lambda: self._show_pending(entry))
 
     def _poll_serial(self) -> None:
-        snap = self.state.snapshot()
-        ok = snap["serial_ok"]
-        self._draw_dot(ok)
+        if self._closing:
+            return
+        try:
+            snap = self.state.snapshot()
+            ok = snap["serial_ok"]
+            self._draw_dot(ok)
 
-        if ok:
-            self.serial_var.set(f"연결됨 · {snap['serial_port']}")
-        else:
-            err = snap["serial_error"]
-            port = self.serial_mgr.get_port() or "—"
-            if err == "포트를 선택하세요":
-                self.serial_var.set("포트 선택 필요")
-            elif err:
-                self.serial_var.set(f"끊김 · {port}")
+            if ok:
+                self.serial_var.set(f"연결됨 · {snap['serial_port']}")
             else:
-                self.serial_var.set(f"대기 · {port}")
+                err = snap["serial_error"]
+                port = self.serial_mgr.get_port() or "—"
+                if err == "포트를 선택하세요":
+                    self.serial_var.set("포트 선택 필요")
+                elif err:
+                    self.serial_var.set(f"끊김 · {port}")
+                else:
+                    self.serial_var.set(f"대기 · {port}")
 
-        self.count_var.set(f"{snap['mapping_count']}개 등록")
-        self.root.after(500, self._poll_serial)
+            self.count_var.set(f"{snap['mapping_count']}개 등록")
+        except tk.TclError:
+            return
+        self._schedule(500, self._poll_serial)
 
     def _set_badge(self, kind: str, text: str) -> None:
+        # badge-positive / badge-negative — Wise green reserved for CTAs only
         styles = {
-            "wait": (C["line"], C["muted"]),
-            "new": (C["new_soft"], C["new"]),
-            "known": (C["ok_soft"], C["known"]),
+            "wait": (C["canvas_soft"], C["mute"]),
+            "new": (C["primary_pale"], C["positive_deep"]),
+            "known": (C["primary_pale"], C["positive_deep"]),
         }
         bg, fg = styles.get(kind, styles["wait"])
         self.badge_label.configure(text=text, bg=bg, fg=fg)
@@ -636,11 +759,18 @@ class RegisterApp:
         self.voice_entry.delete(0, tk.END)
         self.voice_entry.insert(0, voice)
 
+    def _update_known_label(self) -> None:
+        if self.known_var.get():
+            self.known_label.pack(anchor=tk.W, pady=(4, 0), before=self.form)
+        else:
+            self.known_label.pack_forget()
+
     def _show_pending(self, pending: dict | None) -> None:
         if not pending:
             self._set_badge("wait", "대기")
             self.id_var.set("오브를 리더에 태그하세요")
             self.known_var.set("")
+            self._update_known_label()
             self._set_form_visible(False)
             return
 
@@ -648,10 +778,12 @@ class RegisterApp:
         if pending["known"]:
             self._set_badge("known", "등록됨")
             self.known_var.set(f"voice · {pending['voice']}")
+            self._update_known_label()
             self._set_form_visible(False)
         else:
             self._set_badge("new", "신규")
             self.known_var.set("")
+            self._update_known_label()
             self._set_form_visible(True)
             snap = self.state.snapshot()
             self._rebuild_chips(snap["groups"])
@@ -663,7 +795,9 @@ class RegisterApp:
         self.voice_entry.configure(state=state)
         self.btn_add.configure(state=state)
         if on:
-            self.btn_add.configure(fg="#ffffff")
+            self.btn_add.configure(fg=C["on_primary"], bg=C["primary"])
+        else:
+            self.btn_add.configure(fg=C["mute"], bg=C["primary_pale"])
         for w in self.chip_frame.winfo_children():
             w.configure(state=state)
 
@@ -682,14 +816,17 @@ class RegisterApp:
         sel_id = self._selected_list_id()
         self._refresh_mapping_list(select_id=sel_id)
 
+    def _clear_list_selection(self) -> None:
+        self.list_edit_id_var.set("목록에서 항목을 선택하세요")
+        self.list_edit_voice.delete(0, tk.END)
+
     def _on_list_select(self, _event=None) -> None:
         orb_id = self._selected_list_id()
         if not orb_id:
-            self.list_edit_id_var.set("")
-            self.list_edit_voice.delete(0, tk.END)
+            self._clear_list_selection()
             return
         values = self.tree.item(self.tree.selection()[0], "values")
-        self.list_edit_id_var.set(f"선택 · {values[0]}")
+        self.list_edit_id_var.set(values[0])
         self.list_edit_voice.delete(0, tk.END)
         self.list_edit_voice.insert(0, values[1])
 
@@ -712,8 +849,7 @@ class RegisterApp:
             self.tree.see(pick)
             self._on_list_select()
         elif select_id:
-            self.list_edit_id_var.set("")
-            self.list_edit_voice.delete(0, tk.END)
+            self._clear_list_selection()
 
     def _refresh_all(self) -> None:
         snap = self.state.snapshot()
@@ -764,8 +900,7 @@ class RegisterApp:
         try:
             remove_orb(orb_id)
             self.state.push_log("ok", f"삭제 · {orb_id}")
-            self.list_edit_id_var.set("")
-            self.list_edit_voice.delete(0, tk.END)
+            self._clear_list_selection()
             self._refresh_all()
         except KeyError:
             self._user_message("error", "목록에 없는 오브입니다.")
@@ -775,8 +910,18 @@ class RegisterApp:
         self.root.mainloop()
 
     def _on_close(self) -> None:
+        if self._closing:
+            return
+        self._closing = True
         self.serial_mgr.stop()
-        self.root.destroy()
+        try:
+            self.root.quit()
+        except tk.TclError:
+            pass
+        try:
+            self.root.destroy()
+        except tk.TclError:
+            pass
 
 
 def run_gui(
