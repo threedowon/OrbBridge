@@ -15,6 +15,7 @@ from mapping_store import (
     list_groups,
     load_mapping,
     normalize_id,
+    resolve_orb_key,
     save_mapping,
     suggest_voice,
     validate_voice,
@@ -312,24 +313,26 @@ def add_orb(orb_id: str, voice: str, state: RegisterState | None = None) -> str:
 
 
 def update_orb(orb_id: str, voice: str, state: RegisterState | None = None) -> str:
-    orb_id = normalize_id(orb_id)
-    voice = validate_voice(voice)
     mapping = load_mapping()
-    if orb_id not in mapping:
+    key = resolve_orb_key(orb_id, mapping)
+    voice = validate_voice(voice)
+    if key not in mapping:
         raise KeyError("not found")
-    mapping[orb_id] = {"voice": voice}
+    mapping[key] = {"voice": voice}
     save_mapping(mapping)
     if state:
-        state.push_log("ok", f"수정 · {orb_id} → {voice}")
-    print(f"[register] UPDATE {orb_id} -> {voice}")
-    return orb_id
+        state.push_log("ok", f"수정 · {key} → {voice}")
+    print(f"[register] UPDATE {key} -> {voice}")
+    return key
 
 
-def remove_orb(orb_id: str) -> None:
-    orb_id = normalize_id(orb_id)
+def remove_orb(orb_id: str, state: RegisterState | None = None) -> None:
     mapping = load_mapping()
-    if orb_id not in mapping:
+    key = resolve_orb_key(orb_id, mapping)
+    if key not in mapping:
         raise KeyError("not found")
-    del mapping[orb_id]
+    del mapping[key]
     save_mapping(mapping)
-    print(f"[register] REMOVE {orb_id}")
+    if state:
+        state.push_log("ok", f"삭제 · {key}")
+    print(f"[register] REMOVE {key}")

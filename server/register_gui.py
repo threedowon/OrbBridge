@@ -81,6 +81,7 @@ class RegisterApp:
         self.default_port = default_port
         self._port_map: dict[str, str] = {}
         self._closing = False
+        self._context_menu_iid: str | None = None
 
         self.root = tk.Tk()
         self.list_search_var = tk.StringVar(master=self.root)
@@ -566,6 +567,11 @@ class RegisterApp:
         self.tree.column("id", width=400, stretch=True)
         self.tree.column("voice", width=100, stretch=False)
         self.tree.bind("<<TreeviewSelect>>", self._on_list_select)
+        self.tree.bind("<Button-3>", self._on_tree_right_click)
+        self.tree.bind("<Double-1>", self._on_tree_double_click)
+        self._tree_menu = tk.Menu(self.root, tearoff=0)
+        self._tree_menu.add_command(label="Voice 편집", command=self._menu_edit_voice)
+        self._tree_menu.add_command(label="삭제", command=self._menu_remove)
         self.tree_scroll = ttk.Scrollbar(
             self.tree_wrap, orient=tk.VERTICAL, command=self.tree.yview
         )
@@ -816,11 +822,143 @@ class RegisterApp:
         sel_id = self._selected_list_id()
         self._refresh_mapping_list(select_id=sel_id)
 
+    def _context_orb_id(self) -> str | None:
+        if self._context_menu_iid and self.tree.exists(self._context_menu_iid):
+            return str(self.tree.item(self._context_menu_iid, "values")[0])
+        return self._selected_list_id()
+
+    def _apply_context_selection(self) -> None:
+        if self._context_menu_iid and self.tree.exists(self._context_menu_iid):
+            self.tree.selection_set(self._context_menu_iid)
+            self.tree.focus(self._context_menu_iid)
+            self._on_list_select()
+
+    def _on_tree_right_click(self, event) -> None:
+        row = self.tree.identify_row(event.y)
+        if not row:
+            return
+        self._context_menu_iid = row
+        self.tree.selection_set(row)
+        self.tree.focus(row)
+        self._on_list_select()
+        self._tree_menu.post(event.x_root, event.y_root)
+
+    def _selected_list_row(self) -> tuple[str, str] | None:
+        sel = self.tree.selection()
+        if not sel:
+            return None
+        values = self.tree.item(sel[0], "values")
+        return str(values[0]), str(values[1])
+
+    def _open_voice_edit_dialog(self, orb_id: str, voice: str) -> None:
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Voice 편집")
+        dlg.configure(bg=C["canvas"])
+        dlg.resizable(False, False)
+        dlg.transient(self.root)
+        dlg.grab_set()
+
+        frame = tk.Frame(dlg, bg=C["canvas"], padx=20, pady=16)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        tk.Label(
+            frame,
+            text="ID",
+            font=self._fonts["body"],
+            bg=C["canvas"],
+            fg=C["mute"],
+        ).pack(anchor=tk.W)
+        tk.Label(
+            frame,
+            text=orb_id,
+            font=self._fonts["mono"],
+            bg=C["canvas_soft"],
+            fg=C["ink"],
+            anchor=tk.W,
+            padx=8,
+            pady=4,
+        ).pack(fill=tk.X, pady=(2, 10))
+
+        tk.Label(
+            frame,
+            text="Voice",
+            font=self._fonts["label"],
+            bg=C["canvas"],
+            fg=C["body"],
+        ).pack(anchor=tk.W)
+        voice_var = tk.StringVar(value=voice)
+        voice_entry = self._entry(frame, textvariable=voice_var, width=28)
+        voice_entry.pack(fill=tk.X, pady=(4, 12), ipady=4)
+
+        btn_row = tk.Frame(frame, bg=C["canvas"])
+        btn_row.pack(fill=tk.X)
+
+        def save() -> None:
+            try:
+                new_voice = voice_var.get().strip()
+                update_orb(orb_id, new_voice, self.state)
+                self._refresh_all()
+                self._hide_banner()
+                dlg.destroy()
+            except KeyError:
+                messagebox.showerror("오류", "목록에 없는 오브입니다.", parent=dlg)
+            except ValueError as e:
+                messagebox.showerror("오류", str(e), parent=dlg)
+
+        self._pill_btn(btn_row, "저장", save, primary=True, small=True).pack(
+            side=tk.LEFT, padx=(0, 8)
+        )
+        self._pill_btn(btn_row, "취소", dlg.destroy, small=True, outline=True).pack(
+            side=tk.LEFT
+        )
+
+        voice_entry.focus_set()
+        dlg.after_idle(lambda: voice_entry.select_range(0, tk.END))
+        voice_entry.bind("<Return>", lambda _e: save())
+        dlg.bind("<Escape>", lambda _e: dlg.destroy())
+
+        dlg.update_idletasks()
+        rx = self.root.winfo_rootx()
+        ry = self.root.winfo_rooty()
+        rw = self.root.winfo_width()
+        rh = self.root.winfo_height()
+        dw = dlg.winfo_width()
+        dh = dlg.winfo_height()
+        dlg.geometry(f"+{rx + (rw - dw) // 2}+{ry + (rh - dh) // 2}")
+
+    def _on_tree_double_click(self, event) -> None:
+        row = self.tree.identify_row(event.y)
+        if not row:
+            return
+        self._context_menu_iid = row
+        self.tree.selection_set(row)
+        self.tree.focus(row)
+        self._on_list_select()
+        selected = self._selected_list_row()
+        if selected:
+            self._open_voice_edit_dialog(selected[0], selected[1])
+
+    def _menu_edit_voice(self) -> None:
+        self._apply_context_selection()
+        selected = self._selected_list_row()
+        if not selected:
+            messagebox.showinfo("수정", "목록에서 오브를 선택하세요.")
+            return
+        self._switch_tab("list")
+        self._open_voice_edit_dialog(selected[0], selected[1])
+
+    def _menu_remove(self) -> None:
+        self._apply_context_selection()
+        self._do_remove()
+
     def _clear_list_selection(self) -> None:
         self.list_edit_id_var.set("목록에서 항목을 선택하세요")
         self.list_edit_voice.delete(0, tk.END)
 
     def _on_list_select(self, _event=None) -> None:
+        sel = self.tree.selection()
+        if sel:
+            self._context_menu_iid = sel[0]
         orb_id = self._selected_list_id()
         if not orb_id:
             self._clear_list_selection()
@@ -890,16 +1028,15 @@ class RegisterApp:
             self._user_message("error", str(e))
 
     def _do_remove(self) -> None:
-        sel = self.tree.selection()
-        if not sel:
+        orb_id = self._selected_list_id()
+        if not orb_id:
             messagebox.showinfo("삭제", "목록에서 오브를 선택하세요.")
             return
-        orb_id = self.tree.item(sel[0], "values")[0]
         if not messagebox.askyesno("삭제", f"{orb_id}\n삭제할까요?"):
             return
         try:
-            remove_orb(orb_id)
-            self.state.push_log("ok", f"삭제 · {orb_id}")
+            remove_orb(orb_id, self.state)
+            self._context_menu_iid = None
             self._clear_list_selection()
             self._refresh_all()
         except KeyError:

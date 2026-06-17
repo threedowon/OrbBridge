@@ -57,6 +57,24 @@ def normalize_id(raw: str) -> str:
     return ":".join(hex_only[i : i + 2] for i in range(0, len(hex_only), 2))
 
 
+def resolve_orb_key(orb_id: str, mapping: dict) -> str:
+    """Map UI / serial id to a key in orb_mapping.json.
+
+    New ids must pass normalize_id. Keys already stored (e.g. legacy test ids
+    with non-hex nibbles) are accepted as-is.
+    """
+    raw = str(orb_id).strip()
+    if not raw:
+        raise ValueError("empty id")
+    if raw in mapping:
+        return raw
+    upper = raw.upper()
+    for key in mapping:
+        if key.upper() == upper:
+            return key
+    return normalize_id(raw)
+
+
 def load_mapping(path: Path | None = None) -> dict:
     p = path or MAPPING_PATH
     with open(p, encoding="utf-8") as f:
