@@ -311,6 +311,20 @@ def add_orb(orb_id: str, voice: str, state: RegisterState | None = None) -> str:
     return orb_id
 
 
+def update_orb(orb_id: str, voice: str, state: RegisterState | None = None) -> str:
+    orb_id = normalize_id(orb_id)
+    voice = validate_voice(voice)
+    mapping = load_mapping()
+    if orb_id not in mapping:
+        raise KeyError("not found")
+    mapping[orb_id] = {"voice": voice}
+    save_mapping(mapping)
+    if state:
+        state.push_log("ok", f"수정 · {orb_id} → {voice}")
+    print(f"[register] UPDATE {orb_id} -> {voice}")
+    return orb_id
+
+
 def remove_orb(orb_id: str) -> None:
     orb_id = normalize_id(orb_id)
     mapping = load_mapping()

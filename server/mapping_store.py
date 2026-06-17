@@ -4,11 +4,35 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 
-BACKEND_DIR = Path(__file__).resolve().parent
-MAPPING_PATH = BACKEND_DIR / "orb_mapping.json"
 VOICE_RE = re.compile(r"^([a-z0-9]+)_(\d+)$", re.I)
+
+
+def app_dir() -> Path:
+    """Writable app data directory (exe folder when frozen, server/ in dev)."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+BACKEND_DIR = app_dir()
+MAPPING_PATH = BACKEND_DIR / "orb_mapping.json"
+REGISTER_CONFIG_PATH = BACKEND_DIR / "config.json"
+
+
+def ensure_register_data() -> None:
+    """Create orb_mapping.json / config.json beside the app if missing."""
+    if not MAPPING_PATH.exists():
+        MAPPING_PATH.write_text("{}\n", encoding="utf-8")
+
+    if not REGISTER_CONFIG_PATH.exists():
+        default = {"serial": {"port": "COM13", "baudrate": 115200}}
+        REGISTER_CONFIG_PATH.write_text(
+            json.dumps(default, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
 
 def normalize_id(raw: str) -> str:

@@ -16,6 +16,7 @@ from register_core import (
     friendly_serial_error,
     list_com_ports,
     remove_orb,
+    update_orb,
 )
 
 # Palette — table UI와 톤 맞춤
@@ -34,6 +35,7 @@ C = {
     "known": "#15803d",
     "warn": "#a16207",
     "warn_soft": "#fef9c3",
+    "tab_track": "#eceef1",
 }
 
 
@@ -50,6 +52,8 @@ class RegisterApp:
         self._port_map: dict[str, str] = {}
 
         self.root = tk.Tk()
+        self.list_search_var = tk.StringVar(master=self.root)
+        self.list_edit_id_var = tk.StringVar(master=self.root)
         self.root.title("Orb Register")
         self.root.configure(bg=C["bg"])
         self.root.minsize(700, 680)
@@ -63,7 +67,7 @@ class RegisterApp:
             "badge": tkfont.Font(family="Segoe UI", size=9, weight="bold"),
             "chip": tkfont.Font(family="Segoe UI", size=9),
             "tab": tkfont.Font(family="Segoe UI", size=10),
-            "tab_sel": tkfont.Font(family="Segoe UI", size=13, weight="bold"),
+            "tab_sel": tkfont.Font(family="Segoe UI", size=11, weight="bold"),
         }
 
         self._setup_styles()
@@ -115,25 +119,26 @@ class RegisterApp:
         )
 
     def _style_tab_btn(self, btn: tk.Button, *, selected: bool) -> None:
+        track = C["tab_track"]
         if selected:
             btn.configure(
                 font=self._fonts["tab_sel"],
                 bg=C["ink"],
                 fg="#ffffff",
-                activebackground=C["ink"],
+                activebackground="#2d2d2d",
                 activeforeground="#ffffff",
-                padx=22,
-                pady=10,
+                padx=14,
+                pady=4,
             )
         else:
             btn.configure(
                 font=self._fonts["tab"],
-                bg=C["line"],
+                bg=track,
                 fg=C["muted"],
-                activebackground=C["accent_soft"],
+                activebackground="#e2e5e9",
                 activeforeground=C["ink"],
-                padx=14,
-                pady=6,
+                padx=12,
+                pady=4,
             )
 
     def _switch_tab(self, tab: str) -> None:
@@ -172,7 +177,7 @@ class RegisterApp:
         small: bool = False,
     ) -> tk.Button:
         if primary:
-            bg, fg, hover = C["ink"], "#fff", "#333"
+            bg, fg, hover = C["ink"], "#ffffff", "#333333"
         else:
             bg, fg, hover = C["card"], C["ink"], C["accent_soft"]
 
@@ -184,7 +189,7 @@ class RegisterApp:
             bg=bg,
             fg=fg,
             activebackground=hover,
-            activeforeground=fg,
+            activeforeground="#ffffff" if primary else fg,
             relief=tk.FLAT,
             padx=14 if not small else 10,
             pady=6 if not small else 4,
@@ -193,11 +198,12 @@ class RegisterApp:
             highlightthickness=1,
             highlightbackground=C["ink"],
         )
-        btn.bind("<Enter>", lambda e: btn.configure(bg=hover))
-        if not primary:
-            btn.bind("<Leave>", lambda e: btn.configure(bg=bg))
+        if primary:
+            btn.bind("<Enter>", lambda e: btn.configure(bg=hover, fg="#ffffff"))
+            btn.bind("<Leave>", lambda e: btn.configure(bg=C["ink"], fg="#ffffff"))
         else:
-            btn.bind("<Leave>", lambda e: btn.configure(bg=C["ink"]))
+            btn.bind("<Enter>", lambda e: btn.configure(bg=hover))
+            btn.bind("<Leave>", lambda e: btn.configure(bg=bg))
         return btn
 
     def _build(self) -> None:
@@ -351,9 +357,7 @@ class RegisterApp:
         btn_row = tk.Frame(self.form, bg=C["card"])
         btn_row.pack(fill=tk.X)
         self.btn_add = self._pill_btn(btn_row, "등록", self._do_add, primary=True)
-        self.btn_add.pack(side=tk.LEFT, padx=(0, 8))
-        self.btn_skip = self._pill_btn(btn_row, "건너뛰기", self._do_skip)
-        self.btn_skip.pack(side=tk.LEFT)
+        self.btn_add.pack(side=tk.LEFT)
 
         # Log + registered list (tabs)
         panel_outer = tk.Frame(wrap, bg=C["ink"], padx=2, pady=2)
@@ -363,21 +367,23 @@ class RegisterApp:
         panel_inner.pack(fill=tk.BOTH, expand=True)
 
         tab_bar = tk.Frame(panel_inner, bg=C["card"])
-        tab_bar.pack(fill=tk.X, pady=(0, 10))
+        tab_bar.pack(fill=tk.X, pady=(0, 8))
+
+        tab_track = tk.Frame(tab_bar, bg=C["tab_track"], padx=3, pady=3)
+        tab_track.pack(anchor=tk.W)
 
         tab_kw = dict(
             relief=tk.FLAT,
             borderwidth=0,
-            highlightthickness=1,
-            highlightbackground=C["ink"],
+            highlightthickness=0,
             cursor="hand2",
         )
         self.tab_log_btn = tk.Button(
-            tab_bar, text="로그", command=lambda: self._switch_tab("log"), **tab_kw
+            tab_track, text="로그", command=lambda: self._switch_tab("log"), **tab_kw
         )
-        self.tab_log_btn.pack(side=tk.LEFT, padx=(0, 6))
+        self.tab_log_btn.pack(side=tk.LEFT, padx=(0, 2))
         self.tab_list_btn = tk.Button(
-            tab_bar,
+            tab_track,
             text="등록된 ID",
             command=lambda: self._switch_tab("list"),
             **tab_kw,
@@ -415,10 +421,59 @@ class RegisterApp:
         self.log_text.tag_configure("ok", foreground=C["ok"])
 
         list_toolbar = tk.Frame(self.list_tab, bg=C["card"])
-        list_toolbar.pack(fill=tk.X, pady=(0, 8))
-        self._pill_btn(list_toolbar, "선택 삭제", self._do_remove, small=True).pack(
-            side=tk.LEFT
+        list_toolbar.pack(fill=tk.X, pady=(0, 6))
+
+        tk.Label(
+            list_toolbar,
+            text="voice 검색",
+            font=self._fonts["chip"],
+            bg=C["card"],
+            fg=C["muted"],
+        ).pack(side=tk.LEFT)
+        self.list_search_entry = tk.Entry(
+            list_toolbar,
+            textvariable=self.list_search_var,
+            font=self._fonts["mono"],
+            relief=tk.FLAT,
+            highlightthickness=2,
+            highlightbackground=C["line"],
+            highlightcolor=C["accent"],
         )
+        self.list_search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 0), ipady=4)
+        self.list_search_var.trace_add("write", lambda *_: self._on_list_search())
+
+        edit_row = tk.Frame(self.list_tab, bg=C["card"])
+        edit_row.pack(fill=tk.X, pady=(0, 4))
+
+        tk.Label(
+            edit_row,
+            text="voice",
+            font=self._fonts["chip"],
+            bg=C["card"],
+            fg=C["muted"],
+        ).pack(side=tk.LEFT)
+        self.list_edit_voice = tk.Entry(
+            edit_row,
+            font=self._fonts["mono"],
+            relief=tk.FLAT,
+            highlightthickness=2,
+            highlightbackground=C["line"],
+            highlightcolor=C["accent"],
+        )
+        self.list_edit_voice.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 8), ipady=4)
+        self._pill_btn(edit_row, "저장", self._do_update_voice, primary=True, small=True).pack(
+            side=tk.LEFT, padx=(0, 6)
+        )
+        self._pill_btn(edit_row, "선택 삭제", self._do_remove, small=True).pack(side=tk.LEFT)
+
+        tk.Label(
+            self.list_tab,
+            textvariable=self.list_edit_id_var,
+            font=self._fonts["chip"],
+            bg=C["card"],
+            fg=C["muted"],
+            anchor=tk.W,
+        ).pack(fill=tk.X, pady=(0, 6))
 
         self.tree_wrap = tk.Frame(self.list_tab, bg=C["card"])
         self.tree_wrap.pack(fill=tk.BOTH, expand=True)
@@ -429,6 +484,7 @@ class RegisterApp:
         self.tree.heading("voice", text="voice")
         self.tree.column("id", width=440, stretch=True)
         self.tree.column("voice", width=120, stretch=False)
+        self.tree.bind("<<TreeviewSelect>>", self._on_list_select)
         self.tree_scroll = ttk.Scrollbar(
             self.tree_wrap, orient=tk.VERTICAL, command=self.tree.yview
         )
@@ -606,20 +662,63 @@ class RegisterApp:
         state = tk.NORMAL if on else tk.DISABLED
         self.voice_entry.configure(state=state)
         self.btn_add.configure(state=state)
-        self.btn_skip.configure(state=state)
+        if on:
+            self.btn_add.configure(fg="#ffffff")
         for w in self.chip_frame.winfo_children():
             w.configure(state=state)
 
-    def _refresh_mapping_list(self) -> None:
+    def _filtered_mapping_rows(self) -> list[dict]:
+        rows = self.state.snapshot()["mapping"]
+        q = self.list_search_var.get().strip().lower()
+        if not q:
+            return rows
+        return [
+            row
+            for row in rows
+            if q in row.get("voice", "").lower() or q in row.get("id", "").lower()
+        ]
+
+    def _on_list_search(self) -> None:
+        sel_id = self._selected_list_id()
+        self._refresh_mapping_list(select_id=sel_id)
+
+    def _on_list_select(self, _event=None) -> None:
+        orb_id = self._selected_list_id()
+        if not orb_id:
+            self.list_edit_id_var.set("")
+            self.list_edit_voice.delete(0, tk.END)
+            return
+        values = self.tree.item(self.tree.selection()[0], "values")
+        self.list_edit_id_var.set(f"선택 · {values[0]}")
+        self.list_edit_voice.delete(0, tk.END)
+        self.list_edit_voice.insert(0, values[1])
+
+    def _selected_list_id(self) -> str | None:
+        sel = self.tree.selection()
+        if not sel:
+            return None
+        return str(self.tree.item(sel[0], "values")[0])
+
+    def _refresh_mapping_list(self, select_id: str | None = None) -> None:
         for item in self.tree.get_children():
             self.tree.delete(item)
-        for row in self.state.snapshot()["mapping"]:
-            self.tree.insert("", tk.END, values=(row["id"], row["voice"]))
+        pick = None
+        for row in self._filtered_mapping_rows():
+            iid = self.tree.insert("", tk.END, values=(row["id"], row["voice"]))
+            if select_id and row["id"] == select_id:
+                pick = iid
+        if pick:
+            self.tree.selection_set(pick)
+            self.tree.see(pick)
+            self._on_list_select()
+        elif select_id:
+            self.list_edit_id_var.set("")
+            self.list_edit_voice.delete(0, tk.END)
 
     def _refresh_all(self) -> None:
         snap = self.state.snapshot()
         self._show_pending(snap["pending"])
-        self._refresh_mapping_list()
+        self._refresh_mapping_list(select_id=self._selected_list_id())
 
     def _pending_id(self) -> str | None:
         pending = self.state.snapshot()["pending"]
@@ -639,10 +738,20 @@ class RegisterApp:
         except ValueError as e:
             self._user_message("error", str(e))
 
-    def _do_skip(self) -> None:
-        if self._pending_id():
-            self.state.clear_pending()
+    def _do_update_voice(self) -> None:
+        orb_id = self._selected_list_id()
+        if not orb_id:
+            messagebox.showinfo("수정", "목록에서 오브를 선택하세요.")
+            return
+        voice = self.list_edit_voice.get().strip()
+        try:
+            update_orb(orb_id, voice, self.state)
             self._refresh_all()
+            self._hide_banner()
+        except KeyError:
+            self._user_message("error", "목록에 없는 오브입니다.")
+        except ValueError as e:
+            self._user_message("error", str(e))
 
     def _do_remove(self) -> None:
         sel = self.tree.selection()
@@ -655,6 +764,8 @@ class RegisterApp:
         try:
             remove_orb(orb_id)
             self.state.push_log("ok", f"삭제 · {orb_id}")
+            self.list_edit_id_var.set("")
+            self.list_edit_voice.delete(0, tk.END)
             self._refresh_all()
         except KeyError:
             self._user_message("error", "목록에 없는 오브입니다.")

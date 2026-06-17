@@ -2,13 +2,12 @@
 
 import argparse
 import json
-from pathlib import Path
 
-from mapping_store import MAPPING_PATH, load_mapping
+from mapping_store import BACKEND_DIR, MAPPING_PATH, ensure_register_data, load_mapping
 from register_core import RegisterState
 from register_gui import run_gui
 
-SERVER_DIR = Path(__file__).resolve().parent
+SERVER_DIR = BACKEND_DIR
 
 
 def print_orb_list() -> None:
@@ -39,8 +38,11 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.list:
+        ensure_register_data()
         print_orb_list()
         return
+
+    ensure_register_data()
 
     with open(SERVER_DIR / "config.json", encoding="utf-8") as f:
         config = json.load(f)

@@ -1,0 +1,43 @@
+# Default: normalize line endings on checkout/commit
+* text=auto
+
+# Source & config — LF in repo
+*.py          text eol=lf
+*.js          text eol=lf
+*.html        text eol=lf
+*.css         text eol=lf
+*.json        text eol=lf
+*.md          text eol=lf
+*.txt         text eol=lf
+*.spec        text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf
+
+# Windows scripts — CRLF
+*.bat         text eol=crlf
+*.cmd         text eol=crlf
+*.ps1         text eol=crlf
+
+# Shell — LF
+*.sh          text eol=lf
+
+# Binary — do not modify line endings
+*.png         binary
+*.jpg         binary
+*.jpeg        binary
+*.gif         binary
+*.webp        binary
+*.ico         binary
+*.mp3         binary
+*.wav         binary
+*.ogg         binary
+*.exe         binary
+*.dll         binary
+*.pyd         binary
+*.woff        binary
+*.woff2       binary
+*.ttf         binary
+*.eot         binary
+
+# Legacy prototype — exclude from language stats
+legacy/**     linguist-vendored
