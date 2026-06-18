@@ -197,18 +197,6 @@ document.getElementById('btn-enter').addEventListener('click', () => enterPlayVi
 
 document.body.addEventListener('click', () => unlock(), { once: true });
 
-async function loadVoiceCatalog() {
-  try {
-    const res = await fetch('/api/voices');
-    if (!res.ok) return;
-    const data = await res.json();
-    if (data.voices?.length) setVoices(data.voices);
-    if (data.index) setVoiceIndex(data.index);
-  } catch (e) {
-    console.warn('voice catalog unavailable, using defaults', e);
-  }
-}
-
 initConfetti();
 connectWs();
 

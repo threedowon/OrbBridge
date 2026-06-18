@@ -150,14 +150,14 @@
       "filter": 1400,
       "gain": 0.14,
       "notes": {
-        "C4": "",
-        "D4": "",
-        "E4": "",
-        "F4": "",
-        "G4": "",
-        "A4": "",
-        "B4": "",
-        "C5": ""
+        "C4": "sounds/ive_1/C4.wav",
+        "D4": "sounds/ive_1/D4.wav",
+        "E4": "sounds/ive_1/E4.wav",
+        "F4": "sounds/ive_1/F4.wav",
+        "G4": "sounds/ive_1/G4.wav",
+        "A4": "sounds/ive_1/A4.wav",
+        "B4": "sounds/ive_1/B4.wav",
+        "C5": "sounds/ive_1/C5.wav"
       }
     },
     "ive_2": {
@@ -206,6 +206,22 @@
         "A4": "",
         "B4": "",
         "C5": ""
+      }
+    },
+    "szk_1": {
+      "color": "#a78bfa",
+      "wave": "sine",
+      "filter": 2000,
+      "gain": 0.19,
+      "notes": {
+        "C4": "sounds/szk_1/C4.wav",
+        "D4": "sounds/szk_1/D4.wav",
+        "E4": "sounds/szk_1/E4.wav",
+        "F4": "sounds/szk_1/F4.wav",
+        "G4": "sounds/szk_1/G4.wav",
+        "A4": "sounds/szk_1/A4.wav",
+        "B4": "sounds/szk_1/B4.wav",
+        "C5": "sounds/szk_1/C5.wav"
       }
     }
   }

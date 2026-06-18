@@ -70,7 +70,7 @@ function sampleForVoice(voiceId, noteName, freq) {
   return sampleUrl(stored);
 }
 
-function playSample(url, dur = 0.32, when = 0) {
+function playSample(url, when = 0) {
   const c = unlock();
   const delayMs = when > 0 ? Math.max(0, (when - c.currentTime) * 1000) : 0;
 
@@ -85,14 +85,6 @@ function playSample(url, dur = 0.32, when = 0) {
       cleanup();
       console.warn('sample play failed', url, err);
     });
-    if (dur > 0) {
-      setTimeout(() => {
-        try {
-          audio.pause();
-        } catch { /* ignore */ }
-        cleanup();
-      }, dur * 1000);
-    }
   };
 
   if (delayMs > 0) setTimeout(start, delayMs);
@@ -126,10 +118,13 @@ function playOscTone(freq, voiceId, dur, when, preview) {
 }
 
 export function playTone(freq, voiceId, dur = 0.32, when = 0, { preview = false, noteName = '' } = {}) {
-  const url = sampleForVoice(voiceId, noteName, freq);
-  if (url) {
-    playSample(url, dur, when);
-    return;
+  // start / 다시듣기 — 정답 멜로디는 Web Audio (Voice Register 샘플 사용 안 함)
+  if (!preview) {
+    const url = sampleForVoice(voiceId, noteName, freq);
+    if (url) {
+      playSample(url, when);
+      return;
+    }
   }
   playOscTone(freq, voiceId, dur, when, preview);
 }

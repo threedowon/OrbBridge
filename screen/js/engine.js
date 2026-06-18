@@ -39,6 +39,13 @@ export function createEngine() {
     return (60 / melody.bpm) * 1000;
   }
 
+  /** 멜로디 steps duration → 초 (샘플 재생 길이) */
+  function noteDurationSec(col) {
+    const entry = melody?.notes?.[col];
+    const beats = entry !== undefined ? durAt(entry) : 1;
+    return (beatMs() * beats) / 1000;
+  }
+
   function emit(evt, data) {
     listeners[evt]?.forEach(fn => fn(data));
   }
@@ -107,7 +114,7 @@ export function createEngine() {
 
     const entry = melody.notes[col];
     const targetRow = noteAt(entry);
-    const toneDur = Math.min(0.9, 0.2 + 0.22 * durAt(entry));
+    const toneDur = noteDurationSec(col);
     const balls = placedInCol(col);
 
     for (const { row, voice: v } of balls) {
@@ -205,7 +212,7 @@ export function createEngine() {
       grid[col][row] = had ? -1 : voice;
       if (!had) {
         const note = rowToNoteIn(row, melody.scale);
-        playTone(note.freq, voice, 0.28, 0, { noteName: note.name });
+        playTone(note.freq, voice, noteDurationSec(col), 0, { noteName: note.name });
       }
       if (autoStart && phase === 'idle') {
         phase = 'running';
@@ -231,7 +238,7 @@ export function createEngine() {
 
       syncLockedFromGrid();
       const note = rowToNoteIn(row, melody.scale);
-      playTone(note.freq, voiceId, 0.28, 0, { noteName: note.name });
+      playTone(note.freq, voiceId, noteDurationSec(col), 0, { noteName: note.name });
       emit('gridChange');
       redraw();
     },
