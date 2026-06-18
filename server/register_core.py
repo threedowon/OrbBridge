@@ -20,6 +20,7 @@ from mapping_store import (
     suggest_voice,
     validate_voice,
 )
+from voice_store import ensure_voice_profile
 
 DETECT_TYPES = {"ds2431", "ds2431_detected", "detect", "orb_detect", "orb_id"}
 LOG_LIMIT = 80
@@ -305,6 +306,7 @@ def add_orb(orb_id: str, voice: str, state: RegisterState | None = None) -> str:
     mapping = load_mapping()
     mapping[orb_id] = {"voice": voice}
     save_mapping(mapping)
+    ensure_voice_profile(voice)
     if state:
         state.clear_pending()
         state.push_log("ok", f"등록 · {orb_id} → {voice}")
@@ -320,6 +322,7 @@ def update_orb(orb_id: str, voice: str, state: RegisterState | None = None) -> s
         raise KeyError("not found")
     mapping[key] = {"voice": voice}
     save_mapping(mapping)
+    ensure_voice_profile(voice)
     if state:
         state.push_log("ok", f"수정 · {key} → {voice}")
     print(f"[register] UPDATE {key} -> {voice}")

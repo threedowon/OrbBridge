@@ -4,8 +4,8 @@ import { noteNameToRow } from './data.js';
 export const ROW_NOTES = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'];
 export const ROW_LABELS = ['C', 'D', 'E', 'F', 'G', 'A', 'B', 'C'];
 
-/** orb_mapping.json 의 voice 문자열 → VOICES 배열 인덱스 */
-export const VOICE_INDEX = {
+/** orb_mapping.json voice → VOICES index (loaded from GET /api/voices) */
+let VOICE_INDEX = {
   aspa_1: 0,
   aspa_2: 1,
   aspa_3: 2,
@@ -16,6 +16,12 @@ export const VOICE_INDEX = {
   ive_4: 7,
   cortis_1: 8,
 };
+
+export function setVoiceIndex(index) {
+  if (index && typeof index === 'object') {
+    VOICE_INDEX = { ...index };
+  }
+}
 
 export function cellToTableRow(cell) {
   return Math.floor((cell + 1) / 2);

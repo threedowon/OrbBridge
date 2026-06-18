@@ -1,0 +1,212 @@
+{
+  "voices": {
+    "aspa_1": {
+      "color": "#f472b6",
+      "wave": "sine",
+      "filter": 900,
+      "gain": 0.2,
+      "notes": {
+        "C4": "sounds/aspa_1/C4.wav",
+        "D4": "sounds/aspa_1/D4.wav",
+        "E4": "sounds/aspa_1/E4.wav",
+        "F4": "sounds/aspa_1/F4.wav",
+        "G4": "sounds/aspa_1/G4.wav",
+        "A4": "sounds/aspa_1/A4.wav",
+        "B4": "sounds/aspa_1/B4.wav",
+        "C5": "sounds/aspa_1/C5.wav"
+      }
+    },
+    "aspa_2": {
+      "color": "#5eead4",
+      "wave": "triangle",
+      "filter": 2200,
+      "gain": 0.18,
+      "notes": {
+        "C4": "",
+        "D4": "",
+        "E4": "",
+        "F4": "",
+        "G4": "",
+        "A4": "",
+        "B4": "",
+        "C5": ""
+      }
+    },
+    "aspa_3": {
+      "color": "#fbbf24",
+      "wave": "sawtooth",
+      "filter": 1100,
+      "gain": 0.16,
+      "notes": {
+        "C4": "",
+        "D4": "",
+        "E4": "",
+        "F4": "",
+        "G4": "",
+        "A4": "",
+        "B4": "",
+        "C5": ""
+      }
+    },
+    "aspa_4": {
+      "color": "#a78bfa",
+      "wave": "sine",
+      "filter": 2000,
+      "gain": 0.19,
+      "notes": {
+        "C4": "",
+        "D4": "",
+        "E4": "",
+        "F4": "",
+        "G4": "",
+        "A4": "",
+        "B4": "",
+        "C5": ""
+      }
+    },
+    "bts_1": {
+      "color": "#60a5fa",
+      "wave": "sine",
+      "filter": 1400,
+      "gain": 0.17,
+      "notes": {
+        "C4": "",
+        "D4": "",
+        "E4": "",
+        "F4": "",
+        "G4": "",
+        "A4": "",
+        "B4": "",
+        "C5": ""
+      }
+    },
+    "bts_2": {
+      "color": "#4ade80",
+      "wave": "triangle",
+      "filter": 1600,
+      "gain": 0.19,
+      "notes": {
+        "C4": "",
+        "D4": "",
+        "E4": "",
+        "F4": "",
+        "G4": "",
+        "A4": "",
+        "B4": "",
+        "C5": ""
+      }
+    },
+    "cortis_1": {
+      "color": "#c084fc",
+      "wave": "triangle",
+      "filter": 2400,
+      "gain": 0.18,
+      "notes": {
+        "C4": "sounds/cortis_1/C4.wav",
+        "D4": "sounds/cortis_1/D4.wav",
+        "E4": "sounds/cortis_1/E4.wav",
+        "F4": "sounds/cortis_1/F4.wav",
+        "G4": "sounds/cortis_1/G4.wav",
+        "A4": "sounds/cortis_1/A4.wav",
+        "B4": "sounds/cortis_1/B4.wav",
+        "C5": "sounds/cortis_1/C5.wav"
+      }
+    },
+    "cortis_2": {
+      "color": "#f472b6",
+      "wave": "sawtooth",
+      "filter": 900,
+      "gain": 0.16,
+      "notes": {
+        "C4": "",
+        "D4": "",
+        "E4": "",
+        "F4": "",
+        "G4": "",
+        "A4": "",
+        "B4": "",
+        "C5": ""
+      }
+    },
+    "cortis_3": {
+      "color": "#5eead4",
+      "wave": "square",
+      "filter": 2200,
+      "gain": 0.18,
+      "notes": {
+        "C4": "",
+        "D4": "",
+        "E4": "",
+        "F4": "",
+        "G4": "",
+        "A4": "",
+        "B4": "",
+        "C5": ""
+      }
+    },
+    "ive_1": {
+      "color": "#60a5fa",
+      "wave": "square",
+      "filter": 1400,
+      "gain": 0.14,
+      "notes": {
+        "C4": "",
+        "D4": "",
+        "E4": "",
+        "F4": "",
+        "G4": "",
+        "A4": "",
+        "B4": "",
+        "C5": ""
+      }
+    },
+    "ive_2": {
+      "color": "#4ade80",
+      "wave": "triangle",
+      "filter": 1600,
+      "gain": 0.17,
+      "notes": {
+        "C4": "",
+        "D4": "",
+        "E4": "",
+        "F4": "",
+        "G4": "",
+        "A4": "",
+        "B4": "",
+        "C5": ""
+      }
+    },
+    "ive_3": {
+      "color": "#fb923c",
+      "wave": "sine",
+      "filter": 800,
+      "gain": 0.21,
+      "notes": {
+        "C4": "",
+        "D4": "",
+        "E4": "",
+        "F4": "",
+        "G4": "",
+        "A4": "",
+        "B4": "",
+        "C5": ""
+      }
+    },
+    "ive_4": {
+      "color": "#f87171",
+      "wave": "sawtooth",
+      "filter": 1800,
+      "gain": 0.15,
+      "notes": {
+        "C4": "",
+        "D4": "",
+        "E4": "",
+        "F4": "",
+        "G4": "",
+        "A4": "",
+        "B4": "",
+        "C5": ""
+      }
+    }
+  }
+}

@@ -111,7 +111,8 @@ export function createEngine() {
     const balls = placedInCol(col);
 
     for (const { row, voice: v } of balls) {
-      playTone(rowToNoteIn(row, melody.scale).freq, v, toneDur);
+      const note = rowToNoteIn(row, melody.scale);
+      playTone(note.freq, v, toneDur, 0, { noteName: note.name });
     }
 
     const correct = grid[col][targetRow] >= 0;
@@ -202,7 +203,10 @@ export function createEngine() {
       clearPreview();
       const had = grid[col][row] >= 0;
       grid[col][row] = had ? -1 : voice;
-      if (!had) playTone(rowToNoteIn(row, melody.scale).freq, voice, 0.28);
+      if (!had) {
+        const note = rowToNoteIn(row, melody.scale);
+        playTone(note.freq, voice, 0.28, 0, { noteName: note.name });
+      }
       if (autoStart && phase === 'idle') {
         phase = 'running';
         startTime = Date.now();
@@ -226,7 +230,8 @@ export function createEngine() {
       if (orbId) orbPositions.set(orbId, { col, row });
 
       syncLockedFromGrid();
-      playTone(rowToNoteIn(row, melody.scale).freq, voiceId, 0.28);
+      const note = rowToNoteIn(row, melody.scale);
+      playTone(note.freq, voiceId, 0.28, 0, { noteName: note.name });
       emit('gridChange');
       redraw();
     },
@@ -300,8 +305,11 @@ export function createEngine() {
 
       melody.notes.forEach((entry, i) => {
         const d = durAt(entry);
-        const freq = rowToNoteIn(noteAt(entry), melody.scale).freq;
-        playTone(freq, voice, Math.min(0.9, 0.2 + 0.22 * d), base + acc * step, { preview: true });
+        const note = rowToNoteIn(noteAt(entry), melody.scale);
+        playTone(note.freq, voice, Math.min(0.9, 0.2 + 0.22 * d), base + acc * step, {
+          preview: true,
+          noteName: note.name,
+        });
 
         const t = setTimeout(() => {
           if (session !== previewSession) return;

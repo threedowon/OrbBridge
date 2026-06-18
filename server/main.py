@@ -1,19 +1,27 @@
 import json
+import os
 import serial
 import threading
 import time
+from pathlib import Path
 from pythonosc import udp_client
 
+from mapping_store import load_mapping
+
+SERVER_DIR = Path(__file__).resolve().parent
+os.chdir(SERVER_DIR)
+
 # ── 설정 로드 ──────────────────────────────────────────
-with open("config.json")      as f: config      = json.load(f)
-with open("orb_mapping.json") as f: orb_mapping = json.load(f)
-with open("stage_data.json")  as f: stage_data  = json.load(f)
+with open(SERVER_DIR / "config.json")      as f: config      = json.load(f)
+with open(SERVER_DIR / "orb_mapping.json") as f: orb_mapping = json.load(f)
+with open(SERVER_DIR / "stage_data.json")  as f: stage_data  = json.load(f)
 
 current_stage   = config["current_stage"]
 stage           = next(s for s in stage_data["stages"] if s["stage"] == current_stage)
 answer_sequence = stage["sequence"]
 time_limit      = stage["time_limit"]
 melody_id       = config.get("melody", "biplane")
+input_mode      = config.get("input_mode", "serial")
 
 osc = udp_client.SimpleUDPClient(config["osc"]["host"], config["osc"]["port"])
 
@@ -21,6 +29,50 @@ game_active  = False
 timer_thread = None
 
 NOTE_MAP = {1: "C", 2: "D", 3: "E", 4: "F", 5: "G", 6: "A", 7: "B", 8: "C"}
+
+# ── Admin 상태 (셀 점유, 이벤트 로그, 시리얼) ────────
+_state_lock = threading.Lock()
+_cells: dict[str, dict] = {}
+_event_log: list[dict] = []
+EVENT_LOG_LIMIT = 100
+_serial_status = {"connected": False, "port": "", "error": ""}
+
+
+def _cell_key(slave: int, cell: int) -> str:
+    return f"{slave}:{cell}"
+
+
+def _record_event(entry: dict) -> None:
+    entry["ts"] = time.time() * 1000
+    with _state_lock:
+        _event_log.append(entry)
+        if len(_event_log) > EVENT_LOG_LIMIT:
+            del _event_log[: len(_event_log) - EVENT_LOG_LIMIT]
+
+
+def get_status() -> dict:
+    with _state_lock:
+        serial = dict(_serial_status)
+        return {
+            "input_mode": input_mode,
+            "game_active": game_active,
+            "current_stage": current_stage,
+            "melody": melody_id,
+            "orb_count": len(orb_mapping),
+            "serial": serial,
+            "cell_count": len(_cells),
+        }
+
+
+def get_cells() -> dict:
+    with _state_lock:
+        return dict(_cells)
+
+
+def get_events() -> list:
+    with _state_lock:
+        return list(_event_log)
+
 
 # ── 셀 파싱 ────────────────────────────────────────────
 def parse_cell(cell: int):
@@ -74,6 +126,9 @@ def request_play() -> None:
 
 # ── 이벤트 처리 ────────────────────────────────────────
 def handle_event(event: dict):
+    global orb_mapping
+    orb_mapping = load_mapping()
+
     t      = event.get("type")
     slave  = event.get("slave")
     cell   = event.get("cell")
@@ -83,6 +138,13 @@ def handle_event(event: dict):
         orb = orb_mapping.get(orb_id)
         if orb is None:
             print(f"[WARN] 알 수 없는 ID: {orb_id}")
+            q, note = parse_cell(cell)
+            with _state_lock:
+                _cells[_cell_key(slave, cell)] = {
+                    "id": orb_id, "voice": "unknown", "note": note, "result": "unknown",
+                }
+            _record_event({"type": "added", "slave": slave, "cell": cell,
+                           "id": orb_id, "voice": "unknown", "note": note, "result": "unknown"})
             osc.send_message("/orb/added", [slave, cell, "unknown", "invalid", "wrong"])
             return
 
@@ -90,6 +152,13 @@ def handle_event(event: dict):
         q, note    = parse_cell(cell)
         q_actual   = q + (slave - 1) * 2
         result     = judge(slave, cell) if game_active else "inactive"
+
+        with _state_lock:
+            _cells[_cell_key(slave, cell)] = {
+                "id": orb_id, "voice": voice, "note": note, "result": result,
+            }
+        _record_event({"type": "added", "slave": slave, "cell": cell,
+                       "id": orb_id, "voice": voice, "note": note, "result": result})
 
         print(f"[added]   slave={slave} cell={cell} Q={q_actual} note={note} voice={voice} → {result}")
         osc.send_message("/orb/added", [slave, cell, voice, note, result, orb_id])
@@ -100,6 +169,11 @@ def handle_event(event: dict):
         q, note  = parse_cell(cell)
         q_actual = q + (slave - 1) * 2
 
+        with _state_lock:
+            _cells.pop(_cell_key(slave, cell), None)
+        _record_event({"type": "removed", "slave": slave, "cell": cell,
+                       "id": orb_id, "voice": voice, "note": note})
+
         print(f"[removed] slave={slave} cell={cell} Q={q_actual} note={note} voice={voice}")
         osc.send_message("/orb/removed", [slave, cell, voice, note, orb_id])
 
@@ -109,14 +183,21 @@ def serial_loop():
     baudrate = config["serial"]["baudrate"]
 
     while True:
+        with _state_lock:
+            _serial_status.update({"connected": False, "port": port, "error": "연결 중…"})
         try:
             ser = serial.Serial(port, baudrate, timeout=1)
         except serial.SerialException as e:
+            err = str(e)
             print(f"[serial] 포트 연결 실패 ({port}): {e}")
+            with _state_lock:
+                _serial_status.update({"connected": False, "port": port, "error": err})
             time.sleep(5)
             continue
 
         print(f"[serial] 연결됨: {port}")
+        with _state_lock:
+            _serial_status.update({"connected": True, "port": port, "error": ""})
         try:
             while True:
                 line = ser.readline().decode("utf-8", errors="ignore").strip()
@@ -127,33 +208,41 @@ def serial_loop():
                     handle_event(event)
                 except json.JSONDecodeError:
                     print(f"[WARN] JSON 파싱 실패: {line}")
+                    _record_event({"type": "raw", "slave": 0, "cell": 0,
+                                   "id": "", "voice": "", "note": line[:80]})
         except serial.SerialException as e:
+            err = str(e)
             print(f"[serial] 연결 끊김 ({port}): {e}")
+            with _state_lock:
+                _serial_status.update({"connected": False, "port": port, "error": err})
         finally:
             ser.close()
         time.sleep(5)
 
 # ── 진입점 ─────────────────────────────────────────────
 if __name__ == "__main__":
-    input_mode = config.get("input_mode", "serial")
-
     print(f"[stage {current_stage}] 정답 시퀀스: {answer_sequence}")
     print(f"[melody] {melody_id}")
     print(f"[input] {input_mode} mode")
     print("screen에서 시작을 누르면 게임이 시작됩니다.")
 
-    if input_mode == "mock":
-        from mock_server import start_mock_server
-        start_mock_server(
-            config.get("mock", {}),
-            handle_event,
-            orb_mapping,
-            on_game_start=start_game,
-            on_game_end=end_game,
-            on_game_listen=request_listen,
-            on_game_play=request_play,
-        )
-    else:
+    from mock_server import start_http_server
+
+    http_cfg = config.get("mock", {"host": "127.0.0.1", "port": 8080})
+    start_http_server(
+        http_cfg,
+        handle_event,
+        orb_mapping,
+        get_status=get_status,
+        get_cells=get_cells,
+        get_events=get_events,
+        on_game_start=start_game,
+        on_game_end=end_game,
+        on_game_listen=request_listen,
+        on_game_play=request_play,
+    )
+
+    if input_mode == "serial":
         threading.Thread(target=serial_loop, daemon=True).start()
 
     try:

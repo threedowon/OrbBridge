@@ -34,6 +34,10 @@ def ensure_register_data() -> None:
             encoding="utf-8",
         )
 
+    from voice_store import ensure_voice_catalog_file
+
+    ensure_voice_catalog_file()
+
 
 def normalize_id(raw: str) -> str:
     """Normalize DS2431 / orb id to `AA:BB:CC:...` uppercase hex."""

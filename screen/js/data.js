@@ -1,4 +1,5 @@
-export const VOICES = [
+/** Fallback when /api/voices is unavailable */
+export let VOICES = [
   { id: 0, name: 'aspa_1',   color: '#f472b6', wave: 'sine',     filter: 900,  gain: 0.20 },
   { id: 1, name: 'aspa_2',   color: '#5eead4', wave: 'triangle', filter: 2200, gain: 0.18 },
   { id: 2, name: 'aspa_3',   color: '#fbbf24', wave: 'sawtooth', filter: 1100, gain: 0.16 },
@@ -9,6 +10,12 @@ export const VOICES = [
   { id: 7, name: 'ive_4',    color: '#f87171', wave: 'sawtooth', filter: 1800, gain: 0.15 },
   { id: 8, name: 'cortis_1', color: '#c084fc', wave: 'triangle', filter: 2400, gain: 0.18 },
 ];
+
+/** Replace timbre list from GET /api/voices */
+export function setVoices(list) {
+  if (!Array.isArray(list) || !list.length) return;
+  VOICES = list.map((v, i) => ({ ...v, id: i }));
+}
 
 export const NOTES = [
   { name: 'C4', freq: 261.63 },

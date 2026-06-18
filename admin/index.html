@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OrbBridge — Table Admin</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #242836;
+      --border: #2e3344;
+      --ink: #e8eaef;
+      --muted: #8b92a8;
+      --accent: #5b8def;
+      --ok: #4ade80;
+      --warn: #facc15;
+      --err: #f87171;
+      --empty: #2a2f3d;
+    }
+
+    html, body { height: 100%; }
+
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", system-ui, sans-serif;
+      font-size: 13px;
+      line-height: 1.4;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    header h1 {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    header h1 span { color: var(--muted); font-weight: 400; }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+
+    .dot.ok { background: var(--ok); box-shadow: 0 0 6px rgba(74, 222, 128, 0.5); }
+    .dot.warn { background: var(--warn); }
+    .dot.err { background: var(--err); box-shadow: 0 0 6px rgba(248, 113, 113, 0.4); }
+
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr min(360px, 32vw);
+      gap: 0;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .panel {
+      padding: 16px 20px;
+      overflow: auto;
+    }
+
+    .grid-panel {
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .side-panel {
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .slave-headers {
+      display: flex;
+      gap: 6px;
+      padding-left: 34px;
+      margin-bottom: 4px;
+    }
+
+    .slave-header {
+      flex: 0 0 calc(2 * 44px + 6px);
+      text-align: center;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+      padding: 4px 0;
+      border-bottom: 2px solid var(--accent);
+      opacity: 0.85;
+    }
+
+    .grid-wrap {
+      display: flex;
+      gap: 6px;
+      align-items: flex-start;
+    }
+
+    .row-labels {
+      display: grid;
+      grid-template-rows: repeat(8, 44px);
+      row-gap: 6px;
+      padding-top: 0;
+    }
+
+    .row-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(9, 44px);
+      grid-template-rows: repeat(8, 44px);
+      column-gap: 6px;
+      row-gap: 6px;
+    }
+
+    .cell {
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      border: 1.5px solid var(--border);
+      background: var(--empty);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1px;
+      padding: 2px;
+      transition: border-color 0.15s, background 0.15s, transform 0.1s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cell:hover { border-color: var(--accent); transform: scale(1.04); z-index: 1; }
+    .cell.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .cell.filled { border-color: rgba(255,255,255,0.2); }
+    .cell.correct { background: rgba(74, 222, 128, 0.25); border-color: var(--ok); }
+    .cell.wrong { background: rgba(248, 113, 113, 0.25); border-color: var(--err); }
+    .cell.inactive { background: rgba(91, 141, 239, 0.2); border-color: var(--accent); }
+    .cell.unknown { background: rgba(250, 204, 21, 0.2); border-color: var(--warn); }
+
+    .cell .note {
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .cell .voice {
+      font-size: 8px;
+      color: var(--muted);
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .cell .slave-cell {
+      position: absolute;
+      top: 2px;
+      right: 3px;
+      font-size: 7px;
+      color: var(--muted);
+      opacity: 0.6;
+    }
+
+    .info-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 3px 0;
+      font-size: 12px;
+    }
+
+    .info-row .label { color: var(--muted); flex-shrink: 0; }
+    .info-row .value {
+      text-align: right;
+      word-break: break-all;
+      font-family: "Cascadia Code", "Consolas", monospace;
+      font-size: 11px;
+    }
+
+    .event-log {
+      flex: 1;
+      min-height: 120px;
+      overflow-y: auto;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      font-family: "Cascadia Code", "Consolas", monospace;
+      font-size: 11px;
+    }
+
+    .log-entry {
+      padding: 4px 0;
+      border-bottom: 1px solid var(--border);
+      line-height: 1.5;
+    }
+
+    .log-entry:last-child { border-bottom: none; }
+
+    .log-time { color: var(--muted); margin-right: 6px; }
+    .log-added { color: var(--ok); }
+    .log-removed { color: var(--err); }
+    .log-warn { color: var(--warn); }
+    .log-info { color: var(--accent); }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .stat-box {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      text-align: center;
+    }
+
+    .stat-box .num {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .stat-box .lbl {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--ink);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s;
+    }
+
+    button:hover { background: var(--border); border-color: var(--muted); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.primary:hover { filter: brightness(1.1); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .links {
+      display: flex;
+      gap: 12px;
+      font-size: 12px;
+    }
+
+    .links a { color: var(--accent); text-decoration: none; }
+    .links a:hover { text-decoration: underline; }
+
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; }
+      .grid-panel { border-right: none; border-bottom: 1px solid var(--border); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>OrbBridge <span>Table Admin</span></h1>
+    <div class="status-bar">
+      <div class="status-item" title="아두이노 시리얼 연결">
+        <span class="dot" id="dot-serial"></span>
+        <span id="lbl-serial">Serial —</span>
+      </div>
+      <div class="status-item" title="WebSocket (bridge.py)">
+        <span class="dot" id="dot-ws"></span>
+        <span id="lbl-ws">WS —</span>
+      </div>
+      <div class="status-item" title="게임 상태">
+        <span class="dot" id="dot-game"></span>
+        <span id="lbl-game">Game —</span>
+      </div>
+      <div class="links">
+        <a href="/table">Table</a>
+        <a href="/screen">Screen</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel grid-panel">
+      <div class="slave-headers" id="slave-headers"></div>
+      <div class="grid-wrap">
+        <div class="row-labels" id="row-labels"></div>
+        <div class="grid" id="grid"></div>
+      </div>
+      <div class="info-card" id="cell-detail">
+        <div class="section-title">셀 상세</div>
+        <div class="info-row"><span class="label">위치</span><span class="value" id="d-pos">—</span></div>
+        <div class="info-row"><span class="label">Slave / Cell</span><span class="value" id="d-slave-cell">—</span></div>
+        <div class="info-row"><span class="label">음표</span><span class="value" id="d-note">—</span></div>
+        <div class="info-row"><span class="label">Voice</span><span class="value" id="d-voice">—</span></div>
+        <div class="info-row"><span class="label">Orb ID</span><span class="value" id="d-id">—</span></div>
+        <div class="info-row"><span class="label">결과</span><span class="value" id="d-result">—</span></div>
+      </div>
+    </section>
+
+    <section class="panel side-panel">
+      <div>
+        <div class="section-title">시스템</div>
+        <div class="stats-grid">
+          <div class="stat-box"><div class="num" id="stat-filled">0</div><div class="lbl">점유 셀</div></div>
+          <div class="stat-box"><div class="num" id="stat-orbs">0</div><div class="lbl">등록 Orb</div></div>
+          <div class="stat-box"><div class="num" id="stat-stage">—</div><div class="lbl">Stage</div></div>
+          <div class="stat-box"><div class="num" id="stat-mode">—</div><div class="lbl">입력 모드</div></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">게임 제어</div>
+        <div class="toolbar">
+          <button class="primary" id="btn-start">시작</button>
+          <button id="btn-end">종료</button>
+          <button id="btn-clear">그리드 초기화</button>
+        </div>
+      </div>
+
+      <div style="flex:1;display:flex;flex-direction:column;min-height:0">
+        <div class="section-title">이벤트 로그</div>
+        <div class="event-log" id="event-log"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const COLS = 9;
+    const ROWS = 8;
+    const ROW_NOTES = ['C', 'D', 'E', 'F', 'G', 'A', 'B', 'C'];
+    const WS_URL = `ws://${location.hostname || '127.0.0.1'}:8765`;
+    const LOG_LIMIT = 200;
+
+    /** @type {Map<string, object>} */
+    const cells = new Map();
+    let selectedKey = null;
+    let ws = null;
+    let wsRetry = null;
+
+    const gridEl = document.getElementById('grid');
+    const logEl = document.getElementById('event-log');
+
+    function colToSlave(col) { return Math.floor(col / 2) + 1; }
+    function colToQ(col) { return col % 2 === 0 ? 1 : 2; }
+    function posToCell(row, col) { return (row - 1) * 2 + colToQ(col); }
+    function cellKey(slave, cell) { return `${slave}:${cell}`; }
+    function gridKey(col, row) { return `${col}-${row}`; }
+
+    function shortId(id) {
+      if (!id) return '';
+      const parts = String(id).split(':');
+      return parts.length >= 2 ? parts.slice(-2).join(':') : id.slice(-6);
+    }
+
+    function fmtTime(ts) {
+      const d = new Date(ts || Date.now());
+      return d.toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    function addLog(type, text, cls = '') {
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.innerHTML = `<span class="log-time">${fmtTime()}</span><span class="${cls}">[${type}]</span> ${text}`;
+      logEl.prepend(entry);
+      while (logEl.children.length > LOG_LIMIT) logEl.lastChild.remove();
+    }
+
+    function buildGrid() {
+      const headers = document.getElementById('slave-headers');
+      headers.innerHTML = '';
+      for (let s = 1; s <= 5; s++) {
+        const h = document.createElement('div');
+        h.className = 'slave-header';
+        h.textContent = `Slave ${s}`;
+        headers.appendChild(h);
+      }
+
+      const labels = document.getElementById('row-labels');
+      labels.innerHTML = '';
+      for (let r = 1; r <= ROWS; r++) {
+        const el = document.createElement('div');
+        el.className = 'row-label';
+        el.textContent = ROW_NOTES[r - 1];
+        labels.appendChild(el);
+      }
+
+      gridEl.innerHTML = '';
+      for (let row = 1; row <= ROWS; row++) {
+        for (let col = 0; col < COLS; col++) {
+          const slave = colToSlave(col);
+          const cell = posToCell(row, col);
+          const el = document.createElement('button');
+          el.type = 'button';
+          el.className = 'cell';
+          el.dataset.col = col;
+          el.dataset.row = row;
+          el.dataset.slave = slave;
+          el.dataset.cell = cell;
+          el.title = `S${slave} C${cell}`;
+          el.innerHTML = `<span class="slave-cell">${slave}:${cell}</span><span class="note"></span><span class="voice"></span>`;
+          el.addEventListener('click', () => selectCell(col, row));
+          gridEl.appendChild(el);
+        }
+      }
+    }
+
+    function getCellEl(col, row) {
+      return gridEl.querySelector(`[data-col="${col}"][data-row="${row}"]`);
+    }
+
+    function updateCellUI(col, row, data) {
+      const el = getCellEl(col, row);
+      if (!el) return;
+      el.className = 'cell';
+      el.querySelector('.note').textContent = '';
+      el.querySelector('.voice').textContent = '';
+
+      if (!data || !data.id) return;
+
+      el.classList.add('filled');
+      if (data.result) el.classList.add(data.result);
+      el.querySelector('.note').textContent = data.note || '?';
+      el.querySelector('.voice').textContent = data.voice || shortId(data.id);
+      if (selectedKey === gridKey(col, row)) el.classList.add('selected');
+    }
+
+    function colRowFromSlaveCell(slave, cell) {
+      const q = cell % 2 === 1 ? 1 : 2;
+      const row = Math.floor((cell + 1) / 2);
+      const col = (slave - 1) * 2 + (q === 1 ? 0 : 1);
+      return { col, row };
+    }
+
+    function applyCellState(slave, cell, data) {
+      const key = cellKey(slave, cell);
+      if (data && data.id) {
+        cells.set(key, data);
+      } else {
+        cells.delete(key);
+        data = null;
+      }
+      const { col, row } = colRowFromSlaveCell(slave, cell);
+      updateCellUI(col, row, data);
+      updateStats();
+      if (selectedKey) {
+        const [sc, sr] = selectedKey.split('-').map(Number);
+        if (sc === col && sr === row) showDetail(col, row);
+      }
+    }
+
+    function selectCell(col, row) {
+      selectedKey = gridKey(col, row);
+      gridEl.querySelectorAll('.cell.selected').forEach(el => el.classList.remove('selected'));
+      const el = getCellEl(col, row);
+      el?.classList.add('selected');
+      showDetail(col, row);
+    }
+
+    function showDetail(col, row) {
+      const slave = colToSlave(col);
+      const cell = posToCell(row, col);
+      const data = cells.get(cellKey(slave, cell));
+      document.getElementById('d-pos').textContent = `col ${col}, row ${row}`;
+      document.getElementById('d-slave-cell').textContent = `Slave ${slave} / Cell ${cell}`;
+      document.getElementById('d-note').textContent = data?.note || ROW_NOTES[row - 1];
+      document.getElementById('d-voice').textContent = data?.voice || '—';
+      document.getElementById('d-id').textContent = data?.id || '—';
+      document.getElementById('d-result').textContent = data?.result || 'empty';
+    }
+
+    function updateStats() {
+      document.getElementById('stat-filled').textContent = cells.size;
+    }
+
+    function setDot(id, state) {
+      const el = document.getElementById(id);
+      el.className = 'dot ' + (state || '');
+    }
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch('/api/status');
+        if (!res.ok) return;
+        const s = await res.json();
+
+        const serialOk = s.serial?.connected;
+        setDot('dot-serial', serialOk ? 'ok' : (s.input_mode === 'mock' ? 'warn' : 'err'));
+        document.getElementById('lbl-serial').textContent = s.input_mode === 'mock'
+          ? 'Mock'
+          : (serialOk ? `Serial ${s.serial.port}` : `Serial ${s.serial?.error || '끊김'}`);
+
+        setDot('dot-game', s.game_active ? 'ok' : '');
+        document.getElementById('lbl-game').textContent = s.game_active
+          ? `Game ON (stage ${s.current_stage})`
+          : 'Game OFF';
+
+        document.getElementById('stat-stage').textContent = s.current_stage;
+        document.getElementById('stat-mode').textContent = s.input_mode;
+        document.getElementById('stat-orbs').textContent = s.orb_count ?? '—';
+      } catch { /* server may be starting */ }
+    }
+
+    async function loadSnapshot() {
+      try {
+        const res = await fetch('/api/cells');
+        if (!res.ok) return;
+        const data = await res.json();
+        cells.clear();
+        for (const [key, val] of Object.entries(data)) {
+          const [slave, cell] = key.split(':').map(Number);
+          applyCellState(slave, cell, val);
+        }
+      } catch { /* ignore */ }
+
+      try {
+        const res = await fetch('/api/events');
+        if (!res.ok) return;
+        const events = await res.json();
+        logEl.innerHTML = '';
+        for (const ev of events.slice().reverse()) {
+          const cls = ev.type === 'added' ? 'log-added' : ev.type === 'removed' ? 'log-removed' : 'log-info';
+          const entry = document.createElement('div');
+          entry.className = 'log-entry';
+          entry.innerHTML = `<span class="log-time">${fmtTime(ev.ts)}</span><span class="${cls}">[${ev.type}]</span> S${ev.slave} C${ev.cell} ${ev.voice || ''} ${ev.id ? shortId(ev.id) : ''}`;
+          logEl.appendChild(entry);
+        }
+      } catch { /* ignore */ }
+    }
+
+    function handleWsMessage(msg) {
+      const { address, args } = msg;
+      if (address === '/orb/added' && args.length >= 6) {
+        const [slave, cell, voice, note, result, orb_id] = args;
+        applyCellState(slave, cell, { id: orb_id, voice, note, result });
+        const cls = result === 'correct' ? 'log-added' : result === 'wrong' ? 'log-removed' : 'log-info';
+        addLog('added', `S${slave} C${cell} ${voice} ${note} → ${result}`, cls);
+      } else if (address === '/orb/removed' && args.length >= 5) {
+        const [slave, cell, voice, note, orb_id] = args;
+        applyCellState(slave, cell, null);
+        addLog('removed', `S${slave} C${cell} ${voice} ${note}`, 'log-removed');
+      } else if (address === '/game/ready') {
+        addLog('ready', args[0] ? 'READY' : '대기', 'log-info');
+      } else if (address === '/game/start') {
+        addLog('game', `시작 stage ${args[0]}`, 'log-info');
+        fetchStatus();
+      } else if (address === '/game/end') {
+        addLog('game', `종료 ${args[0] || ''}`, 'log-info');
+        fetchStatus();
+      }
+    }
+
+    function connectWs() {
+      if (ws) { try { ws.close(); } catch { /* */ } }
+      ws = new WebSocket(WS_URL);
+      ws.onopen = () => {
+        setDot('dot-ws', 'ok');
+        document.getElementById('lbl-ws').textContent = 'WS 연결됨';
+        addLog('ws', 'WebSocket 연결', 'log-info');
+        if (wsRetry) { clearTimeout(wsRetry); wsRetry = null; }
+      };
+      ws.onclose = () => {
+        setDot('dot-ws', 'err');
+        document.getElementById('lbl-ws').textContent = 'WS 끊김';
+        wsRetry = setTimeout(connectWs, 3000);
+      };
+      ws.onerror = () => setDot('dot-ws', 'err');
+      ws.onmessage = (e) => {
+        try { handleWsMessage(JSON.parse(e.data)); } catch { /* */ }
+      };
+    }
+
+    async function postGame(path, body = {}) {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) addLog('error', await res.text(), 'log-warn');
+    }
+
+    document.getElementById('btn-start').addEventListener('click', () => postGame('/api/game/start'));
+    document.getElementById('btn-end').addEventListener('click', () => postGame('/api/game/end', { reason: 'admin' }));
+    document.getElementById('btn-clear').addEventListener('click', () => {
+      cells.clear();
+      gridEl.querySelectorAll('.cell').forEach(el => {
+        el.className = 'cell';
+        el.querySelector('.note').textContent = '';
+        el.querySelector('.voice').textContent = '';
+      });
+      updateStats();
+      addLog('admin', '그리드 초기화 (표시만)', 'log-info');
+    });
+
+    buildGrid();
+    loadSnapshot();
+    fetchStatus();
+    connectWs();
+    setInterval(fetchStatus, 3000);
+  </script>
+</body>
+</html>

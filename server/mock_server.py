@@ -1,13 +1,21 @@
-"""Mock hardware server — HTTP ingest + static UI for /table and /screen."""
+"""HTTP server — static UI (/table, /screen, /admin) + REST API."""
 
 import json
+import socket
+import sys
 import threading
+import traceback
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from socketserver import ThreadingMixIn
+from typing import Callable
 
 ROOT = Path(__file__).resolve().parent.parent
+SERVER_DIR = Path(__file__).resolve().parent
+SOUNDS_DIR = SERVER_DIR / "sounds"
 TABLE_UI = ROOT / "table"
 GAME_UI = ROOT / "screen"
+ADMIN_UI = ROOT / "admin"
 
 MIME = {
     ".html": "text/html; charset=utf-8",
@@ -17,23 +25,52 @@ MIME = {
     ".mp3": "audio/mpeg",
     ".wav": "audio/wav",
     ".ogg": "audio/ogg",
+    ".mp4": "video/mp4",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".flac": "audio/flac",
+    ".webm": "video/webm",
 }
 
 
-def start_mock_server(cfg: dict, on_event, orb_mapping: dict,
-                      on_game_start=None, on_game_end=None,
-                      on_game_listen=None, on_game_play=None) -> None:
+class _ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
+    daemon_threads = True
+
+
+def _port_in_use(host: str, port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind((host, port))
+            return False
+        except OSError:
+            return True
+
+
+def start_http_server(
+    cfg: dict,
+    on_event,
+    orb_mapping: dict,
+    *,
+    get_status: Callable[[], dict] | None = None,
+    get_cells: Callable[[], dict] | None = None,
+    get_events: Callable[[], list] | None = None,
+    on_game_start=None,
+    on_game_end=None,
+    on_game_listen=None,
+    on_game_play=None,
+) -> None:
     host = cfg.get("host", "127.0.0.1")
     port = cfg.get("port", 8080)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
-            print(f"[mock] {args[0]}")
+            print(f"[http] {args[0]}")
 
         def _send(self, code: int, body: bytes, content_type: str) -> None:
             self.send_response(code)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
+            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(body)
 
@@ -57,12 +94,59 @@ def start_mock_server(cfg: dict, on_event, orb_mapping: dict,
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
             self.end_headers()
 
+        def _serve_sound(self, rel: str) -> None:
+            rel = rel.replace("\\", "/").lstrip("/")
+            if not rel or ".." in rel.split("/"):
+                self._send(404, b"Not found", "text/plain")
+                return
+            base = SOUNDS_DIR.resolve()
+            path = (base / rel).resolve()
+            if not str(path).startswith(str(base)):
+                self._send(404, b"Not found", "text/plain")
+                return
+            self._serve_file(path)
+
         def do_GET(self):
             path = self.path.split("?", 1)[0]
 
+            if path in ("/", ""):
+                self.send_response(302)
+                self.send_header("Location", "/admin")
+                self.end_headers()
+                return
+
+            if path == "/api/voices":
+                from voice_store import voice_api_payload
+
+                self._json(200, voice_api_payload())
+                return
+
             if path == "/api/orbs":
-                orbs = [{"id": oid, **info} for oid, info in orb_mapping.items()]
+                from mapping_store import load_mapping
+
+                mapping = load_mapping()
+                orbs = [{"id": oid, **info} for oid, info in mapping.items()]
                 self._json(200, orbs)
+                return
+
+            if path == "/api/status" and get_status:
+                self._json(200, get_status())
+                return
+
+            if path == "/api/cells" and get_cells:
+                self._json(200, get_cells())
+                return
+
+            if path == "/api/events" and get_events:
+                self._json(200, get_events())
+                return
+
+            if path.startswith("/sounds/"):
+                self._serve_sound(path[len("/sounds/"):])
+                return
+
+            if path in ("/admin", "/admin/"):
+                self._serve_file(ADMIN_UI / "index.html")
                 return
 
             if path in ("/table", "/table/"):
@@ -71,6 +155,11 @@ def start_mock_server(cfg: dict, on_event, orb_mapping: dict,
 
             if path in ("/screen", "/screen/"):
                 self._serve_file(GAME_UI / "index.html")
+                return
+
+            if path.startswith("/admin/"):
+                rel = path[len("/admin/"):]
+                self._serve_file(ADMIN_UI / rel)
                 return
 
             if path.startswith("/table/"):
@@ -134,9 +223,28 @@ def start_mock_server(cfg: dict, on_event, orb_mapping: dict,
             self._send(404, b"Not found", "text/plain")
 
     def run():
-        server = HTTPServer((host, port), Handler)
-        print(f"[mock] http://{host}:{port}/table  (fake hardware)")
-        print(f"[mock] http://{host}:{port}/screen (melody game)")
-        server.serve_forever()
+        if _port_in_use(host, port):
+            print(f"[http] ERROR: 포트 {port}이(가) 이미 사용 중입니다.")
+            print(f"  기존 main.py를 종료하세요: netstat -ano | findstr :{port}")
+            print(f"  그다음: taskkill /PID <pid> /F")
+            return
+        try:
+            server = _ThreadingHTTPServer((host, port), Handler)
+        except OSError as e:
+            print(f"[http] ERROR: HTTP 서버 시작 실패 ({host}:{port}): {e}")
+            traceback.print_exc()
+            return
+        print(f"[http] http://{host}:{port}/admin  (table debug)")
+        print(f"[http] http://{host}:{port}/table  (fake hardware)")
+        print(f"[http] http://{host}:{port}/screen (melody game)")
+        try:
+            server.serve_forever()
+        except Exception:
+            print("[http] ERROR: HTTP 서버 중단")
+            traceback.print_exc()
 
     threading.Thread(target=run, daemon=True).start()
+
+
+# backward-compatible alias
+start_mock_server = start_http_server

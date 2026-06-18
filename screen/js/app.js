@@ -1,10 +1,10 @@
-import { beatCount } from './data.js';
+import { beatCount, setVoices } from './data.js';
 import { unlock, playSuccess } from './audio.js';
 import { initStaff } from './staff.js';
 import { createEngine } from './engine.js';
 import { initConfetti, burst } from './confetti.js';
 import { loadMelodyFile } from './melody-loader.js';
-import { tableToStaff, voiceToIndex } from './mapping.js';
+import { setVoiceIndex, tableToStaff, voiceToIndex } from './mapping.js';
 
 const WS_URL = `ws://${location.hostname || '127.0.0.1'}:8765`;
 const engine = createEngine();
@@ -88,9 +88,22 @@ async function startGame() {
   engine.listen();
 }
 
+async function loadVoiceCatalog() {
+  try {
+    const res = await fetch('/api/voices');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.voices?.length) setVoices(data.voices);
+    if (data.index) setVoiceIndex(data.index);
+  } catch (e) {
+    console.warn('voice catalog unavailable, using defaults', e);
+  }
+}
+
 async function enterPlayView() {
   if (!currentMelody) return;
   unlock();
+  await loadVoiceCatalog();
   try { await apiPost('/api/game/end', { reason: 'load' }); } catch { /* server idle */ }
   setupPlaySession();
   show('play');
@@ -184,10 +197,23 @@ document.getElementById('btn-enter').addEventListener('click', () => enterPlayVi
 
 document.body.addEventListener('click', () => unlock(), { once: true });
 
+async function loadVoiceCatalog() {
+  try {
+    const res = await fetch('/api/voices');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.voices?.length) setVoices(data.voices);
+    if (data.index) setVoiceIndex(data.index);
+  } catch (e) {
+    console.warn('voice catalog unavailable, using defaults', e);
+  }
+}
+
 initConfetti();
 connectWs();
 
 (async () => {
+  await loadVoiceCatalog();
   try {
     const id = await fetchActiveMelodyId();
     await prepareMelody(id);
