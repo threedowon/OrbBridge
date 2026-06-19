@@ -1,4 +1,5 @@
-import { noteAt, durAt, rowCount } from './data.js';
+import { noteAt, durAt, rowCount, VOICES } from './data.js';
+import { voiceDisplay } from './voice-labels.js';
 
 const MARGIN_L = 24;
 const MARGIN_T = 20;
@@ -152,6 +153,31 @@ function drawOrb(x, y, radius, { glow = false } = {}) {
   ctx.fill();
 }
 
+function drawOrbLabel(x, y, voiceId, radius) {
+  const voice = VOICES[voiceId];
+  if (!voice) return;
+  const { kr, en } = voiceDisplay(voice.name);
+  if (!kr && !en) return;
+
+  const lx = x + radius + 7;
+  ctx.save();
+  ctx.textAlign = 'left';
+
+  if (kr) {
+    ctx.textBaseline = en ? 'bottom' : 'middle';
+    ctx.font = '600 13px "DM Sans", system-ui, sans-serif';
+    ctx.fillStyle = PAL.ink;
+    ctx.fillText(kr, lx, en ? y - 2 : y);
+  }
+  if (en) {
+    ctx.textBaseline = 'top';
+    ctx.font = 'italic 12px "Instrument Serif", Georgia, serif';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
+    ctx.fillText(en, lx, kr ? y + 2 : y);
+  }
+  ctx.restore();
+}
+
 function computeCanvasLayout(melody, wrapW) {
   const rows = rowCount(melody);
   const innerW = wrapW - MARGIN_L * 2;
@@ -284,14 +310,18 @@ function paint(state) {
     if (showLargeAtTarget(state, c)) {
       const pt = cellCenter(c, tr);
       const isPlay = c === playhead && playhead >= 0;
+      const voiceId = grid[c][tr];
       drawOrb(pt.x, pt.y, R_LARGE, { glow: isPlay });
+      if (voiceId >= 0) drawOrbLabel(pt.x, pt.y, voiceId, R_LARGE);
     }
 
     for (let r = 0; r < rows; r++) {
       if (grid[c][r] < 0) continue;
       if (r === tr && showLargeAtTarget(state, c)) continue;
       const pt = cellCenter(c, r);
+      const voiceId = grid[c][r];
       drawOrb(pt.x, pt.y, R_SMALL);
+      drawOrbLabel(pt.x, pt.y, voiceId, R_SMALL);
     }
   }
 

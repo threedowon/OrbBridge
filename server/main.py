@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from pythonosc import udp_client
 
-from mapping_store import load_mapping
+from mapping_store import find_orb, load_mapping
 
 SERVER_DIR = Path(__file__).resolve().parent
 os.chdir(SERVER_DIR)
@@ -21,7 +21,9 @@ stage           = next(s for s in stage_data["stages"] if s["stage"] == current_
 answer_sequence = stage["sequence"]
 time_limit      = stage["time_limit"]
 melody_id       = config.get("melody", "biplane")
-input_mode      = config.get("input_mode", "serial")
+_raw_input_mode = config.get("input_mode", "table")
+# legacy: "mock" → "table" (웹 /table UI 입력)
+input_mode      = "table" if _raw_input_mode == "mock" else _raw_input_mode
 
 osc = udp_client.SimpleUDPClient(config["osc"]["host"], config["osc"]["port"])
 
@@ -124,6 +126,20 @@ def request_play() -> None:
     print("[game] 재생")
     osc.send_message("/game/play", [])
 
+def handle_serial_message(event: dict) -> None:
+    """USB/serial 한 줄 JSON — orb 이벤트 또는 game 버튼."""
+    t = event.get("type")
+    if t == "game":
+        action = str(event.get("action", "")).lower()
+        if action == "listen":
+            request_listen()
+        elif action == "play":
+            request_play()
+        else:
+            print(f"[WARN] unknown game action: {action}")
+        return
+    handle_event(event)
+
 # ── 이벤트 처리 ────────────────────────────────────────
 def handle_event(event: dict):
     global orb_mapping
@@ -135,7 +151,7 @@ def handle_event(event: dict):
     orb_id = event.get("id")
 
     if t == "added":
-        orb = orb_mapping.get(orb_id)
+        orb_key, orb = find_orb(orb_id, orb_mapping)
         if orb is None:
             print(f"[WARN] 알 수 없는 ID: {orb_id}")
             q, note = parse_cell(cell)
@@ -145,7 +161,7 @@ def handle_event(event: dict):
                 }
             _record_event({"type": "added", "slave": slave, "cell": cell,
                            "id": orb_id, "voice": "unknown", "note": note, "result": "unknown"})
-            osc.send_message("/orb/added", [slave, cell, "unknown", "invalid", "wrong"])
+            osc.send_message("/orb/added", [slave, cell, "unknown", "invalid", "wrong", orb_id or ""])
             return
 
         voice      = orb["voice"]
@@ -155,27 +171,27 @@ def handle_event(event: dict):
 
         with _state_lock:
             _cells[_cell_key(slave, cell)] = {
-                "id": orb_id, "voice": voice, "note": note, "result": result,
+                "id": orb_key, "voice": voice, "note": note, "result": result,
             }
         _record_event({"type": "added", "slave": slave, "cell": cell,
-                       "id": orb_id, "voice": voice, "note": note, "result": result})
+                       "id": orb_key, "voice": voice, "note": note, "result": result})
 
         print(f"[added]   slave={slave} cell={cell} Q={q_actual} note={note} voice={voice} → {result}")
-        osc.send_message("/orb/added", [slave, cell, voice, note, result, orb_id])
+        osc.send_message("/orb/added", [slave, cell, voice, note, result, orb_key])
 
     elif t == "removed":
-        orb      = orb_mapping.get(orb_id, {})
-        voice    = orb.get("voice", "unknown")
+        orb_key, orb = find_orb(orb_id, orb_mapping)
+        voice    = orb.get("voice", "unknown") if orb else "unknown"
         q, note  = parse_cell(cell)
         q_actual = q + (slave - 1) * 2
 
         with _state_lock:
             _cells.pop(_cell_key(slave, cell), None)
         _record_event({"type": "removed", "slave": slave, "cell": cell,
-                       "id": orb_id, "voice": voice, "note": note})
+                       "id": orb_key or orb_id, "voice": voice, "note": note})
 
         print(f"[removed] slave={slave} cell={cell} Q={q_actual} note={note} voice={voice}")
-        osc.send_message("/orb/removed", [slave, cell, voice, note, orb_id])
+        osc.send_message("/orb/removed", [slave, cell, voice, note, orb_key or orb_id or ""])
 
 # ── 시리얼 수신 루프 ───────────────────────────────────
 def serial_loop():
@@ -203,13 +219,13 @@ def serial_loop():
                 line = ser.readline().decode("utf-8", errors="ignore").strip()
                 if not line:
                     continue
+                if not line.startswith("{"):
+                    continue  # ESP 부트 로그, 디버그 println 등 — 무시
                 try:
                     event = json.loads(line)
-                    handle_event(event)
+                    handle_serial_message(event)
                 except json.JSONDecodeError:
-                    print(f"[WARN] JSON 파싱 실패: {line}")
-                    _record_event({"type": "raw", "slave": 0, "cell": 0,
-                                   "id": "", "voice": "", "note": line[:80]})
+                    print(f"[WARN] JSON 파싱 실패: {line[:120]}")
         except serial.SerialException as e:
             err = str(e)
             print(f"[serial] 연결 끊김 ({port}): {e}")

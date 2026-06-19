@@ -557,9 +557,10 @@
         const s = await res.json();
 
         const serialOk = s.serial?.connected;
-        setDot('dot-serial', serialOk ? 'ok' : (s.input_mode === 'mock' ? 'warn' : 'err'));
-        document.getElementById('lbl-serial').textContent = s.input_mode === 'mock'
-          ? 'Mock'
+        const tableMode = s.input_mode === 'table' || s.input_mode === 'mock';
+        setDot('dot-serial', serialOk ? 'ok' : (tableMode ? 'warn' : 'err'));
+        document.getElementById('lbl-serial').textContent = tableMode
+          ? 'Table (web)'
           : (serialOk ? `Serial ${s.serial.port}` : `Serial ${s.serial?.error || '끊김'}`);
 
         setDot('dot-game', s.game_active ? 'ok' : '');

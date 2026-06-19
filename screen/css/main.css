@@ -317,6 +317,58 @@ body {
   box-shadow: 0 0 10px rgba(42, 157, 106, .5);
 }
 
+/* ── Orb placed toast ── */
+.orb-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 48px;
+  transform: translateX(-50%) translateY(12px);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 14px 28px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.28s ease, transform 0.28s ease;
+  --orb-accent: var(--accent, #6366f1);
+}
+
+.orb-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.orb-toast-voice {
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--orb-accent);
+  opacity: 0.85;
+}
+
+.orb-toast-kr {
+  font-family: var(--sans);
+  font-size: 1.65rem;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--text);
+}
+
+.orb-toast-en {
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  font-style: italic;
+  color: rgba(0, 0, 0, 0.45);
+}
+
 /* ── Start screen ── */
 .view-start {
   justify-content: center;

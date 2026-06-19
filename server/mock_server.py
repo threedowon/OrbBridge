@@ -234,8 +234,8 @@ def start_http_server(
             print(f"[http] ERROR: HTTP 서버 시작 실패 ({host}:{port}): {e}")
             traceback.print_exc()
             return
-        print(f"[http] http://{host}:{port}/admin  (table debug)")
-        print(f"[http] http://{host}:{port}/table  (fake hardware)")
+        print(f"[http] http://{host}:{port}/admin  (debug)")
+        print(f"[http] http://{host}:{port}/table  (virtual table)")
         print(f"[http] http://{host}:{port}/screen (melody game)")
         try:
             server.serve_forever()

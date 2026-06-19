@@ -225,6 +225,7 @@ export function createEngine() {
 
     placeExternal(col, row, voiceId = 0, orbId = null) {
       if (!melody || phase === 'done') return;
+      if (voiceId < 0) return;
       if (col < 0 || col >= beats() || row < 0 || row >= rows()) return;
       clearPreview();
 

@@ -60,11 +60,27 @@ class VoiceRegisterState:
         }
 
 
-def save_voice(voice: str, notes: dict[str, str], state: VoiceRegisterState | None = None) -> None:
+def save_voice(
+    voice: str,
+    notes: dict[str, str],
+    state: VoiceRegisterState | None = None,
+    *,
+    label_kr: str | None = None,
+    label_en: str | None = None,
+    preserve_notes: bool = False,
+) -> None:
     ensure_voice_profile(voice)
-    save_voice_notes(voice, notes)
+    save_voice_notes(
+        voice,
+        notes,
+        label_kr=label_kr,
+        label_en=label_en,
+        preserve_notes=preserve_notes,
+    )
     filled = sum(1 for k in NOTE_KEYS if notes.get(k))
-    msg = f"저장 · {voice} ({filled}/8)"
+    kr = (label_kr or "").strip()
+    label_hint = f" · {kr}" if kr else ""
+    msg = f"저장 · {voice} ({filled}/8){label_hint}"
     if state:
         state.push_log("ok", msg)
     print(f"[voice-register] {msg}")

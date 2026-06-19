@@ -79,6 +79,21 @@ def resolve_orb_key(orb_id: str, mapping: dict) -> str:
     return normalize_id(raw)
 
 
+def find_orb(orb_id: str, mapping: dict) -> tuple[str | None, dict | None]:
+    """등록된 orb면 (canonical_key, entry), 없으면 (None, None)."""
+    raw = str(orb_id or "").strip()
+    if not raw:
+        return None, None
+    try:
+        key = resolve_orb_key(raw, mapping)
+    except ValueError:
+        return None, None
+    entry = mapping.get(key)
+    if entry is None:
+        return None, None
+    return key, entry
+
+
 def load_mapping(path: Path | None = None) -> dict:
     p = path or MAPPING_PATH
     with open(p, encoding="utf-8") as f:

@@ -14,6 +14,10 @@
         "A4": "sounds/aspa_1/A4.wav",
         "B4": "sounds/aspa_1/B4.wav",
         "C5": "sounds/aspa_1/C5.wav"
+      },
+      "labels": {
+        "kr": "닝닝",
+        "en": "NINGNING"
       }
     },
     "aspa_2": {
@@ -22,14 +26,18 @@
       "filter": 2200,
       "gain": 0.18,
       "notes": {
-        "C4": "",
-        "D4": "",
-        "E4": "",
-        "F4": "",
-        "G4": "",
-        "A4": "",
-        "B4": "",
-        "C5": ""
+        "C4": "sounds/aspa_2/C4.wav",
+        "D4": "sounds/aspa_2/D4.wav",
+        "E4": "sounds/aspa_2/E4.wav",
+        "F4": "sounds/aspa_2/F4.wav",
+        "G4": "sounds/aspa_2/G4.wav",
+        "A4": "sounds/aspa_2/A4.wav",
+        "B4": "sounds/aspa_2/B4.wav",
+        "C5": "sounds/aspa_2/C5.wav"
+      },
+      "labels": {
+        "kr": "윈터",
+        "en": "WINTER"
       }
     },
     "aspa_3": {
@@ -38,14 +46,18 @@
       "filter": 1100,
       "gain": 0.16,
       "notes": {
-        "C4": "",
-        "D4": "",
-        "E4": "",
-        "F4": "",
-        "G4": "",
-        "A4": "",
-        "B4": "",
-        "C5": ""
+        "C4": "sounds/aspa_3/C4.wav",
+        "D4": "sounds/aspa_3/D4.wav",
+        "E4": "sounds/aspa_3/E4.wav",
+        "F4": "sounds/aspa_3/F4.wav",
+        "G4": "sounds/aspa_3/G4.wav",
+        "A4": "sounds/aspa_3/A4.wav",
+        "B4": "sounds/aspa_3/B4.wav",
+        "C5": "sounds/aspa_3/C5.wav"
+      },
+      "labels": {
+        "kr": "지젤",
+        "en": "GISELLE"
       }
     },
     "aspa_4": {
@@ -54,14 +66,18 @@
       "filter": 2000,
       "gain": 0.19,
       "notes": {
-        "C4": "",
-        "D4": "",
-        "E4": "",
-        "F4": "",
-        "G4": "",
-        "A4": "",
-        "B4": "",
-        "C5": ""
+        "C4": "sounds/aspa_4/C4.wav",
+        "D4": "sounds/aspa_4/D4.wav",
+        "E4": "sounds/aspa_4/E4.wav",
+        "F4": "sounds/aspa_4/F4.wav",
+        "G4": "sounds/aspa_4/G4.wav",
+        "A4": "sounds/aspa_4/A4.wav",
+        "B4": "sounds/aspa_4/B4.wav",
+        "C5": "sounds/aspa_4/C5.wav"
+      },
+      "labels": {
+        "kr": "카리나",
+        "en": "KARINA"
       }
     },
     "bts_1": {
@@ -110,6 +126,10 @@
         "A4": "sounds/cortis_1/A4.wav",
         "B4": "sounds/cortis_1/B4.wav",
         "C5": "sounds/cortis_1/C5.wav"
+      },
+      "labels": {
+        "kr": "건호",
+        "en": "KEONHO"
       }
     },
     "cortis_2": {
@@ -118,14 +138,18 @@
       "filter": 900,
       "gain": 0.16,
       "notes": {
-        "C4": "",
-        "D4": "",
-        "E4": "",
-        "F4": "",
-        "G4": "",
-        "A4": "",
-        "B4": "",
-        "C5": ""
+        "C4": "sounds/cortis_2/C4.wav",
+        "D4": "sounds/cortis_2/D4.wav",
+        "E4": "sounds/cortis_2/E4.wav",
+        "F4": "sounds/cortis_2/F4.wav",
+        "G4": "sounds/cortis_2/G4.wav",
+        "A4": "sounds/cortis_2/A4.wav",
+        "B4": "sounds/cortis_2/B4.wav",
+        "C5": "sounds/cortis_2/C5.wav"
+      },
+      "labels": {
+        "kr": "마틴",
+        "en": "MARTIN"
       }
     },
     "cortis_3": {
@@ -134,14 +158,58 @@
       "filter": 2200,
       "gain": 0.18,
       "notes": {
-        "C4": "",
-        "D4": "",
-        "E4": "",
-        "F4": "",
-        "G4": "",
-        "A4": "",
-        "B4": "",
-        "C5": ""
+        "C4": "sounds/cortis_3/C4.wav",
+        "D4": "sounds/cortis_3/D4.wav",
+        "E4": "sounds/cortis_3/E4.wav",
+        "F4": "sounds/cortis_3/F4.wav",
+        "G4": "sounds/cortis_3/G4.wav",
+        "A4": "sounds/cortis_3/A4.wav",
+        "B4": "sounds/cortis_3/B4.wav",
+        "C5": "sounds/cortis_3/C5.wav"
+      },
+      "labels": {
+        "kr": "성현",
+        "en": "SEONGHYEON"
+      }
+    },
+    "cortis_4": {
+      "color": "#5eead4",
+      "wave": "square",
+      "filter": 1400,
+      "gain": 0.14,
+      "notes": {
+        "C4": "sounds/cortis_4/C4.wav",
+        "D4": "sounds/cortis_4/D4.wav",
+        "E4": "sounds/cortis_4/E4.wav",
+        "F4": "sounds/cortis_4/F4.wav",
+        "G4": "sounds/cortis_4/G4.wav",
+        "A4": "sounds/cortis_4/A4.wav",
+        "B4": "sounds/cortis_4/B4.wav",
+        "C5": "sounds/cortis_4/C5.wav"
+      },
+      "labels": {
+        "kr": "제임스",
+        "en": "JAMES"
+      }
+    },
+    "cortis_5": {
+      "color": "#5eead4",
+      "wave": "sine",
+      "filter": 1600,
+      "gain": 0.17,
+      "notes": {
+        "C4": "sounds/cortis_5/C4.wav",
+        "D4": "sounds/cortis_5/D4.wav",
+        "E4": "sounds/cortis_5/E4.wav",
+        "F4": "sounds/cortis_5/F4.wav",
+        "G4": "sounds/cortis_5/G4.wav",
+        "A4": "sounds/cortis_5/A4.wav",
+        "B4": "sounds/cortis_5/B4.wav",
+        "C5": "sounds/cortis_5/C5.wav"
+      },
+      "labels": {
+        "kr": "주훈",
+        "en": "JUHOON"
       }
     },
     "ive_1": {

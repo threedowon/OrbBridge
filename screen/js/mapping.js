@@ -47,7 +47,9 @@ export function tableToStaff(slave, cell, scale) {
 }
 
 export function voiceToIndex(voice) {
-  if (voice in VOICE_INDEX) return VOICE_INDEX[voice];
-  console.warn('unknown voice, using default:', voice);
-  return 0;
+  const id = String(voice || '').trim();
+  if (!id || id === 'unknown') return -1;
+  if (id in VOICE_INDEX) return VOICE_INDEX[id];
+  console.warn('unknown voice, ignored:', id);
+  return -1;
 }

@@ -1,13 +1,13 @@
 {
   "current_stage": 1,
   "melody": "biplane",
-  "input_mode": "mock",
+  "input_mode": "serial",
   "mock": {
     "host": "127.0.0.1",
     "port": 8080
   },
   "serial": {
-    "port": "COM13",
+    "port": "COM15",
     "baudrate": 115200
   },
   "osc": {

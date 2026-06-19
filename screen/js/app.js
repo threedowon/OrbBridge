@@ -5,6 +5,8 @@ import { createEngine } from './engine.js';
 import { initConfetti, burst } from './confetti.js';
 import { loadMelodyFile } from './melody-loader.js';
 import { setVoiceIndex, tableToStaff, voiceToIndex } from './mapping.js';
+import { setVoiceLabels } from './voice-labels.js';
+import { showOrbPlaced } from './orb-toast.js';
 
 const WS_URL = `ws://${location.hostname || '127.0.0.1'}:8765`;
 const engine = createEngine();
@@ -94,6 +96,7 @@ async function loadVoiceCatalog() {
     if (!res.ok) return;
     const data = await res.json();
     if (data.voices?.length) setVoices(data.voices);
+    if (data.voices) setVoiceLabels(data.voices);
     if (data.index) setVoiceIndex(data.index);
   } catch (e) {
     console.warn('voice catalog unavailable, using defaults', e);
@@ -126,12 +129,20 @@ function playBeatLoop() {
   engine.playLoop();
 }
 
-function handleOrbAdded(slave, cell, voice, orbId) {
+async function handleOrbAdded(slave, cell, voice, orbId) {
   if (!currentMelody || !gameRunning) return;
+  const voiceIdx = voiceToIndex(voice);
+  if (voiceIdx < 0) {
+    showOrbPlaced(voice || 'unknown');
+    return;
+  }
   try {
     const { col, row } = tableToStaff(slave, cell, currentMelody.scale);
     if (col >= getBeats()) return;
-    engine.placeExternal(col, row, voiceToIndex(voice), orbId ?? null);
+    engine.placeExternal(col, row, voiceIdx, orbId ?? null);
+    await loadVoiceCatalog();
+    engine.redraw();
+    showOrbPlaced(voice);
   } catch (err) {
     console.warn('orb map failed', err);
   }
@@ -152,7 +163,7 @@ function handleWsMessage(msg) {
   const { address, args } = msg;
   switch (address) {
     case '/orb/added':
-      handleOrbAdded(args[0], args[1], args[2], args[5]);
+      handleOrbAdded(args[0], args[1], args[2], args[5]).catch(err => console.warn(err));
       break;
     case '/orb/removed':
       handleOrbRemoved(args[0], args[1], args[4]);

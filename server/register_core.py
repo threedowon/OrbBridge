@@ -20,7 +20,7 @@ from mapping_store import (
     suggest_voice,
     validate_voice,
 )
-from voice_store import ensure_voice_profile
+from voice_store import ensure_voice_profile, sync_mapping_voices_to_catalog
 
 DETECT_TYPES = {"ds2431", "ds2431_detected", "detect", "orb_detect", "orb_id"}
 LOG_LIMIT = 80
@@ -323,6 +323,7 @@ def update_orb(orb_id: str, voice: str, state: RegisterState | None = None) -> s
     mapping[key] = {"voice": voice}
     save_mapping(mapping)
     ensure_voice_profile(voice)
+    sync_mapping_voices_to_catalog(mapping)
     if state:
         state.push_log("ok", f"수정 · {key} → {voice}")
     print(f"[register] UPDATE {key} -> {voice}")

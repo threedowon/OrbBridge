@@ -237,6 +237,24 @@ class VoiceRegisterApp:
         )
         self.voice_title.pack(fill=tk.X, pady=(0, 10))
 
+        label_card = tk.Frame(right, bg=C["canvas_soft"], padx=10, pady=8)
+        label_card.pack(fill=tk.X, pady=(0, 10))
+        tk.Label(
+            label_card,
+            text="표시 이름 (screen)",
+            font=self._fonts["label"],
+            bg=C["canvas_soft"],
+            fg=C["ink"],
+        ).pack(anchor=tk.W, pady=(0, 6))
+        label_row = tk.Frame(label_card, bg=C["canvas_soft"])
+        label_row.pack(fill=tk.X)
+        tk.Label(label_row, text="KR", font=self._fonts["body"], bg=C["canvas_soft"], fg=C["body"], width=4, anchor=tk.W).pack(side=tk.LEFT)
+        self.label_kr_var = tk.StringVar(master=self.root)
+        self._entry(label_row, textvariable=self.label_kr_var, width=14).pack(side=tk.LEFT, padx=(0, 12), ipady=2)
+        tk.Label(label_row, text="EN", font=self._fonts["body"], bg=C["canvas_soft"], fg=C["body"], width=4, anchor=tk.W).pack(side=tk.LEFT)
+        self.label_en_var = tk.StringVar(master=self.root)
+        self._entry(label_row, textvariable=self.label_en_var, width=14).pack(side=tk.LEFT, ipady=2)
+
         slots = tk.Frame(right, bg=C["canvas"])
         slots.pack(fill=tk.BOTH, expand=True)
         for note_key, label_ko in NOTE_SLOTS:
@@ -357,6 +375,8 @@ class VoiceRegisterApp:
         for note_key, var in self._slot_vars.items():
             stored = profile["notes"].get(note_key, "")
             var.set(stored)
+        self.label_kr_var.set(profile.get("labels", {}).get("kr", ""))
+        self.label_en_var.set(profile.get("labels", {}).get("en", ""))
 
     def _browse(self, note_key: str) -> None:
         if not self._active_voice:
@@ -392,11 +412,20 @@ class VoiceRegisterApp:
             messagebox.showinfo("Voice Register", "voice를 선택하세요.")
             return
         notes = {k: v.get().strip() for k, v in self._slot_vars.items()}
-        if not any(notes.values()):
-            if not messagebox.askyesno("Voice Register", "모든 슬롯이 비어 있습니다. 저장할까요?"):
+        has_notes = any(notes.values())
+        has_labels = bool(self.label_kr_var.get().strip() or self.label_en_var.get().strip())
+        if not has_notes and not has_labels:
+            if not messagebox.askyesno("Voice Register", "샘플·이름이 모두 비어 있습니다. 저장할까요?"):
                 return
         try:
-            save_voice(self._active_voice, notes, self.state)
+            save_voice(
+                self._active_voice,
+                notes,
+                self.state,
+                label_kr=self.label_kr_var.get(),
+                label_en=self.label_en_var.get(),
+                preserve_notes=has_labels and not has_notes,
+            )
         except FileNotFoundError as exc:
             messagebox.showerror("Voice Register", str(exc))
             self.state.push_log("error", str(exc))

@@ -1,7 +1,7 @@
 # OrbBridge
 
 물리 오브 테이블 + 멜로디 screen을 연결하는 프로토타입입니다.  
-하드웨어 없이 mock HTTP·WebSocket으로 전체 플로우를 테스트할 수 있습니다.
+하드웨어 없이 웹 table UI·WebSocket으로 전체 플로우를 테스트할 수 있습니다.
 
 ## 폴더 구조
 
@@ -136,7 +136,7 @@ voice 이름 규칙: `그룹_번호` (예: `aspa_1`, `ive_2`, `cortis_1`)
 {
   "current_stage": 1,
   "melody": "biplane",
-  "input_mode": "mock",
+  "input_mode": "table",
   "mock": {
     "host": "127.0.0.1",
     "port": 8080
@@ -154,7 +154,7 @@ voice 이름 규칙: `그룹_번호` (예: `aspa_1`, `ive_2`, `cortis_1`)
 
 | 항목 | 설명 |
 |------|------|
-| `input_mode` | `mock` — HTTP mock 서버 / `serial` — ESP32 USB 시리얼 |
+| `input_mode` | `table` — 웹 `/table` UI 입력 / `serial` — ESP32 USB 시리얼 |
 | `melody` | `screen/melodies/` 안 멜로디 ID (`biplane` 등) |
 | `mock.host` / `mock.port` | table·screen HTTP 서버 |
 | `serial.port` | ESP / DS2431 리더 COM 포트 |
@@ -187,7 +187,7 @@ voice 이름 규칙: `그룹_번호` (예: `aspa_1`, `ive_2`, `cortis_1`)
 | `/orb/added` | 오브 올림 |
 | `/orb/removed` | 오브 제거 |
 
-## HTTP API (mock)
+## HTTP API
 
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
