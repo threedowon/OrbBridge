@@ -10,9 +10,11 @@ from pathlib import Path
 from socketserver import ThreadingMixIn
 from typing import Callable
 
-ROOT = Path(__file__).resolve().parent.parent
+from app_paths import repo_root, sounds_dir
+
+ROOT = repo_root()
 SERVER_DIR = Path(__file__).resolve().parent
-SOUNDS_DIR = SERVER_DIR / "sounds"
+SOUNDS_DIR = sounds_dir()
 TABLE_UI = ROOT / "table"
 GAME_UI = ROOT / "screen"
 ADMIN_UI = ROOT / "admin"

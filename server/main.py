@@ -8,7 +8,10 @@ from pythonosc import udp_client
 
 from mapping_store import find_orb, load_mapping
 
-SERVER_DIR = Path(__file__).resolve().parent
+from app_paths import data_dir, ensure_data_files
+
+ensure_data_files()
+SERVER_DIR = data_dir()
 os.chdir(SERVER_DIR)
 
 # ── 설정 로드 ──────────────────────────────────────────
@@ -236,11 +239,13 @@ def serial_loop():
         time.sleep(5)
 
 # ── 진입점 ─────────────────────────────────────────────
-if __name__ == "__main__":
+def run_main() -> None:
     print(f"[stage {current_stage}] 정답 시퀀스: {answer_sequence}")
     print(f"[melody] {melody_id}")
     print(f"[input] {input_mode} mode")
     print("screen에서 시작을 누르면 게임이 시작됩니다.")
+    print(f"[http] http://127.0.0.1:{config.get('mock', {}).get('port', 8080)}/screen")
+    print(f"[http] http://127.0.0.1:{config.get('mock', {}).get('port', 8080)}/table")
 
     from mock_server import start_http_server
 
@@ -266,3 +271,11 @@ if __name__ == "__main__":
             time.sleep(1)
     except KeyboardInterrupt:
         print("종료")
+
+
+if __name__ == "__main__":
+    from bridge_service import start_bridge_thread
+
+    start_bridge_thread()
+    time.sleep(0.4)
+    run_main()

@@ -9,8 +9,14 @@ from pathlib import Path
 
 from mapping_store import BACKEND_DIR, MAPPING_PATH, VOICE_RE, load_mapping, voice_group
 
+try:
+    from app_paths import data_dir, sounds_dir as bundle_sounds_dir
+except ImportError:
+    data_dir = lambda: BACKEND_DIR  # type: ignore[misc, assignment]
+    bundle_sounds_dir = lambda: BACKEND_DIR / "sounds"  # type: ignore[misc, assignment]
+
 VOICE_CATALOG_PATH = MAPPING_PATH.parent / "voice_catalog.json"
-SOUNDS_DIR = BACKEND_DIR / "sounds"
+SOUNDS_DIR = data_dir() / "sounds"
 
 NOTE_SLOTS: tuple[tuple[str, str], ...] = (
     ("C4", "도"),
@@ -213,10 +219,17 @@ def relativize_path(path: Path) -> str:
 def resolve_media_path(stored: str) -> Path | None:
     if not stored or not str(stored).strip():
         return None
-    p = Path(stored.strip())
-    if not p.is_absolute():
-        p = BACKEND_DIR / p
-    return p if p.is_file() else None
+    rel = Path(stored.strip())
+    if rel.is_absolute():
+        return rel if rel.is_file() else None
+    candidates = [BACKEND_DIR / rel, data_dir() / rel]
+    parts = rel.parts
+    if parts and parts[0] == "sounds" and len(parts) > 1:
+        candidates.append(bundle_sounds_dir() / Path(*parts[1:]))
+    for p in candidates:
+        if p.is_file():
+            return p
+    return None
 
 
 def ingest_sample_file(voice: str, note_key: str, src: Path) -> str:
