@@ -38,6 +38,3 @@
 *.woff2       binary
 *.ttf         binary
 *.eot         binary
-
-# Legacy prototype — exclude from language stats
-legacy/**     linguist-vendored

@@ -30,8 +30,8 @@ OrbBridge/
 │   ├── css/
 │   └── melodies/          멜로디 JSON
 │
-└── legacy/
-    └── UXFlow/            이전 프로토타입 (참고용, 사용 안 함)
+├── firmware/              ESP master/slave (선택)
+└── release/               Voice Orb Demo exe 빌드 스크립트
 ```
 
 ## 역할 분담
