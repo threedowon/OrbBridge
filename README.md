@@ -31,11 +31,16 @@ OrbBridge/
 │   ├── css/
 │   └── melodies/          멜로디 JSON
 │
+<<<<<<< HEAD
 ├── admin/
 │   └── index.html         관리 UI  →  /admin
 │
 ├── firmware/              ESP32 Master / Slave (RS485 + OneWire)
 └── release/               Windows exe 빌드 스크립트
+=======
+├── firmware/              ESP master/slave (선택)
+└── release/               Voice Orb Demo exe 빌드 스크립트
+>>>>>>> 0acf1e2f684cf1cbac0a7c772e6aedfcb2c1a098
 ```
 
 ## 역할 분담

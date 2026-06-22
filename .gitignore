@@ -22,10 +22,18 @@ venv/
 env/
 ENV/
 
-# PyInstaller (OrbRegister.exe build output)
+# PyInstaller — OrbRegister.exe
 server/build/
 server/dist/
 *.manifest
+
+# PyInstaller — Voice Orb Demo (release/build_release.bat)
+release/build/
+release/dist/
+release/OrbBridge/
+
+# Voice samples (Voice Register, large binary files)
+server/sounds/
 
 # Test / type / lint caches
 .pytest_cache/
@@ -36,12 +44,9 @@ htmlcov/
 .tox/
 .nox/
 
-# Node (legacy prototype)
+# Node
 node_modules/
 **/node_modules/
-
-# Nested git repo inside legacy copy
-legacy/**/.git/
 
 # IDE / editor
 .idea/
@@ -60,11 +65,11 @@ legacy/**/.git/
 !.env.example
 *.local.json
 
-# Cursor local state (keep rules/skills in repo if added later)
+# Cursor local state
 .cursor/projects/
 .cursor/terminals/
 
-# Archives
+# Archives (OrbBridge.zip 등 배포물)
 *.zip
 *.7z
 *.tar

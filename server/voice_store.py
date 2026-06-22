@@ -198,10 +198,9 @@ def unique_voices_from_mapping(mapping: dict) -> list[str]:
 
 
 def list_catalog_voices(mapping: dict | None = None) -> list[str]:
+    """Voice Register 목록 — orb_mapping.json에 등록된 voice만 (Orb Register와 동일)."""
     mapping = mapping or load_mapping()
-    catalog = load_voice_catalog()
-    names = set(unique_voices_from_mapping(mapping)) | set(catalog.get("voices", {}))
-    return sorted(v for v in names if v)
+    return unique_voices_from_mapping(mapping)
 
 
 def orb_count_for_voice(mapping: dict, voice: str) -> int:

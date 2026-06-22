@@ -27,7 +27,6 @@ if (Test-Path $Deliver) { Remove-Item $Deliver -Recurse -Force }
 New-Item -ItemType Directory -Path $Deliver | Out-Null
 Copy-Item -Path (Join-Path $Built "*") -Destination $Deliver -Recurse -Force
 Copy-Item (Join-Path $ReleaseDir "templates\README.txt") $Deliver
-Copy-Item (Join-Path $ReleaseDir "templates\start.bat") $Deliver
 
 Write-Host "Creating zip..."
 if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
@@ -39,4 +38,4 @@ Write-Host "Done." -ForegroundColor Green
 Write-Host "  Folder: $Deliver"
 Write-Host "  Zip:    $ZipPath"
 Write-Host ""
-Write-Host "Share OrbBridge.zip — recipient unzips and runs start.bat"
+Write-Host "Share OrbBridge.zip — recipient unzips and runs OrbBridge.exe"
