@@ -8,18 +8,19 @@
 ```
 OrbBridge/
 ├── bridge/
-│   └── bridge.py          OSC(UDP) → WebSocket 중계
+│   └── bridge.py          OSC(UDP) → WebSocket 중계 (독립 실행용)
 │
 ├── server/                Python 서버 + 설정·데이터
-│   ├── main.py            게임 로직, 시리얼/mock 입력, OSC 송신
-│   ├── mock_server.py     HTTP API + table/screen 정적 파일 서빙
-│   ├── register_tool.py   DS2431 오브 등록 GUI 실행
-│   ├── register_gui.py    등록 GUI (tkinter)
-│   ├── register_core.py   시리얼 수신·등록 로직
-│   ├── mapping_store.py   orb_mapping.json 읽기/쓰기
+│   ├── main.py            게임 로직, 시리얼/mock 입력, OSC 송신 (+ bridge 내장)
+│   ├── bridge_service.py  OSC → WebSocket (main.py / exe에서 사용)
+│   ├── mock_server.py     HTTP API + table/screen/admin 정적 파일 서빙
+│   ├── launcher.py        PyInstaller 단일 exe 진입점
+│   ├── register_tool.py   DS2431 오브 등록 GUI
+│   ├── voice_register_tool.py  보이스 샘플 등록 GUI
 │   ├── config.json        실행 설정
 │   ├── orb_mapping.json   오브 ID → voice 매핑
-│   └── stage_data.json    스테이지 정답 시퀀스
+│   ├── stage_data.json    스테이지 정답 시퀀스
+│   └── voice_catalog.json 보이스 timbre·샘플 카탈로그
 │
 ├── table/
 │   └── index.html         테이블 UI  →  /table
@@ -30,8 +31,11 @@ OrbBridge/
 │   ├── css/
 │   └── melodies/          멜로디 JSON
 │
-└── legacy/
-    └── UXFlow/            이전 프로토타입 (참고용, 사용 안 함)
+├── admin/
+│   └── index.html         관리 UI  →  /admin
+│
+├── firmware/              ESP32 Master / Slave (RS485 + OneWire)
+└── release/               Windows exe 빌드 스크립트
 ```
 
 ## 역할 분담
@@ -40,8 +44,15 @@ OrbBridge/
 |---------|------|------|
 | **table** | `table/` | 오브 올리기/내리기 (READY일 때만 동작) |
 | **screen** | `screen/` | 멜로디 게임 — **start**로 게임 시작 |
-| **server** | `server/` | orb 이벤트 처리, OSC 출력, mock HTTP |
-| **bridge** | `bridge/` | OSC → WebSocket 중계 (UI 실시간 연동) |
+| **admin** | `admin/` | 셀 상태·이벤트 로그·시리얼 상태 모니터 |
+| **server** | `server/` | orb 이벤트 처리, OSC 출력, HTTP API |
+| **bridge** | `bridge/` | OSC → WebSocket 중계 (**웹 UI 전용 어댑터**) |
+
+### bridge가 왜 따로 있나?
+
+- `main.py`는 게임 로직만 담당하고, UI로는 **OSC(UDP 9000)** 만 보냅니다.
+- **브라우저**는 OSC를 직접 받기 어려워서, bridge가 OSC → **WebSocket(8765)** 로 바꿔 table/screen/admin에 푸시합니다.
+- 나중에 screen이 **TouchDesigner·Unreal** 등으로 바뀌면 OSC를 직접 수신할 수 있으므로 **bridge는 필요 없습니다.** (그때 `main.py`에서 bridge 자동 시작만 끄면 됨)
 
 ## 데이터 흐름
 
@@ -64,28 +75,52 @@ screen [멜로디 완성]
                                   └─ OSC /game/ready [0] ──► table (대기)
 ```
 
+웹 UI는 **양방향**입니다.
+
+| 방향 | 프로토콜 | 용도 |
+|------|----------|------|
+| UI → server | HTTP (`POST /api/...`) | 버튼·드래그 등 사용자 입력 |
+| server → UI | OSC → bridge → WebSocket | 실시간 상태 반영 |
+
 ## 사전 준비
 
+Python 3 필요. Node.js·npm은 **사용하지 않습니다** (프론트는 순수 HTML/JS).
+
 ```bash
-pip install python-osc websockets pyserial
+python3 -m pip install python-osc websockets pyserial
 ```
 
-## 실행 (mock 모드)
+macOS에서는 `pip` 대신 `python3 -m pip` 또는 `pip3`를 사용하세요.
 
-터미널 3개 (또는 백그라운드)에서 순서대로 실행합니다.
+## 실행 (웹 개발 — mock 모드)
+
+**터미널 하나**면 됩니다. `main.py`가 HTTP 서버와 bridge(WebSocket)를 함께 띄웁니다.
 
 ```bash
-# 1. OSC → WebSocket 브릿지
-python bridge/bridge.py
-
-# 2. 게임 서버 (HTTP + mock)
 cd server
-python main.py
-
-# 3. 브라우저
-# http://127.0.0.1:8080/screen   — 멜로디 게임
-# http://127.0.0.1:8080/table    — 오브 테이블
+python3 main.py
 ```
+
+브라우저:
+
+| URL | 용도 |
+|-----|------|
+| http://127.0.0.1:8080/screen | 멜로디 게임 |
+| http://127.0.0.1:8080/table | 오브 테이블 |
+| http://127.0.0.1:8080/admin | 관리·디버그 |
+
+웹 mock 테스트 시 `server/config.json`에서 `"input_mode": "table"` 로 설정하세요.
+
+### `bridge/bridge.py`는 언제 쓰나?
+
+독립 프로세스로 bridge만 따로 띄워보고 싶을 때의 **dev용 entry point**입니다.  
+일상적인 웹 개발에서는 **`main.py`만 실행**하고, `bridge/bridge.py`는 **동시에 실행하지 마세요** — 포트 9000·8765가 충돌합니다.
+
+| 실행 방식 | 명령 | 비고 |
+|----------|------|------|
+| **웹 개발 (권장)** | `python3 server/main.py` | bridge 내장 |
+| bridge만 분리 테스트 | `python3 bridge/bridge.py` + (main에서 bridge 시작 제거 시) | 고급/레거시 |
+| Windows 배포 | `release/` → exe | `launcher.py`와 동일 구조 |
 
 ### 플레이 순서
 
@@ -94,13 +129,26 @@ python main.py
 3. `/screen` 악보에 오브 반영, 정답 판정·재생
 4. 멜로디 완성 → table이 다시 대기 상태로 복귀
 
+### 포트 충돌 (`Port already in use: OSC UDP 9000, WebSocket 8765`)
+
+이전 `main.py` 또는 `bridge/bridge.py`가 아직 실행 중일 수 있습니다.
+
+```bash
+# macOS — 점유 프로세스 확인
+lsof -i :9000 -i :8765
+
+# 종료 (PID 확인 후)
+kill <PID>
+```
+
 ### 아이패드 / 다른 기기에서 table 열기
 
 PC와 같은 Wi-Fi에 연결한 뒤:
 
 1. `server/config.json` → `mock.host`를 `"0.0.0.0"`으로 변경
-2. `bridge/bridge.py` → `WS_HOST = "0.0.0.0"`으로 변경
-3. Windows 방화벽에서 포트 **8080**, **8765** 허용
+2. `server/bridge_service.py` → `WS_HOST = "0.0.0.0"`으로 변경  
+   (독립 bridge 사용 시에는 `bridge/bridge.py`의 `WS_HOST`도 동일하게)
+3. 방화벽에서 포트 **8080**, **8765** 허용
 4. 아이패드 Safari: `http://<PC-IP>:8080/table`
 
 ## DS2431 오브 등록
@@ -109,7 +157,7 @@ PC와 같은 Wi-Fi에 연결한 뒤:
 
 ```bash
 cd server
-python register_tool.py
+python3 register_tool.py
 ```
 
 - GUI에서 **COM 포트 선택** → 오브 태그
@@ -156,9 +204,9 @@ voice 이름 규칙: `그룹_번호` (예: `aspa_1`, `ive_2`, `cortis_1`)
 |------|------|
 | `input_mode` | `table` — 웹 `/table` UI 입력 / `serial` — ESP32 USB 시리얼 |
 | `melody` | `screen/melodies/` 안 멜로디 ID (`biplane` 등) |
-| `mock.host` / `mock.port` | table·screen HTTP 서버 |
-| `serial.port` | ESP / DS2431 리더 COM 포트 |
-| `osc.host` / `osc.port` | OSC 수신 (bridge.py와 동일 포트) |
+| `mock.host` / `mock.port` | table·screen·admin HTTP 서버 |
+| `serial.port` | ESP / DS2431 리더 COM 포트 (macOS: `/dev/tty.usbserial-...`) |
+| `osc.host` / `osc.port` | OSC 송신 대상 (bridge 또는 TD/Unreal 수신 포트) |
 
 ### 데이터 파일
 
@@ -166,14 +214,16 @@ voice 이름 규칙: `그룹_번호` (예: `aspa_1`, `ive_2`, `cortis_1`)
 |------|------|
 | `orb_mapping.json` | 오브 UID → `{ "voice": "aspa_1" }` |
 | `stage_data.json` | 스테이지별 정답 음표 시퀀스 |
+| `voice_catalog.json` | 보이스 timbre·샘플 경로 |
+| `sounds/` | 보이스 샘플 mp3/wav (없어도 Web Audio 톤으로 동작) |
 
 ## 포트 정리
 
 | 포트 | 용도 |
 |------|------|
-| **8080** | HTTP — table / screen / API |
-| **8765** | WebSocket — UI 실시간 연동 |
-| **9000** | OSC (UDP) — server → bridge |
+| **8080** | HTTP — table / screen / admin / API |
+| **8765** | WebSocket — UI 실시간 연동 (웹 전용) |
+| **9000** | OSC (UDP) — server → bridge (또는 TD/Unreal) |
 
 ## OSC 주소
 
