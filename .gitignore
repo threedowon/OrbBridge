@@ -32,9 +32,6 @@ release/build/
 release/dist/
 release/OrbBridge/
 
-# Voice samples (Voice Register, large binary files)
-server/sounds/
-
 # Test / type / lint caches
 .pytest_cache/
 .mypy_cache/
