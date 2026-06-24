@@ -38,4 +38,4 @@ Write-Host "Done." -ForegroundColor Green
 Write-Host "  Folder: $Deliver"
 Write-Host "  Zip:    $ZipPath"
 Write-Host ""
-Write-Host "Share OrbBridge.zip — recipient unzips and runs OrbBridge.exe"
+Write-Host "Share OrbBridge.zip (Windows only) — recipient unzips and runs OrbBridge.exe"

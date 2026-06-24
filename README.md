@@ -17,6 +17,7 @@ OrbBridge/
 │   ├── launcher.py        PyInstaller 단일 exe 진입점
 │   ├── register_tool.py   DS2431 오브 등록 GUI
 │   ├── voice_register_tool.py  보이스 샘플 등록 GUI
+│   ├── melody_register_tool.py 멜로디 JSON 편집 GUI (BPM · note · duration)
 │   ├── config.json        실행 설정
 │   ├── orb_mapping.json   오브 ID → voice 매핑
 │   ├── stage_data.json    스테이지 정답 시퀀스
@@ -31,16 +32,11 @@ OrbBridge/
 │   ├── css/
 │   └── melodies/          멜로디 JSON
 │
-<<<<<<< HEAD
 ├── admin/
 │   └── index.html         관리 UI  →  /admin
 │
-├── firmware/              ESP32 Master / Slave (RS485 + OneWire)
-└── release/               Windows exe 빌드 스크립트
-=======
 ├── firmware/              ESP master/slave (선택)
-└── release/               Voice Orb Demo exe 빌드 스크립트
->>>>>>> 0acf1e2f684cf1cbac0a7c772e6aedfcb2c1a098
+└── release/               Voice Orb Demo exe 빌드 (Windows / macOS)
 ```
 
 ## 역할 분담
@@ -125,7 +121,35 @@ python3 main.py
 |----------|------|------|
 | **웹 개발 (권장)** | `python3 server/main.py` | bridge 내장 |
 | bridge만 분리 테스트 | `python3 bridge/bridge.py` + (main에서 bridge 시작 제거 시) | 고급/레거시 |
-| Windows 배포 | `release/` → exe | `launcher.py`와 동일 구조 |
+| Windows 배포 | `release/build_release.bat` | `OrbBridge.zip` (Windows 전용) |
+| macOS 배포 | `release/build_release_mac.sh` | `OrbBridge-mac.zip` (Mac에서 빌드) |
+
+## Voice Orb Demo (배포용 exe / Mac 앱)
+
+Python 없이 체험할 때 사용합니다. **OS별로 빌드·배포물이 다릅니다.**
+
+| OS | 빌드 | 배포 zip | 실행 |
+|----|------|----------|------|
+| **Windows** | `release\build_release.bat` | `OrbBridge.zip` | `OrbBridge.exe` 더블클릭 |
+| **macOS** | `release/build_release_mac.sh` | `OrbBridge-mac.zip` | `OrbBridge.command` 더블클릭 |
+
+Windows에서 만든 `.exe`는 **Mac에서 실행되지 않습니다.** Mac 사용자에게는 Mac에서 빌드한 zip을 따로 전달해야 합니다.
+
+### macOS: `library load disallowed by system policy` (PYI-18253)
+
+다운로드한 앱에 macOS **격리(quarantine)** 속성이 붙으면, 서명되지 않은 Python 라이브러리 로드가 차단됩니다. 수신자 Mac에서:
+
+```bash
+cd "/path/to/OrbBridge"
+xattr -cr .
+chmod +x OrbBridge
+./OrbBridge
+```
+
+또는 배포물의 **`OrbBridge.command`** 를 더블클릭하세요 (격리 해제 후 실행).
+
+Mac 개발( Python 있음 ): 프로젝트 루트 `start.command` 더블클릭.
+
 
 ### 플레이 순서
 
@@ -182,6 +206,29 @@ ESP → PC 시리얼 (한 줄 JSON):
 
 voice 이름 규칙: `그룹_번호` (예: `aspa_1`, `ive_2`, `cortis_1`)  
 같은 그룹(`aspa_1`, `aspa_2`)은 table UI에서 **같은 색**으로 표시됩니다.
+
+## Melody Register
+
+`screen/melodies/*.json` 의 BPM, step별 `note`·`duration`·`lyric` 을 편집합니다.  
+저장 시 **stage_data.json** 정답 시퀀스를 자동 동기화할 수 있습니다 (오브 정답 판정용).
+
+```bash
+# Windows
+melody_register.bat
+
+# 또는
+cd server
+python melody_register_tool.py
+python melody_register_tool.py --list
+```
+
+| 기능 | 설명 |
+|------|------|
+| 멜로디 목록 | `biplane`, `love_dive`, `custom` 등 |
+| BPM | 40–240, 1박 길이(ms)·총 재생 시간 표시 |
+| Steps | note (C4–C5 또는 `?`), duration(박), lyric |
+| 미리듣기 | step 하이라이트 + 비프음 (Windows) |
+| 저장 | JSON 저장 + 선택 시 `stage_data.json` 동기화 |
 
 ## 설정 (`server/config.json`)
 

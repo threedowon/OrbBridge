@@ -21,7 +21,7 @@ Python 설치 없이 실행할 수 있습니다.
 주의
 ----
 
-- Windows 전용 (.exe)
+- Windows 전용 (.exe) — Mac 사용자는 OrbBridge-mac.zip 필요
 - 인터넷 연결 불필요 (모두 이 PC 안에서 동작)
 - ESP / 시리얼 없음 (가상 table 모드)
 - 종료: 검은 콘솔 창에서 Ctrl+C 또는 창 닫기

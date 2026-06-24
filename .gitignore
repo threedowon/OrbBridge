@@ -28,6 +28,7 @@ server/dist/
 *.manifest
 
 # PyInstaller — Voice Orb Demo (release/build_release.bat)
+release
 release/build/
 release/dist/
 release/OrbBridge/
