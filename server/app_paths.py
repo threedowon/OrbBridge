@@ -46,6 +46,17 @@ def sounds_dir() -> Path:
     return data_dir() / "sounds"
 
 
+def melodies_dir() -> Path:
+    """Writable melodies (exe folder when frozen, screen/melodies in dev)."""
+    if is_frozen():
+        return data_dir() / "melodies"
+    return repo_root() / "screen" / "melodies"
+
+
+def bundled_melodies_dir() -> Path:
+    return repo_root() / "screen" / "melodies"
+
+
 def ensure_data_files() -> None:
     """Copy default JSON into data_dir on first run (frozen) or create missing files."""
     dest = data_dir()
@@ -80,3 +91,12 @@ def ensure_data_files() -> None:
     user_sounds = data_dir() / "sounds"
     if bundled_sounds.is_dir() and not any(user_sounds.glob("*")):
         shutil.copytree(bundled_sounds, user_sounds, dirs_exist_ok=True)
+
+    mdir = melodies_dir()
+    mdir.mkdir(parents=True, exist_ok=True)
+    bundled_melodies = bundled_melodies_dir()
+    if bundled_melodies.is_dir():
+        for src in bundled_melodies.glob("*.json"):
+            dest = mdir / src.name
+            if not dest.exists():
+                shutil.copy2(src, dest)

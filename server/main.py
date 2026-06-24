@@ -100,11 +100,23 @@ def set_ready(ready: bool) -> None:
     osc.send_message("/game/ready", [1 if ready else 0])
     print(f"[ready] {ready}")
 
+def reload_stage_data() -> None:
+    """Pick up Melody Editor saves (stage_data.json) without restarting."""
+    global stage_data, stage, answer_sequence, time_limit
+    with open(SERVER_DIR / "stage_data.json", encoding="utf-8") as f:
+        stage_data = json.load(f)
+    stage = next(s for s in stage_data["stages"] if s["stage"] == current_stage)
+    answer_sequence = stage["sequence"]
+    time_limit = stage["time_limit"]
+    print(f"[stage] 재로드 — 정답 시퀀스: {answer_sequence}")
+
+
 def start_game() -> bool:
     global game_active, timer_thread
     if game_active:
         print("[game] 이전 게임 정리 후 재시작")
         end_game("restart")
+    reload_stage_data()
     game_active = True
     print(f"[game] 시작 — stage {current_stage}, melody={melody_id}")
     set_ready(True)

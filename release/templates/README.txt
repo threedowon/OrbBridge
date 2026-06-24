@@ -47,3 +47,15 @@ Screen 우상단 Disconnected
   stage_data.json
   voice_catalog.json
   sounds/
+  melodies/          멜로디 JSON (Melody Editor 저장)
+
+
+멜로디 박자 조절 (Melody Editor)
+--------------------------------
+  1. MelodyEditor.exe 실행 (OrbBridge.exe와 같은 폴더)
+  2. BPM · note · duration 수정 후 저장
+  3. Screen 페이지 새로고침 (멜로디 악보 반영)
+  4. Table 정답은 Screen에서 start 할 때 자동 반영
+
+  melodies/biplane.json — 악보·재생
+  stage_data.json     — 오브 정답 판정

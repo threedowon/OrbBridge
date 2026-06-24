@@ -22,10 +22,20 @@ if (-not (Test-Path (Join-Path $Built "OrbBridge.exe"))) {
     throw "Build failed: OrbBridge.exe not found in dist\OrbBridge"
 }
 
+Write-Host "Building Melody Editor..."
+Set-Location $Server
+python -m PyInstaller melody_editor.spec --noconfirm --clean --distpath dist --workpath build-melody-editor
+Set-Location $ReleaseDir
+$MelodyExe = Join-Path $Server "dist\MelodyEditor.exe"
+if (-not (Test-Path $MelodyExe)) {
+    throw "Build failed: MelodyEditor.exe not found"
+}
+
 Write-Host "Assembling delivery folder..."
 if (Test-Path $Deliver) { Remove-Item $Deliver -Recurse -Force }
 New-Item -ItemType Directory -Path $Deliver | Out-Null
 Copy-Item -Path (Join-Path $Built "*") -Destination $Deliver -Recurse -Force
+Copy-Item $MelodyExe $Deliver
 Copy-Item (Join-Path $ReleaseDir "templates\README.txt") $Deliver
 
 Write-Host "Creating zip..."

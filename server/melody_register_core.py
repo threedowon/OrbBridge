@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 import time
 from pathlib import Path
 from typing import Any, Callable
+
+from app_paths import data_dir, melodies_dir
 
 NOTE_CHOICES = ("C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5")
 DEFAULT_RANGE = ["C4", "C5"]
@@ -15,31 +16,8 @@ LOG_LIMIT = 80
 SKIP_FILES = {"config.json"}
 
 
-def repo_root() -> Path:
-    if getattr(sys, "frozen", False):
-        base = Path(sys.executable).resolve().parent
-        if (base.parent / "screen" / "melodies").is_dir():
-            return base.parent
-        return base
-    return Path(__file__).resolve().parent.parent
-
-
-def melodies_dir() -> Path:
-    root = repo_root()
-    bundled = root / "screen" / "melodies"
-    if bundled.is_dir():
-        return bundled
-    local = Path(__file__).resolve().parent / "melodies"
-    local.mkdir(parents=True, exist_ok=True)
-    return local
-
-
 def stage_data_path() -> Path:
-    if getattr(sys, "frozen", False):
-        beside = Path(sys.executable).resolve().parent / "stage_data.json"
-        if beside.is_file():
-            return beside
-    return Path(__file__).resolve().parent / "stage_data.json"
+    return data_dir() / "stage_data.json"
 
 
 def melody_path(file_id: str) -> Path:

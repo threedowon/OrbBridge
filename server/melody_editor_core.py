@@ -55,8 +55,8 @@ def save_active_melody(
 
 def timing_summary(data: dict[str, Any]) -> str:
     steps = data.get("steps") or []
-    beats = sum(float(s.get("duration") or 1) for s in steps)
+    n = len(steps)
     sec = melody_duration_sec(data)
     bpm = int(data.get("bpm") or 120)
     beat_ms = 60_000 / max(1, bpm)
-    return f"{len(steps)} steps · {beats:g}박 · {sec:.2f}s · 1박={beat_ms:.0f}ms"
+    return f"{n}박 · {sec:.2f}s · 1박={beat_ms:.0f}ms"

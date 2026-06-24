@@ -17,7 +17,8 @@ OrbBridge/
 │   ├── launcher.py        PyInstaller 단일 exe 진입점
 │   ├── register_tool.py   DS2431 오브 등록 GUI
 │   ├── voice_register_tool.py  보이스 샘플 등록 GUI
-│   ├── melody_register_tool.py 멜로디 JSON 편집 GUI (BPM · note · duration)
+│   ├── melody_register_tool.py 멜로디 JSON 편집 GUI (전체 관리)
+│   ├── melody_editor_tool.py   Melody Editor — BPM·note·duration 간편 편집
 │   ├── config.json        실행 설정
 │   ├── orb_mapping.json   오브 ID → voice 매핑
 │   ├── stage_data.json    스테이지 정답 시퀀스
@@ -229,6 +230,22 @@ python melody_register_tool.py --list
 | Steps | note (C4–C5 또는 `?`), duration(박), lyric |
 | 미리듣기 | step 하이라이트 + 비프음 (Windows) |
 | 저장 | JSON 저장 + 선택 시 `stage_data.json` 동기화 |
+
+## Melody Editor
+
+지금 쓰는 멜로디(`screen/melodies/config.json` → `active`, 기본 `biplane`)의 **BPM · note · duration** 만 빠르게 조절하는 간단 창입니다.  
+가사·제목·다른 멜로디 관리는 **Melody Register**를 사용하세요.
+
+```bash
+melody_editor.bat
+# 또는
+cd server && python melody_editor_tool.py
+```
+
+저장 시 `stage_data.json` 은 자동 동기화됩니다.
+
+**OrbBridge.exe 배포판:** `release/build_release.bat` 빌드 시 `MelodyEditor.exe`가 함께 포함됩니다.  
+두 exe는 같은 폴더의 `melodies/`·`stage_data.json`을 사용합니다 — Melody Editor로 저장 → Screen 새로고침 → start 시 정답 반영.
 
 ## 설정 (`server/config.json`)
 
