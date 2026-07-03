@@ -15,16 +15,18 @@ DURATION_CHOICES = ("0.25", "0.5", "0.75", "1", "1.5", "2", "3", "4")
 
 C = {
     "canvas": "#ffffff",
-    "canvas_soft": "#e8ebe6",
-    "primary": "#9fe870",
-    "primary_active": "#cdffad",
-    "primary_pale": "#e2f6d5",
-    "ink": "#0e0f0c",
-    "body": "#454745",
-    "mute": "#868685",
-    "on_primary": "#0e0f0c",
-    "btn_muted": "#d8dbd6",
-    "btn_muted_active": "#c5c9c4",
+    "canvas_soft": "#f2f2f2",
+    "canvas_muted": "#e6e6e6",
+    "ink": "#111111",
+    "body": "#444444",
+    "mute": "#888888",
+    "border": "#cccccc",
+    "primary": "#1a1a1a",
+    "primary_active": "#333333",
+    "on_primary": "#ffffff",
+    "btn_muted": "#e0e0e0",
+    "btn_muted_active": "#cacaca",
+    "on_muted": "#222222",
 }
 
 
@@ -67,17 +69,41 @@ class MelodyEditorApp:
 
         self.bpm_var = tk.StringVar(master=self.root, value="120")
 
+        self._setup_styles()
         self._build()
         self._load()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+    def _setup_styles(self) -> None:
+        style = ttk.Style()
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        style.configure(
+            "Mono.TCombobox",
+            fieldbackground=C["canvas"],
+            background=C["canvas_muted"],
+            foreground=C["ink"],
+            arrowcolor=C["body"],
+            bordercolor=C["border"],
+            lightcolor=C["border"],
+            darkcolor=C["border"],
+        )
+        style.map(
+            "Mono.TCombobox",
+            fieldbackground=[("readonly", C["canvas"])],
+            selectbackground=[("readonly", C["canvas_muted"])],
+            selectforeground=[("readonly", C["ink"])],
+        )
+
     def _btn(self, parent, text, cmd, *, primary=False, muted=False) -> tk.Button:
         if primary:
-            bg, active = C["primary"], C["primary_active"]
+            bg, active, fg = C["primary"], C["primary_active"], C["on_primary"]
         elif muted:
-            bg, active = C["btn_muted"], C["btn_muted_active"]
+            bg, active, fg = C["btn_muted"], C["btn_muted_active"], C["on_muted"]
         else:
-            bg, active = C["canvas"], C["primary_active"]
+            bg, active, fg = C["canvas"], C["canvas_muted"], C["ink"]
         return tk.Button(
             parent,
             text=text,
@@ -85,11 +111,15 @@ class MelodyEditorApp:
             font=self._fonts["btn_sm" if not primary else "btn"],
             bg=bg,
             activebackground=active,
-            fg=C["on_primary"],
+            fg=fg,
+            activeforeground=fg,
             relief="flat",
             padx=10,
             pady=5,
             cursor="hand2",
+            highlightthickness=1,
+            highlightbackground=C["border"],
+            highlightcolor=C["border"],
         )
 
     def _build(self) -> None:
@@ -119,17 +149,24 @@ class MelodyEditorApp:
             width=5,
             textvariable=self.bpm_var,
             font=self._fonts["body"],
+            bg=C["canvas"],
+            fg=C["ink"],
+            buttonbackground=C["canvas_muted"],
+            highlightthickness=1,
+            highlightbackground=C["border"],
+            highlightcolor=C["border"],
+            relief="flat",
         )
         spin.pack(side="left")
 
-        hdr = tk.Frame(card, bg=C["canvas_soft"])
+        hdr = tk.Frame(card, bg=C["canvas_muted"])
         hdr.pack(fill="x", padx=14, pady=(6, 4))
         for text, w in (("step", 5), ("note", 8), ("duration", 10)):
             tk.Label(
                 hdr,
                 text=text,
                 font=self._fonts["label"],
-                bg=C["canvas_soft"],
+                bg=C["canvas_muted"],
                 fg=C["body"],
                 width=w,
                 anchor="w",
@@ -174,12 +211,17 @@ class MelodyEditorApp:
                 values=list(NOTE_CHOICES),
                 width=6,
                 state="readonly",
+                style="Mono.TCombobox",
             ).pack(side="left", padx=(0, 8))
 
             dur_var = tk.StringVar(value=str(step.get("duration", 1)))
-            ttk.Combobox(frame, textvariable=dur_var, values=DURATION_CHOICES, width=6).pack(
-                side="left", padx=(0, 8)
-            )
+            ttk.Combobox(
+                frame,
+                textvariable=dur_var,
+                values=DURATION_CHOICES,
+                width=6,
+                style="Mono.TCombobox",
+            ).pack(side="left", padx=(0, 8))
 
             self._rows.append(
                 {

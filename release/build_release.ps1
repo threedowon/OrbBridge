@@ -40,8 +40,10 @@ Copy-Item (Join-Path $ReleaseDir "templates\README.txt") $Deliver
 
 Write-Host "Creating zip..."
 if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
-Start-Sleep -Milliseconds 500
-Compress-Archive -Path (Join-Path $Deliver "*") -DestinationPath $ZipPath -Force
+Start-Sleep -Milliseconds 800
+$items = Get-ChildItem -Path $Deliver -Force
+if (-not $items) { throw "Delivery folder is empty: $Deliver" }
+Compress-Archive -Path $items.FullName -DestinationPath $ZipPath -Force
 
 Write-Host ""
 Write-Host "Done." -ForegroundColor Green
