@@ -3,6 +3,7 @@
  *
  * 16× OneWire → DS2431
  * RS485 → Master (added / removed JSON)
+ * NeoPixel 링 16개 (각 12 LED) → GPIO 38 체인, DS2431 1개당 링 1개
  *
  * RS485 핀·속도: 실물 테스트와 동일 (TX=20, RX=21, 9600)
  */
@@ -17,6 +18,11 @@
 #define LED_BRIGHTNESS 32   // 255의 1/8
 #define RS485_BAUD   9600
 #define SLAVE_ID     1   // 보드 추가 시 2, 3…
+
+// NeoPixel 링: DS2431 버스 1개당 12 LED 링 1개, GPIO 38 한 데이터선에 체인
+#define RING_PIN        38   
+#define LEDS_PER_RING   12   // 링 1개 = 12 LED = DS2431 1개
+#define RING_BRIGHTNESS 32
 
 #define DEBUG_USB    0   // 1: USB Serial Monitor에도 JSON 출력
 
@@ -38,6 +44,9 @@ OneWire buses[BUS_COUNT] = {
   OneWire(11), OneWire(12), OneWire(13), OneWire(14)
 };
 
+// 버스 i → 링 i (LED [i*12 … i*12+11]). 전체 링은 GPIO 45 한 선에 직렬 연결.
+Adafruit_NeoPixel ring(BUS_COUNT * LEDS_PER_RING, RING_PIN, NEO_GRB + NEO_KHZ800);
+
 byte lastAddr[BUS_COUNT][8];
 bool hasLast[BUS_COUNT] = {false};
 
@@ -55,6 +64,15 @@ void flashRed() {
   delay(80);
   led.clear();
   led.show();
+}
+
+// busIndex 번 링(LED 12개)을 color 로 채운다. color=0 이면 소등.
+void setRing(int busIndex, uint32_t color) {
+  int base = busIndex * LEDS_PER_RING;
+  for (int j = 0; j < LEDS_PER_RING; j++) {
+    ring.setPixelColor(base + j, color);
+  }
+  ring.show();
 }
 
 bool sameAddr(const byte a[8], const byte b[8]) {
@@ -88,10 +106,12 @@ void sendEvent(const char* type, int busIndex, const byte addr[8]) {
 
 void sendRemoved(int busIndex, const byte addr[8]) {
   sendEvent("removed", busIndex, addr);
+  setRing(busIndex, 0);   // 링 소등
 }
 
 void sendAdded(int busIndex, const byte addr[8]) {
   sendEvent("added", busIndex, addr);
+  setRing(busIndex, ring.Color(255, 147, 41));   // 감지 → 따뜻한 노란색 점등
   flashRed();
 }
 
@@ -120,6 +140,11 @@ void setup() {
   led.setBrightness(LED_BRIGHTNESS);
   led.clear();
   led.show();
+
+  ring.begin();
+  ring.setBrightness(RING_BRIGHTNESS);
+  ring.clear();
+  ring.show();
 
   RS485.begin(RS485_BAUD, SERIAL_8N1, RX_PIN, TX_PIN);
 }

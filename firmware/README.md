@@ -39,7 +39,12 @@ Master USB → `config.json` `serial.port`
 
 - 16× OneWire (GPIO 3–18 등, 기존과 동일)
 - RS485로 `added` / `removed` JSON → Master
-- 오브 감지 시 LED **빨강** 깜빡
+- 온보드 RGB(GPIO 48): 오브 감지 시 **빨강** 깜빡
+- **NeoPixel 링**: GPIO **38** 한 선에 12 LED 링을 직렬 체인
+  - DS2431 버스 1개 = 링 1개 (버스 `i` → LED `[i*12 … i*12+11]`)
+  - 예: 0번 버스 감지 → LED 0~11 **초록** 점등, 제거 시 소등
+  - 상수 `LEDS_PER_RING`(12) / 색상(`ring.Color`)으로 조정
+  - 핀 선택(S3): **38 / 39 / 40** 안전. **35~37은 Octal PSRAM(N16R8 등) 모듈이면 사용 불가**
 - `SLAVE_ID`: 보드마다 1, 2, 3…
 
 Slave USB는 PC에 연결하지 않음 (디버그 시 `DEBUG_USB 1`).
