@@ -1,4 +1,15 @@
-import { FINISH_LOOPS, noteAt, durAt, rowCount, rowToNoteIn } from './data.js';
+import {
+  BEAT_COLS,
+  FINISH_LOOPS,
+  isPitchNote,
+  isRestNote,
+  isSkipNote,
+  melodyBeatCount,
+  noteAt,
+  durAt,
+  rowCount,
+  rowToNoteIn,
+} from './data.js';
 import { playTone, unlock, beginPreviewAudio, stopPreviewAudio } from './audio.js';
 import { draw, flash } from './staff.js';
 
@@ -23,8 +34,16 @@ export function createEngine() {
   let orbPositions = new Map();
   let listeners = {};
 
+  function gridCols() {
+    return BEAT_COLS;
+  }
+
+  function melodyBeats() {
+    return melodyBeatCount(melody);
+  }
+
   function beats() {
-    return melody?.notes.length ?? 0;
+    return melodyBeats();
   }
 
   function rows() {
@@ -32,7 +51,7 @@ export function createEngine() {
   }
 
   function emptyGrid() {
-    return Array.from({ length: beats() }, () => Array(rows()).fill(-1));
+    return Array.from({ length: gridCols() }, () => Array(rows()).fill(-1));
   }
 
   function beatMs() {
@@ -83,12 +102,26 @@ export function createEngine() {
     timer = setTimeout(() => tick(col), delay);
   }
 
+  function allPitchLocked() {
+    if (!melody) return false;
+    for (let c = 0; c < beats(); c++) {
+      const entry = melody.notes[c];
+      if (isPitchNote(entry) && !locked[c]) return false;
+    }
+    return true;
+  }
+
   function syncLockedFromGrid() {
     if (!melody) return;
     for (let c = 0; c < beats(); c++) {
-      locked[c] = grid[c][noteAt(melody.notes[c])] >= 0;
+      const entry = melody.notes[c];
+      if (isSkipNote(entry) || isRestNote(entry)) {
+        locked[c] = true;
+      } else if (isPitchNote(entry)) {
+        locked[c] = grid[c][noteAt(entry)] >= 0;
+      }
     }
-    if (phase === 'finishing' && !locked.every(Boolean)) {
+    if (phase === 'finishing' && !allPitchLocked()) {
       phase = 'running';
       finishCount = 0;
       emit('phase', 'running');
@@ -96,7 +129,7 @@ export function createEngine() {
   }
 
   function clearOrbAt(col, row) {
-    if (col < 0 || col >= beats() || row < 0 || row >= rows()) return;
+    if (col < 0 || col >= gridCols() || row < 0 || row >= rows()) return;
     grid[col][row] = -1;
   }
 
@@ -113,7 +146,6 @@ export function createEngine() {
     emit('beat', col);
 
     const entry = melody.notes[col];
-    const targetRow = noteAt(entry);
     const toneDur = noteDurationSec(col);
     const balls = placedInCol(col);
 
@@ -122,11 +154,17 @@ export function createEngine() {
       playTone(note.freq, v, toneDur, 0, { noteName: note.name });
     }
 
-    const correct = grid[col][targetRow] >= 0;
-    if (correct && !locked[col]) {
+    let correct = false;
+    if (isPitchNote(entry)) {
+      const targetRow = noteAt(entry);
+      correct = grid[col][targetRow] >= 0;
+      if (correct && !locked[col]) {
+        locked[col] = true;
+        flash(col, targetRow, true);
+        emit('lock', col);
+      }
+    } else if (isRestNote(entry)) {
       locked[col] = true;
-      flash(col, targetRow, true);
-      emit('lock', col);
     }
 
     emit('tick', { col, correct, hasAny: balls.length > 0, locked: locked[col] });
@@ -158,7 +196,7 @@ export function createEngine() {
           redraw();
           return;
         }
-      } else if (locked.every(Boolean)) {
+      } else if (allPitchLocked()) {
         phase = 'finishing';
         finishCount = 0;
         emit('phase', 'finishing');
@@ -190,6 +228,7 @@ export function createEngine() {
       loopCount = 0;
       finishCount = 0;
       hintOn = false;
+      syncLockedFromGrid();
       redraw();
       emit('phase', 'idle');
       emit('hint', false);
@@ -226,7 +265,8 @@ export function createEngine() {
     placeExternal(col, row, voiceId = 0, orbId = null) {
       if (!melody || phase === 'done') return;
       if (voiceId < 0) return;
-      if (col < 0 || col >= beats() || row < 0 || row >= rows()) return;
+      if (col < 0 || col >= gridCols() || row < 0 || row >= rows()) return;
+      if (isSkipNote(melody.notes[col])) return;
       clearPreview();
 
       if (orbId && orbPositions.has(orbId)) {
@@ -246,7 +286,7 @@ export function createEngine() {
 
     removeExternal(col, row, orbId = null) {
       if (!melody) return;
-      if (col < 0 || col >= beats() || row < 0 || row >= rows()) return;
+      if (col < 0 || col >= gridCols() || row < 0 || row >= rows()) return;
       clearOrbAt(col, row);
 
       if (orbId) {
@@ -273,6 +313,7 @@ export function createEngine() {
       beat = -1;
       singlePass = true;
       locked = new Array(beats()).fill(false);
+      syncLockedFromGrid();
       phase = 'running';
       if (!startTime) startTime = Date.now();
       emit('phase', 'running');
@@ -313,11 +354,13 @@ export function createEngine() {
 
       melody.notes.forEach((entry, i) => {
         const d = durAt(entry);
-        const note = rowToNoteIn(noteAt(entry), melody.scale);
-        playTone(note.freq, voice, Math.min(0.9, 0.2 + 0.22 * d), base + acc * step, {
-          preview: true,
-          noteName: note.name,
-        });
+        if (isPitchNote(entry)) {
+          const note = rowToNoteIn(noteAt(entry), melody.scale);
+          playTone(note.freq, voice, Math.min(0.9, 0.2 + 0.22 * d), base + acc * step, {
+            preview: true,
+            noteName: note.name,
+          });
+        }
 
         const t = setTimeout(() => {
           if (session !== previewSession) return;

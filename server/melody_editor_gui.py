@@ -6,9 +6,9 @@ import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import messagebox, ttk
 
-from melody_editor_core import load_active_melody, save_active_melody
+from melody_editor_core import load_active_melody, normalize_beat_steps, save_active_melody
 from melody_preview import play_melody, stop_preview
-from melody_register_core import NOTE_CHOICES
+from melody_register_core import EDITOR_NOTE_CHOICES_UI, NOTE_CHOICES, NOTE_REST, NOTE_SKIP, is_allowed_step_note
 
 UI_CANDIDATES = ("Inter", "Segoe UI", "Helvetica Neue", "Manrope", "Arial")
 DURATION_CHOICES = ("0.25", "0.5", "0.75", "1", "1.5", "2", "3", "4")
@@ -40,6 +40,11 @@ def _pick_font(root: tk.Tk, candidates: tuple[str, ...], fallback: str) -> str:
 
 def _display_note(note: str) -> str:
     note = str(note or "").strip()
+    upper = note.upper()
+    if upper == NOTE_SKIP:
+        return NOTE_SKIP
+    if upper == NOTE_REST:
+        return NOTE_REST
     return note if note in NOTE_CHOICES else NOTE_CHOICES[0]
 
 
@@ -54,8 +59,8 @@ class MelodyEditorApp:
         ui = _pick_font(self.root, UI_CANDIDATES, "TkDefaultFont")
         self.root.title("Melody Editor")
         self.root.configure(bg=C["canvas_soft"])
-        self.root.minsize(360, 420)
-        self.root.geometry("400x480")
+        self.root.minsize(360, 520)
+        self.root.geometry("400x600")
 
         self._fonts = {
             "title": tkfont.Font(family=ui, size=22, weight="bold"),
@@ -172,8 +177,25 @@ class MelodyEditorApp:
                 anchor="w",
             ).pack(side="left", padx=(0, 4))
 
-        self.steps_frame = tk.Frame(card, bg=C["canvas"])
-        self.steps_frame.pack(fill="both", expand=True, padx=14, pady=(0, 8))
+        steps_wrap = tk.Frame(card, bg=C["canvas"])
+        steps_wrap.pack(fill="both", expand=True, padx=14, pady=(0, 8))
+
+        self._steps_canvas = tk.Canvas(
+            steps_wrap,
+            bg=C["canvas"],
+            highlightthickness=0,
+            borderwidth=0,
+        )
+        steps_scroll = ttk.Scrollbar(steps_wrap, orient="vertical", command=self._steps_canvas.yview)
+        self._steps_canvas.configure(yscrollcommand=steps_scroll.set)
+        self._steps_canvas.pack(side="left", fill="both", expand=True)
+        steps_scroll.pack(side="right", fill="y")
+
+        self.steps_frame = tk.Frame(self._steps_canvas, bg=C["canvas"])
+        self._steps_window = self._steps_canvas.create_window((0, 0), window=self.steps_frame, anchor="nw")
+        self.steps_frame.bind("<Configure>", self._on_steps_frame_configure)
+        self._steps_canvas.bind("<Configure>", self._on_steps_canvas_configure)
+        self._steps_canvas.bind_all("<MouseWheel>", self._on_steps_mousewheel, add="+")
 
         actions = tk.Frame(card, bg=C["canvas"])
         actions.pack(fill="x", padx=14, pady=(0, 14))
@@ -182,6 +204,25 @@ class MelodyEditorApp:
         self._btn(right, "미리듣기", self._preview, muted=True).pack(side="left", padx=(0, 8))
         self._btn(right, "저장", self._save, primary=True).pack(side="left")
 
+    def _on_steps_frame_configure(self, _event=None) -> None:
+        self._steps_canvas.configure(scrollregion=self._steps_canvas.bbox("all"))
+
+    def _on_steps_canvas_configure(self, event) -> None:
+        self._steps_canvas.itemconfigure(self._steps_window, width=event.width)
+
+    def _on_steps_mousewheel(self, event) -> None:
+        if not self._steps_canvas.winfo_exists():
+            return
+        widget = self.root.winfo_containing(event.x_root, event.y_root)
+        if widget is None:
+            return
+        cur = widget
+        while cur is not None:
+            if cur is self._steps_canvas or cur is self.steps_frame:
+                self._steps_canvas.yview_scroll(int(-event.delta / 120), "units")
+                break
+            cur = cur.master
+
     def _clear_rows(self) -> None:
         for row in self._rows:
             row["frame"].destroy()
@@ -189,8 +230,10 @@ class MelodyEditorApp:
 
     def _build_rows(self) -> None:
         self._clear_rows()
+        steps = normalize_beat_steps(self._data.get("steps") or [], file_id=self._file_id)
+        self._data["steps"] = steps
 
-        for i, step in enumerate(self._data.get("steps") or []):
+        for i, step in enumerate(steps):
             frame = tk.Frame(self.steps_frame, bg=C["canvas"])
             frame.pack(fill="x", pady=2)
 
@@ -208,27 +251,59 @@ class MelodyEditorApp:
             ttk.Combobox(
                 frame,
                 textvariable=note_var,
-                values=list(NOTE_CHOICES),
+                values=list(EDITOR_NOTE_CHOICES_UI),
                 width=6,
                 state="readonly",
                 style="Mono.TCombobox",
             ).pack(side="left", padx=(0, 8))
 
             dur_var = tk.StringVar(value=str(step.get("duration", 1)))
-            ttk.Combobox(
+            dur_entry = tk.Entry(
                 frame,
                 textvariable=dur_var,
-                values=DURATION_CHOICES,
                 width=6,
-                style="Mono.TCombobox",
-            ).pack(side="left", padx=(0, 8))
+                font=self._fonts["mono"],
+                bg=C["canvas"],
+                fg=C["ink"],
+                relief="flat",
+                highlightthickness=1,
+                highlightbackground=C["border"],
+                highlightcolor=C["border"],
+            )
+            dur_entry.pack(side="left", padx=(0, 8))
 
             self._rows.append(
                 {
                     "frame": frame,
                     "note_var": note_var,
                     "dur_var": dur_var,
+                    "dur_entry": dur_entry,
                 }
+            )
+
+        self._bind_duration_tabs()
+        self.root.after_idle(self._on_steps_frame_configure)
+
+    def _bind_duration_tabs(self) -> None:
+        entries = [row["dur_entry"] for row in self._rows]
+        for i, entry in enumerate(entries):
+            nxt = entries[i + 1] if i + 1 < len(entries) else None
+            prv = entries[i - 1] if i > 0 else None
+
+            def focus_entry(widget: tk.Entry | None, _event: tk.Event | None = None) -> str:
+                if widget is not None:
+                    widget.focus_set()
+                    widget.select_range(0, tk.END)
+                    widget.icursor(tk.END)
+                return "break"
+
+            entry.bind(
+                "<Tab>",
+                lambda e, n=nxt: focus_entry(n, e),
+            )
+            entry.bind(
+                "<Shift-Tab>",
+                lambda e, p=prv: focus_entry(p, e),
             )
 
     def _collect(self) -> dict:
@@ -239,11 +314,19 @@ class MelodyEditorApp:
             data["bpm"] = 120
 
         steps = []
+        base_steps = normalize_beat_steps(self._data.get("steps") or [], file_id=self._file_id)
         for i, row in enumerate(self._rows):
-            base = dict((self._data.get("steps") or [])[i])
+            base = dict(base_steps[i])
             base["step"] = i + 1
             note = row["note_var"].get().strip()
-            base["note"] = note if note in NOTE_CHOICES else NOTE_CHOICES[0]
+            if note.upper() == NOTE_SKIP:
+                base["note"] = NOTE_SKIP
+            elif note.upper() == NOTE_REST:
+                base["note"] = NOTE_REST
+            elif note in NOTE_CHOICES:
+                base["note"] = note
+            else:
+                base["note"] = NOTE_CHOICES[0]
             try:
                 base["duration"] = float(row["dur_var"].get().strip())
             except ValueError:
@@ -277,6 +360,7 @@ class MelodyEditorApp:
 
     def _on_close(self) -> None:
         self._closing = True
+        self._steps_canvas.unbind_all("<MouseWheel>")
         stop_preview()
         self.root.destroy()
 

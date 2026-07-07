@@ -11,7 +11,13 @@ from typing import Any, Callable
 from app_paths import data_dir, melodies_dir
 
 NOTE_CHOICES = ("C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5")
+NOTE_REST = "REST"
+NOTE_SKIP = "X"
+# Combobox 표시 순서 — 위로 갈수록 높은 음, 하단에 REST · X
+NOTE_CHOICES_UI = tuple(reversed(NOTE_CHOICES))
+EDITOR_NOTE_CHOICES_UI = (*NOTE_CHOICES_UI, NOTE_REST, NOTE_SKIP)
 DEFAULT_RANGE = ["C4", "C5"]
+BEAT_COLS = 12
 LOG_LIMIT = 80
 SKIP_FILES = {"config.json"}
 
@@ -51,7 +57,8 @@ def normalize_melody(raw: dict[str, Any], file_id: str = "") -> dict[str, Any]:
     for i, step in enumerate(steps_in):
         if not isinstance(step, dict):
             continue
-        note = str(step.get("note", "?")).strip() or "?"
+        raw_note = str(step.get("note", "")).strip()
+        note = normalize_step_note(raw_note) if raw_note else ""
         dur = step.get("duration", step.get("dur", 1))
         try:
             dur_f = float(dur)
@@ -100,6 +107,8 @@ def validate_melody(data: dict[str, Any]) -> list[str]:
     if not steps:
         errors.append("steps가 최소 1개 필요합니다.")
         return errors
+    if len(steps) > BEAT_COLS:
+        errors.append(f"steps는 최대 {BEAT_COLS}개까지 가능합니다.")
 
     for step in steps:
         n = step.get("step")
@@ -107,22 +116,45 @@ def validate_melody(data: dict[str, Any]) -> list[str]:
         dur = step.get("duration", 0)
         if not note:
             errors.append(f"step {n}: note가 비어 있습니다.")
+        elif not is_allowed_step_note(note):
+            errors.append(f"step {n}: note가 올바르지 않습니다 ({note}).")
         if not isinstance(dur, (int, float)) or dur <= 0:
             errors.append(f"step {n}: duration은 0보다 커야 합니다.")
     return errors
 
 
+def normalize_step_note(note: str) -> str:
+    raw = str(note or "").strip()
+    upper = raw.upper()
+    if upper == NOTE_SKIP or upper == "?":
+        return NOTE_SKIP
+    if upper == NOTE_REST:
+        return NOTE_REST
+    if raw in NOTE_CHOICES:
+        return raw
+    return raw
+
+
+def is_allowed_step_note(note: str) -> bool:
+    note = normalize_step_note(note)
+    return note in NOTE_CHOICES or note in (NOTE_REST, NOTE_SKIP)
+
+
 def note_to_stage_key(note: str) -> str:
-    note = str(note or "").strip()
-    if not note or note == "?":
-        return "?"
+    note = normalize_step_note(note)
+    if note == NOTE_SKIP:
+        return ""
+    if note == NOTE_REST:
+        return "R"
     return note[0].upper()
 
 
 def build_stage_sequence(steps: list[dict[str, Any]]) -> dict[str, str]:
     seq: dict[str, str] = {}
     for i, step in enumerate(steps, start=1):
-        seq[str(i)] = note_to_stage_key(step.get("note", "?"))
+        key = note_to_stage_key(step.get("note", ""))
+        if key:
+            seq[str(i)] = key
     return seq
 
 

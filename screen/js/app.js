@@ -1,4 +1,4 @@
-import { beatCount, setVoices } from './data.js';
+import { beatCount, isSkipNote, setVoices } from './data.js';
 import { unlock, playSuccess } from './audio.js';
 import { initStaff } from './staff.js';
 import { createEngine } from './engine.js';
@@ -138,7 +138,7 @@ async function handleOrbAdded(slave, cell, voice, orbId) {
   }
   try {
     const { col, row } = tableToStaff(slave, cell, currentMelody.scale);
-    if (col >= getBeats()) return;
+    if (col >= getBeats() || isSkipNote(currentMelody.notes[col])) return;
     engine.placeExternal(col, row, voiceIdx, orbId ?? null);
     await loadVoiceCatalog();
     engine.redraw();
@@ -152,7 +152,7 @@ function handleOrbRemoved(slave, cell, orbId) {
   if (!currentMelody || !gameRunning) return;
   try {
     const { col, row } = tableToStaff(slave, cell, currentMelody.scale);
-    if (col >= getBeats()) return;
+    if (col >= getBeats() || isSkipNote(currentMelody.notes[col])) return;
     engine.removeExternal(col, row, orbId ?? null);
   } catch (err) {
     console.warn('orb remove map failed', err);

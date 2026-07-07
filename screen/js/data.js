@@ -30,6 +30,49 @@ export const NOTES = [
 
 export const FINISH_LOOPS = 1;
 
+/** table / screen 공통 — 가로 박자 칸 수 */
+export const BEAT_COLS = 12;
+
+export const NOTE_REST = 'REST';
+export const NOTE_SKIP = 'X';
+
+export function noteName(entry) {
+  if (typeof entry === 'string') return entry;
+  return entry?.name ?? '';
+}
+
+export function isSkipNote(entry) {
+  return noteName(entry).toUpperCase() === NOTE_SKIP;
+}
+
+export function isRestNote(entry) {
+  return noteName(entry).toUpperCase() === NOTE_REST;
+}
+
+export function isPitchNote(entry) {
+  return !isSkipNote(entry) && !isRestNote(entry);
+}
+
+export function buildSlotLayout(notes) {
+  const visibleSlots = [];
+  const slotToDisplayCol = Array(notes.length).fill(-1);
+  notes.forEach((entry, slot) => {
+    if (!isSkipNote(entry)) {
+      slotToDisplayCol[slot] = visibleSlots.length;
+      visibleSlots.push(slot);
+    }
+  });
+  return { visibleSlots, slotToDisplayCol };
+}
+
+export function visibleBeatCount(melody) {
+  return melody?.visibleSlots?.length ?? 0;
+}
+
+export function slotForDisplayCol(melody, displayCol) {
+  return melody?.visibleSlots?.[displayCol] ?? -1;
+}
+
 export function buildScale(range) {
   if (!Array.isArray(range) || range.length !== 2) {
     throw new Error('range는 ["C4", "C5"] 형식의 2개 음표여야 합니다.');
@@ -71,6 +114,10 @@ export function durAt(entry) {
   return typeof entry === 'number' ? 1 : (entry.dur ?? 1);
 }
 
-export function beatCount(melody) {
+export function melodyBeatCount(melody) {
   return melody?.notes?.length ?? 0;
+}
+
+export function beatCount(melody) {
+  return BEAT_COLS;
 }

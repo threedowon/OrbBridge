@@ -290,8 +290,8 @@ body {
 #view-play > * { position: relative; z-index: 1; }
 
 .staff-stage {
-  width: min(100%, 960px);
-  padding: 72px 40px 48px;
+  width: min(100%, 1200px);
+  padding: 72px 32px 48px;
   overflow: visible;
 }
 

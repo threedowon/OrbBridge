@@ -57,18 +57,21 @@ def play_melody(
         for i, step in enumerate(steps):
             if _cancel.is_set():
                 break
-            note = str(step.get("note", "")).strip()
+            note = str(step.get("note", "")).strip().upper()
             dur = float(step.get("duration") or 1)
             if on_step:
                 try:
                     on_step(i)
                 except Exception:
                     pass
-            if note and note != "?":
-                freq = NOTE_FREQ.get(note, 440)
-                _beep(freq, int(beat_ms * dur * 0.88))
-            else:
+            if note in ("X", "?"):
                 time.sleep(beat_ms * dur / 1000)
+                continue
+            if note == "REST" or not note:
+                time.sleep(beat_ms * dur / 1000)
+                continue
+            freq = NOTE_FREQ.get(note, 440)
+            _beep(freq, int(beat_ms * dur * 0.88))
         if on_step and not _cancel.is_set():
             try:
                 on_step(-1)

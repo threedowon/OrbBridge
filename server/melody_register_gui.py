@@ -9,7 +9,11 @@ from tkinter import messagebox, simpledialog, ttk
 
 from melody_preview import play_melody, stop_preview
 from melody_register_core import (
+    EDITOR_NOTE_CHOICES_UI,
     NOTE_CHOICES,
+    NOTE_CHOICES_UI,
+    NOTE_REST,
+    NOTE_SKIP,
     MelodyRegisterState,
     delete_melody,
     list_melody_ids,
@@ -255,7 +259,7 @@ class MelodyRegisterApp:
         ttk.Combobox(
             row2,
             textvariable=self.range_low_var,
-            values=NOTE_CHOICES,
+            values=NOTE_CHOICES_UI,
             width=5,
             state="readonly",
         ).grid(row=0, column=3, sticky="w")
@@ -263,7 +267,7 @@ class MelodyRegisterApp:
         ttk.Combobox(
             row2,
             textvariable=self.range_high_var,
-            values=NOTE_CHOICES,
+            values=NOTE_CHOICES_UI,
             width=5,
             state="readonly",
         ).grid(row=0, column=5, sticky="w", padx=(0, 16))
@@ -324,7 +328,7 @@ class MelodyRegisterApp:
         ttk.Combobox(
             edit,
             textvariable=self.step_note_var,
-            values=[*NOTE_CHOICES, "?"],
+            values=[*EDITOR_NOTE_CHOICES_UI],
             width=6,
             state="readonly",
         ).pack(side="left", padx=(0, 8))
@@ -459,7 +463,7 @@ class MelodyRegisterApp:
                 iid=str(i),
                 values=(
                     i + 1,
-                    step.get("note", "?"),
+                    step.get("note", NOTE_SKIP),
                     dur,
                     step.get("lyric", ""),
                     ms,
@@ -517,7 +521,7 @@ class MelodyRegisterApp:
             messagebox.showerror("Melody Register", "duration은 0보다 커야 합니다.")
             return
         steps = self._data.setdefault("steps", [])
-        steps[idx]["note"] = self.step_note_var.get().strip() or "?"
+        steps[idx]["note"] = self.step_note_var.get().strip() or NOTE_SKIP
         steps[idx]["duration"] = dur
         lyric = self.step_lyric_var.get().strip()
         if lyric:

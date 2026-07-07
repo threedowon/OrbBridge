@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from melody_register_core import (
+    BEAT_COLS,
     load_melody,
     melodies_dir,
     melody_duration_sec,
@@ -15,6 +16,12 @@ from melody_register_core import (
 )
 
 DEFAULT_MELODY_ID = "biplane"
+
+BIPLANE_TAIL_STEPS: tuple[dict[str, Any], ...] = (
+    {"note": "E4", "duration": 1, "lyric": "멀"},
+    {"note": "E4", "duration": 1, "lyric": "리"},
+    {"note": "C5", "duration": 2, "lyric": "라"},
+)
 
 
 def melodies_config_path() -> Path:
@@ -37,7 +44,25 @@ def active_melody_id() -> str:
 
 def load_active_melody() -> tuple[str, dict[str, Any]]:
     file_id = active_melody_id()
-    return file_id, load_melody(file_id)
+    data = load_melody(file_id)
+    data["steps"] = normalize_beat_steps(data.get("steps") or [], file_id=file_id)
+    return file_id, data
+
+
+def normalize_beat_steps(steps: list[dict[str, Any]], *, file_id: str = "") -> list[dict[str, Any]]:
+    """Pad or trim steps to BEAT_COLS (12). Upgrades legacy 9-step biplane in place."""
+    out = [dict(s) for s in steps]
+    if len(out) == 9 and file_id == "biplane":
+        for extra in BIPLANE_TAIL_STEPS:
+            out.append(dict(extra))
+    if len(out) > BEAT_COLS:
+        out = out[:BEAT_COLS]
+    last_note = str(out[-1].get("note", "C4") or "C4") if out else "C4"
+    while len(out) < BEAT_COLS:
+        out.append({"note": last_note, "duration": 1.0})
+    for i, step in enumerate(out):
+        step["step"] = i + 1
+    return out
 
 
 def save_active_melody(

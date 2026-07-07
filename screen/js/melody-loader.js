@@ -1,4 +1,11 @@
-import { buildScale, noteNameToRow } from './data.js';
+import {
+  BEAT_COLS,
+  NOTE_REST,
+  NOTE_SKIP,
+  buildScale,
+  buildSlotLayout,
+  noteNameToRow,
+} from './data.js';
 
 export function parseMelodyJson(raw, fileId = 'custom') {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -9,25 +16,41 @@ export function parseMelodyJson(raw, fileId = 'custom') {
   if (!Array.isArray(steps) || steps.length === 0) {
     throw new Error('"steps" 배열이 필요합니다.');
   }
+  if (steps.length > BEAT_COLS) {
+    throw new Error(`steps는 최대 ${BEAT_COLS}개까지 가능합니다.`);
+  }
 
   const range = raw.range ?? ['C4', 'C5'];
   const scale = buildScale(range);
 
   const notes = steps.map((step, i) => {
     const label = step.step ?? i + 1;
-    const name = step.note;
-
-    if (!name || name === '?') {
-      throw new Error(`step ${label}: note를 입력하세요 (현재 "?")`);
-    }
+    const rawName = String(step.note ?? '').trim();
+    const name = rawName.toUpperCase();
 
     const dur = step.duration ?? step.dur ?? 1;
     if (typeof dur !== 'number' || dur <= 0) {
       throw new Error(`step ${label}: duration이 올바르지 않습니다.`);
     }
 
-    return { n: noteNameToRow(name, scale), dur };
+    if (name === NOTE_SKIP || name === '?') {
+      return { name: NOTE_SKIP, n: -1, dur };
+    }
+    if (name === NOTE_REST) {
+      return { name: NOTE_REST, n: -1, dur };
+    }
+    if (!rawName) {
+      throw new Error(`step ${label}: note를 입력하세요`);
+    }
+
+    return {
+      name: rawName,
+      n: noteNameToRow(rawName, scale),
+      dur,
+    };
   });
+
+  const layout = buildSlotLayout(notes);
 
   return {
     songId: raw.songId ?? fileId,
@@ -37,6 +60,8 @@ export function parseMelodyJson(raw, fileId = 'custom') {
     range,
     scale,
     notes,
+    visibleSlots: layout.visibleSlots,
+    slotToDisplayCol: layout.slotToDisplayCol,
   };
 }
 

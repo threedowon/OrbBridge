@@ -1,4 +1,4 @@
-import { noteNameToRow } from './data.js';
+import { noteNameToRow, BEAT_COLS } from './data.js';
 
 /** table 행 1–8 → 음표 (C4–C5) */
 export const ROW_NOTES = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'];
@@ -27,10 +27,14 @@ export function cellToTableRow(cell) {
   return Math.floor((cell + 1) / 2);
 }
 
-/** slave + cell(Q슬롯) → 멜로디 beat column (0-based) */
+/** slave + cell(Q슬롯) → 멜로디 beat column (0-based, 최대 BEAT_COLS-1) */
 export function slaveCellToCol(slave, cell) {
   const q = cell % 2 === 1 ? 1 : 2;
-  return q + (slave - 1) * 2 - 1;
+  const col = q + (slave - 1) * 2 - 1;
+  if (col < 0 || col >= BEAT_COLS) {
+    throw new Error(`column out of range: slave=${slave} cell=${cell}`);
+  }
+  return col;
 }
 
 export function tableRowToStaffRow(tableRow, scale) {

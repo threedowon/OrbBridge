@@ -1,4 +1,13 @@
-import { noteAt, durAt, rowCount, VOICES } from './data.js';
+import {
+  isPitchNote,
+  isRestNote,
+  isSkipNote,
+  melodyBeatCount,
+  noteAt,
+  durAt,
+  rowCount,
+  VOICES,
+} from './data.js';
 import { voiceDisplay } from './voice-labels.js';
 
 const MARGIN_L = 24;
@@ -29,45 +38,65 @@ let hintOn = false;
 let onCellClick = null;
 let lastState = null;
 
+function visibleSlots(melody) {
+  return melody?.visibleSlots ?? [];
+}
+
+function displayColForSlot(melody, slot) {
+  return melody?.slotToDisplayCol?.[slot] ?? -1;
+}
+
 function computeCols(melody, innerW) {
-  const notes = melody.notes;
-  const n = notes.length;
-  const durs = notes.map(durAt);
-  const sum = durs.reduce((a, b) => a + b, 0);
+  const slots = visibleSlots(melody);
+  const n = slots.length;
+  if (n === 0) {
+    return { xs: [MARGIN_L, MARGIN_L + innerW], widths: [innerW], n: 0 };
+  }
+  const durs = slots.map(slot => durAt(melody.notes[slot]));
+  const sum = durs.reduce((a, b) => a + b, 0) || 1;
   const widths = durs.map(d => (d / sum) * innerW);
   const xs = [MARGIN_L];
   for (let i = 0; i < n; i++) xs.push(xs[i] + widths[i]);
   return { xs, widths, n };
 }
 
-function colCenter(c) {
-  return colXs[c] + colWs[c] / 2;
+function colCenter(displayCol) {
+  return colXs[displayCol] + colWs[displayCol] / 2;
 }
 
-function cellCenter(c, r) {
+function cellCenter(displayCol, r) {
   return {
-    x: colCenter(c),
+    x: colCenter(displayCol),
     y: MARGIN_T + r * cellH + cellH / 2,
   };
 }
 
-function targetRow(melody, c) {
-  return noteAt(melody.notes[c]);
+function cellCenterForSlot(melody, slot, r) {
+  const displayCol = displayColForSlot(melody, slot);
+  if (displayCol < 0) return null;
+  return cellCenter(displayCol, r);
 }
 
-function correctRow(state, c) {
+function targetRow(melody, slot) {
+  const entry = melody.notes[slot];
+  if (!entry || isSkipNote(entry) || isRestNote(entry)) return -1;
+  return noteAt(entry);
+}
+
+function correctRow(state, slot) {
   const { melody, grid } = state;
-  const tr = targetRow(melody, c);
-  return grid[c][tr] >= 0 ? tr : -1;
+  const tr = targetRow(melody, slot);
+  if (tr < 0) return -1;
+  return grid[slot][tr] >= 0 ? tr : -1;
 }
 
-function beatOnPath(state, c) {
-  if (hintOn) return true;
-  return correctRow(state, c) >= 0;
+function beatOnPath(state, slot) {
+  if (hintOn) return isPitchNote(state.melody.notes[slot]);
+  return correctRow(state, slot) >= 0;
 }
 
-function showLargeAtTarget(state, c) {
-  return beatOnPath(state, c);
+function showLargeAtTarget(state, slot) {
+  return beatOnPath(state, slot);
 }
 
 function drawGlowPath(points) {
@@ -153,6 +182,16 @@ function drawOrb(x, y, radius, { glow = false } = {}) {
   ctx.fill();
 }
 
+function drawRestMark(x, y) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+  ctx.font = '600 16px "DM Sans", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('𝄽', x, y);
+  ctx.restore();
+}
+
 function drawOrbLabel(x, y, voiceId, radius) {
   const voice = VOICES[voiceId];
   if (!voice) return;
@@ -212,7 +251,7 @@ export function initStaff(el, clickCb) {
 
   canvas.addEventListener('click', e => {
     const cell = hitTest(e);
-    if (cell) onCellClick?.(cell.col, cell.row);
+    if (cell) onCellClick?.(cell.slot, cell.row);
   });
   canvas.addEventListener('mousemove', e => {
     hovered = hitTest(e);
@@ -242,12 +281,14 @@ function hitTest(e) {
   const y = (e.clientY - r.top) * sy;
   const row = Math.floor((y - MARGIN_T) / cellH);
   if (row < 0 || row >= rowN) return null;
-  let col = -1;
+  let displayCol = -1;
   for (let c = 0; c < beatN; c++) {
-    if (x >= colXs[c] && x < colXs[c] + colWs[c]) { col = c; break; }
+    if (x >= colXs[c] && x < colXs[c] + colWs[c]) { displayCol = c; break; }
   }
-  if (col < 0) return null;
-  return { col, row };
+  if (displayCol < 0 || !lastState?.melody) return null;
+  const slot = lastState.melody.visibleSlots[displayCol];
+  if (slot === undefined) return null;
+  return { slot, row, displayCol };
 }
 
 export function draw(state) {
@@ -267,9 +308,9 @@ export function draw(state) {
 }
 
 function paint(state) {
-  const { grid, locked, melody, beat, previewBeat = -1 } = state;
-  const playhead = previewBeat >= 0 ? previewBeat : beat;
-  const n = melody.notes.length;
+  const { grid, melody, beat, previewBeat = -1 } = state;
+  const playheadSlot = previewBeat >= 0 ? previewBeat : beat;
+  const slots = visibleSlots(melody);
   const rows = rowCount(melody);
   const W = canvas.width;
   const H = canvas.height;
@@ -278,8 +319,8 @@ function paint(state) {
 
   ctx.strokeStyle = PAL.track;
   ctx.lineWidth = 1;
-  for (let c = 0; c < n; c++) {
-    const x = colCenter(c);
+  for (let displayCol = 0; displayCol < beatN; displayCol++) {
+    const x = colCenter(displayCol);
     ctx.beginPath();
     ctx.moveTo(x, 0);
     ctx.lineTo(x, H);
@@ -287,47 +328,63 @@ function paint(state) {
   }
 
   const pathPoints = [];
-  for (let c = 0; c < n; c++) {
-    const r = correctRow(state, c);
+  for (const slot of slots) {
+    const r = correctRow(state, slot);
     if (r < 0) continue;
-    pathPoints.push(cellCenter(c, r));
+    const pt = cellCenterForSlot(melody, slot, r);
+    if (pt) pathPoints.push(pt);
   }
   drawGlowPath(pathPoints);
   updateGlowPath(pathPoints, W, H);
 
-  if (playhead >= 0 && playhead < n) {
-    ctx.save();
-    ctx.fillStyle = previewBeat >= 0
-      ? 'rgba(255, 175, 130, 0.22)'
-      : 'rgba(255, 175, 130, 0.14)';
-    ctx.fillRect(colXs[playhead], MARGIN_T, colWs[playhead], rows * cellH);
-    ctx.restore();
+  if (playheadSlot >= 0 && playheadSlot < melodyBeatCount(melody)) {
+    const displayCol = displayColForSlot(melody, playheadSlot);
+    if (displayCol >= 0) {
+      ctx.save();
+      ctx.fillStyle = previewBeat >= 0
+        ? 'rgba(255, 175, 130, 0.22)'
+        : 'rgba(255, 175, 130, 0.14)';
+      ctx.fillRect(colXs[displayCol], MARGIN_T, colWs[displayCol], rows * cellH);
+      ctx.restore();
+    }
   }
 
-  for (let c = 0; c < n; c++) {
-    const tr = targetRow(melody, c);
+  for (const slot of slots) {
+    const entry = melody.notes[slot];
+    const displayCol = displayColForSlot(melody, slot);
+    if (displayCol < 0) continue;
+    const tr = targetRow(melody, slot);
+    const midY = MARGIN_T + (rows * cellH) / 2;
 
-    if (showLargeAtTarget(state, c)) {
-      const pt = cellCenter(c, tr);
-      const isPlay = c === playhead && playhead >= 0;
-      const voiceId = grid[c][tr];
+    if (isRestNote(entry)) {
+      drawRestMark(colCenter(displayCol), midY);
+      continue;
+    }
+
+    if (tr < 0) continue;
+
+    if (showLargeAtTarget(state, slot)) {
+      const pt = cellCenter(displayCol, tr);
+      const isPlay = slot === playheadSlot && playheadSlot >= 0;
+      const voiceId = grid[slot][tr];
       drawOrb(pt.x, pt.y, R_LARGE, { glow: isPlay });
       if (voiceId >= 0) drawOrbLabel(pt.x, pt.y, voiceId, R_LARGE);
     }
 
     for (let r = 0; r < rows; r++) {
-      if (grid[c][r] < 0) continue;
-      if (r === tr && showLargeAtTarget(state, c)) continue;
-      const pt = cellCenter(c, r);
-      const voiceId = grid[c][r];
+      if (grid[slot][r] < 0) continue;
+      if (r === tr && showLargeAtTarget(state, slot)) continue;
+      const pt = cellCenter(displayCol, r);
+      const voiceId = grid[slot][r];
       drawOrb(pt.x, pt.y, R_SMALL);
       drawOrbLabel(pt.x, pt.y, voiceId, R_SMALL);
     }
   }
 
   if (hovered) {
-    const { col, row } = hovered;
-    const pt = cellCenter(col, row);
+    const { slot, row } = hovered;
+    const pt = cellCenterForSlot(melody, slot, row);
+    if (!pt) return;
     ctx.save();
     ctx.globalAlpha = 0.12;
     ctx.beginPath();
@@ -338,8 +395,10 @@ function paint(state) {
   }
 }
 
-export function flash(col, row, ok) {
-  const pt = cellCenter(col, row);
+export function flash(slot, row, ok) {
+  if (!lastState?.melody) return;
+  const pt = cellCenterForSlot(lastState.melody, slot, row);
+  if (!pt) return;
   let f = 0;
   const run = () => {
     f++;
