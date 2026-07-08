@@ -1,7 +1,6 @@
 import {
   isPitchNote,
   isRestNote,
-  isSkipNote,
   melodyBeatCount,
   noteAt,
   durAt,
@@ -79,7 +78,7 @@ function cellCenterForSlot(melody, slot, r) {
 
 function targetRow(melody, slot) {
   const entry = melody.notes[slot];
-  if (!entry || isSkipNote(entry) || isRestNote(entry)) return -1;
+  if (!entry || isRestNote(entry)) return -1;
   return noteAt(entry);
 }
 

@@ -1,7 +1,6 @@
 import {
   BEAT_COLS,
   NOTE_REST,
-  NOTE_SKIP,
   buildScale,
   buildSlotLayout,
   noteNameToRow,
@@ -33,10 +32,8 @@ export function parseMelodyJson(raw, fileId = 'custom') {
       throw new Error(`step ${label}: duration이 올바르지 않습니다.`);
     }
 
-    if (name === NOTE_SKIP || name === '?') {
-      return { name: NOTE_SKIP, n: -1, dur };
-    }
-    if (name === NOTE_REST) {
+    // REST, or legacy unused markers X / ?
+    if (name === NOTE_REST || name === 'R' || name === 'X' || name === '?' || rawName === '-') {
       return { name: NOTE_REST, n: -1, dur };
     }
     if (!rawName) {

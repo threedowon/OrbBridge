@@ -2,8 +2,17 @@ import { NOTES, VOICES } from './data.js';
 
 let ctx = null;
 let previewOut = null;
+/** @type {OscillatorNode[]} */
+const activePreviewOscs = [];
+/** @type {Set<HTMLAudioElement>} */
+const orbSamples = new Set();
 /** @type {Set<HTMLAudioElement>} */
 const activeSamples = new Set();
+let audioOwnerCheck = () => true;
+
+export function setAudioOwnerCheck(fn) {
+  audioOwnerCheck = typeof fn === 'function' ? fn : () => true;
+}
 
 export function unlock() {
   if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -11,18 +20,44 @@ export function unlock() {
   return ctx;
 }
 
-export function stopSamplePlayback() {
-  for (const audio of activeSamples) {
+function stopSampleSet(pool) {
+  for (const audio of pool) {
     try {
       audio.pause();
       audio.currentTime = 0;
     } catch { /* ignore */ }
   }
-  activeSamples.clear();
+  pool.clear();
+}
+
+export function stopSamplePlayback() {
+  stopSampleSet(activeSamples);
+}
+
+export function stopOrbSamplePlayback() {
+  stopSampleSet(orbSamples);
+}
+
+function stopPreviewOscillators() {
+  const c = ctx;
+  const now = c ? c.currentTime : 0;
+  for (const osc of activePreviewOscs) {
+    try { osc.stop(now); } catch { /* already stopped */ }
+    try { osc.disconnect(); } catch { /* ignore */ }
+  }
+  activePreviewOscs.length = 0;
+  if (!previewOut) return;
+  try {
+    previewOut.gain.cancelScheduledValues(0);
+    previewOut.gain.setValueAtTime(0, now);
+    previewOut.disconnect();
+  } catch { /* ignore */ }
+  previewOut = null;
 }
 
 export function beginPreviewAudio() {
   stopPreviewAudio();
+  stopOrbSamplePlayback();
   const c = unlock();
   previewOut = c.createGain();
   previewOut.gain.value = 1;
@@ -31,12 +66,7 @@ export function beginPreviewAudio() {
 
 export function stopPreviewAudio() {
   stopSamplePlayback();
-  if (!previewOut) return;
-  try {
-    previewOut.gain.cancelScheduledValues(0);
-    previewOut.disconnect();
-  } catch { /* ignore */ }
-  previewOut = null;
+  stopPreviewOscillators();
 }
 
 function noteNameFromFreq(freq) {
@@ -70,15 +100,16 @@ function sampleForVoice(voiceId, noteName, freq) {
   return sampleUrl(stored);
 }
 
-function playSample(url, when = 0) {
+function playSample(url, when = 0, { orb = false } = {}) {
   const c = unlock();
   const delayMs = when > 0 ? Math.max(0, (when - c.currentTime) * 1000) : 0;
+  const pool = orb ? orbSamples : activeSamples;
 
   const start = () => {
     const audio = new Audio(url);
     audio.volume = 0.88;
-    activeSamples.add(audio);
-    const cleanup = () => activeSamples.delete(audio);
+    pool.add(audio);
+    const cleanup = () => pool.delete(audio);
     audio.addEventListener('ended', cleanup, { once: true });
     audio.addEventListener('error', cleanup, { once: true });
     audio.play().catch(err => {
@@ -115,14 +146,16 @@ function playOscTone(freq, voiceId, dur, when, preview) {
   gain.connect(preview && previewOut ? previewOut : c.destination);
   osc.start(t);
   osc.stop(t + dur + 0.04);
+  if (preview) activePreviewOscs.push(osc);
 }
 
 export function playTone(freq, voiceId, dur = 0.32, when = 0, { preview = false, noteName = '' } = {}) {
-  // start / 다시듣기 — 정답 멜로디는 Web Audio (Voice Register 샘플 사용 안 함)
+  if (!audioOwnerCheck()) return;
+  // 다시듣기/미리듣기 — Web Audio (박자 길이에 맞춤). 오브 재생만 목소리 샘플.
   if (!preview) {
     const url = sampleForVoice(voiceId, noteName, freq);
     if (url) {
-      playSample(url, when);
+      playSample(url, when, { orb: true });
       return;
     }
   }

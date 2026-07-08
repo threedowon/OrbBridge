@@ -1,5 +1,5 @@
-import { beatCount, isSkipNote, setVoices } from './data.js';
-import { unlock, playSuccess } from './audio.js';
+import { beatCount, setVoices } from './data.js';
+import { unlock, playSuccess, setAudioOwnerCheck } from './audio.js';
 import { initStaff } from './staff.js';
 import { createEngine } from './engine.js';
 import { initConfetti, burst } from './confetti.js';
@@ -9,6 +9,8 @@ import { setVoiceLabels } from './voice-labels.js';
 import { showOrbPlaced } from './orb-toast.js';
 
 const WS_URL = `ws://${location.hostname || '127.0.0.1'}:8765`;
+const AUDIO_OWNER_KEY = 'orbbridge-audio-owner';
+const tabId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 const engine = createEngine();
 
 let staffApi = null;
@@ -39,6 +41,27 @@ function setConn(on) {
     connEl.className = 'conn-dot' + (on ? ' on' : '');
     connEl.title = label;
     connEl.setAttribute('aria-label', label);
+  }
+}
+
+function ownsAudio() {
+  try {
+    return localStorage.getItem(AUDIO_OWNER_KEY) === tabId;
+  } catch {
+    return true;
+  }
+}
+
+function claimAudio() {
+  try {
+    const owner = localStorage.getItem(AUDIO_OWNER_KEY);
+    if (!owner || owner === tabId) {
+      localStorage.setItem(AUDIO_OWNER_KEY, tabId);
+      return true;
+    }
+    return false;
+  } catch {
+    return true;
   }
 }
 
@@ -87,7 +110,6 @@ async function startGame() {
   await apiPost('/api/game/start');
   gameRunning = true;
   pendingBegin = true;
-  engine.listen();
 }
 
 async function loadVoiceCatalog() {
@@ -106,6 +128,7 @@ async function loadVoiceCatalog() {
 async function enterPlayView() {
   if (!currentMelody) return;
   unlock();
+  claimAudio();
   await loadVoiceCatalog();
   try { await apiPost('/api/game/end', { reason: 'load' }); } catch { /* server idle */ }
   setupPlaySession();
@@ -119,18 +142,27 @@ async function enterPlayView() {
 }
 
 function playListen() {
+  if (!claimAudio()) return;
   unlock();
   engine.listen();
 }
 
 function playBeatLoop() {
   if (!gameRunning || !currentMelody) return;
+  if (!ownsAudio()) return;
   unlock();
   engine.playLoop();
 }
 
+function playDispensa() {
+  if (!gameRunning || !currentMelody) return;
+  if (!ownsAudio()) return;
+  unlock();
+  engine.playDispensa();
+}
+
 async function handleOrbAdded(slave, cell, voice, orbId) {
-  if (!currentMelody || !gameRunning) return;
+  if (!currentMelody || !gameRunning || !ownsAudio()) return;
   const voiceIdx = voiceToIndex(voice);
   if (voiceIdx < 0) {
     showOrbPlaced(voice || 'unknown');
@@ -138,7 +170,7 @@ async function handleOrbAdded(slave, cell, voice, orbId) {
   }
   try {
     const { col, row } = tableToStaff(slave, cell, currentMelody.scale);
-    if (col >= getBeats() || isSkipNote(currentMelody.notes[col])) return;
+    if (col >= getBeats()) return;
     engine.placeExternal(col, row, voiceIdx, orbId ?? null);
     await loadVoiceCatalog();
     engine.redraw();
@@ -149,10 +181,10 @@ async function handleOrbAdded(slave, cell, voice, orbId) {
 }
 
 function handleOrbRemoved(slave, cell, orbId) {
-  if (!currentMelody || !gameRunning) return;
+  if (!currentMelody || !gameRunning || !ownsAudio()) return;
   try {
     const { col, row } = tableToStaff(slave, cell, currentMelody.scale);
-    if (col >= getBeats() || isSkipNote(currentMelody.notes[col])) return;
+    if (col >= getBeats()) return;
     engine.removeExternal(col, row, orbId ?? null);
   } catch (err) {
     console.warn('orb remove map failed', err);
@@ -180,6 +212,9 @@ function handleWsMessage(msg) {
     case '/game/play':
       playBeatLoop();
       break;
+    case '/game/dispensa':
+      playDispensa();
+      break;
   }
 }
 
@@ -206,12 +241,44 @@ engine.on('complete', async () => {
 
 document.getElementById('btn-enter').addEventListener('click', () => enterPlayView());
 
-document.body.addEventListener('click', () => unlock(), { once: true });
+document.body.addEventListener('click', () => {
+  unlock();
+  claimAudio();
+}, { once: true });
+
+window.addEventListener('storage', (e) => {
+  if (e.key === AUDIO_OWNER_KEY && e.newValue !== tabId) {
+    engine.stop();
+  }
+});
+
+window.addEventListener('beforeunload', () => {
+  if (ownsAudio()) {
+    try { localStorage.removeItem(AUDIO_OWNER_KEY); } catch { /* ignore */ }
+  }
+});
+
+window.addEventListener('pagehide', () => {
+  try {
+    const body = JSON.stringify({ reason: 'screen_reload' });
+    const blob = new Blob([body], { type: 'application/json' });
+    if (navigator.sendBeacon) navigator.sendBeacon('/api/game/end', blob);
+  } catch { /* ignore */ }
+});
+
+setAudioOwnerCheck(() => ownsAudio());
+claimAudio();
 
 initConfetti();
 connectWs();
 
 (async () => {
+  try {
+    await apiPost('/api/game/end', { reason: 'screen_reload' });
+  } catch { /* server idle */ }
+  gameRunning = false;
+  pendingBegin = false;
+
   await loadVoiceCatalog();
   try {
     const id = await fetchActiveMelodyId();

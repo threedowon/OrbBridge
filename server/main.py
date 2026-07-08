@@ -69,6 +69,11 @@ def get_status() -> dict:
         }
 
 
+def clear_cells() -> None:
+    with _state_lock:
+        _cells.clear()
+
+
 def get_cells() -> dict:
     with _state_lock:
         return dict(_cells)
@@ -101,14 +106,17 @@ def set_ready(ready: bool) -> None:
     print(f"[ready] {ready}")
 
 def reload_stage_data() -> None:
-    """Pick up Melody Editor saves (stage_data.json) without restarting."""
-    global stage_data, stage, answer_sequence, time_limit
+    """Pick up Melody Editor saves (stage_data.json, config melody) without restarting."""
+    global stage_data, stage, answer_sequence, time_limit, melody_id, config
+    with open(SERVER_DIR / "config.json", encoding="utf-8") as f:
+        config = json.load(f)
+    melody_id = config.get("melody", "biplane")
     with open(SERVER_DIR / "stage_data.json", encoding="utf-8") as f:
         stage_data = json.load(f)
     stage = next(s for s in stage_data["stages"] if s["stage"] == current_stage)
     answer_sequence = stage["sequence"]
     time_limit = stage["time_limit"]
-    print(f"[stage] 재로드 — 정답 시퀀스: {answer_sequence}")
+    print(f"[stage] 재로드 — melody={melody_id}, 정답 시퀀스: {answer_sequence}")
 
 
 def start_game() -> bool:
@@ -117,15 +125,18 @@ def start_game() -> bool:
         print("[game] 이전 게임 정리 후 재시작")
         end_game("restart")
     reload_stage_data()
+    clear_cells()
     game_active = True
     print(f"[game] 시작 — stage {current_stage}, melody={melody_id}")
     set_ready(True)
     osc.send_message("/game/start", [current_stage, 0])
+    osc.send_message("/game/listen", [])
     return True
 
 def end_game(reason: str = "complete") -> None:
     global game_active
     game_active = False
+    clear_cells()
     set_ready(False)
     print(f"[game] 종료 — {reason}")
     osc.send_message("/game/end", [reason])
@@ -140,6 +151,14 @@ def request_play() -> None:
         return
     print("[game] 재생")
     osc.send_message("/game/play", [])
+
+
+def request_dispensa() -> None:
+    if not game_active:
+        print("[game] 디페스타 무시 — 게임 비활성")
+        return
+    print("[game] 디페스타")
+    osc.send_message("/game/dispensa", [])
 
 def handle_serial_message(event: dict) -> None:
     """USB/serial 한 줄 JSON — orb 이벤트 또는 game 버튼."""
@@ -273,6 +292,7 @@ def run_main() -> None:
         on_game_end=end_game,
         on_game_listen=request_listen,
         on_game_play=request_play,
+        on_game_dispensa=request_dispensa,
     )
 
     if input_mode == "serial":

@@ -6,11 +6,15 @@ import json
 from pathlib import Path
 from typing import Any
 
+from app_paths import data_dir
 from melody_register_core import (
     BEAT_COLS,
+    list_melody_ids,
     load_melody,
-    melodies_dir,
     melody_duration_sec,
+    melody_path,
+    melodies_dir,
+    new_melody_template,
     save_melody,
     validate_melody,
 )
@@ -42,11 +46,100 @@ def active_melody_id() -> str:
     return DEFAULT_MELODY_ID
 
 
+def resolve_melody_id(preferred: str, *, update_config: bool = False) -> str:
+    """Pick an existing melody JSON; optionally rewrite active config when preferred is missing."""
+    preferred = preferred.strip()
+    if preferred and melody_path(preferred).is_file():
+        return preferred
+
+    ids = list_melody_ids()
+    if DEFAULT_MELODY_ID in ids:
+        fallback = DEFAULT_MELODY_ID
+    elif ids:
+        fallback = ids[0]
+    else:
+        raise FileNotFoundError(
+            "melodies 폴더에 노래 JSON이 없습니다. 새 노래를 만들거나 JSON 파일을 추가하세요."
+        )
+
+    if update_config and preferred != fallback:
+        set_active_melody(fallback)
+    return fallback
+
+
 def load_active_melody() -> tuple[str, dict[str, Any]]:
-    file_id = active_melody_id()
+    preferred = active_melody_id()
+    file_id = resolve_melody_id(preferred, update_config=True)
+    return load_melody_for_editor(file_id)
+
+
+def load_melody_for_editor(file_id: str) -> tuple[str, dict[str, Any]]:
+    file_id = file_id.strip()
     data = load_melody(file_id)
     data["steps"] = normalize_beat_steps(data.get("steps") or [], file_id=file_id)
     return file_id, data
+
+
+def set_active_melody(file_id: str) -> None:
+    file_id = file_id.strip()
+    if not file_id:
+        raise ValueError("songId가 비어 있습니다.")
+    melodies_config_path().parent.mkdir(parents=True, exist_ok=True)
+    melodies_config_path().write_text(
+        json.dumps({"active": file_id}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    server_config = data_dir() / "config.json"
+    if server_config.is_file():
+        try:
+            with server_config.open(encoding="utf-8") as f:
+                doc = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            doc = {}
+    else:
+        doc = {}
+    doc["melody"] = file_id
+    server_config.parent.mkdir(parents=True, exist_ok=True)
+    server_config.write_text(
+        json.dumps(doc, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def create_melody(file_id: str) -> tuple[str, dict[str, Any]]:
+    safe = file_id.strip().replace(" ", "_")
+    if not safe:
+        raise ValueError("songId가 비어 있습니다.")
+    if melody_path(safe).exists():
+        raise ValueError(f"{safe}.json 이 이미 있습니다.")
+    data = new_melody_template(safe)
+    data["steps"] = normalize_beat_steps(data.get("steps") or [], file_id=safe)
+    save_melody(data, file_id=safe, sync_stage=False)
+    set_active_melody(safe)
+    return safe, data
+
+
+def save_melody_editor(
+    data: dict[str, Any],
+    *,
+    file_id: str,
+    old_file_id: str | None = None,
+    sync_stage: bool = True,
+    set_active: bool = True,
+) -> Path:
+    target = (file_id or old_file_id or active_melody_id()).strip()
+    errors = validate_melody(data)
+    if errors:
+        raise ValueError("\n".join(errors))
+    path = save_melody(data, file_id=target, sync_stage=sync_stage, state=None)
+    if old_file_id and old_file_id.strip() != target:
+        old_path = melody_path(old_file_id.strip())
+        if old_path != path and old_path.is_file():
+            old_path.unlink()
+    if set_active:
+        set_active_melody(target)
+    return path
 
 
 def normalize_beat_steps(steps: list[dict[str, Any]], *, file_id: str = "") -> list[dict[str, Any]]:
@@ -72,10 +165,13 @@ def save_active_melody(
     sync_stage: bool = True,
 ) -> Path:
     target = file_id or data.get("_file_id") or active_melody_id()
-    errors = validate_melody(data)
-    if errors:
-        raise ValueError("\n".join(errors))
-    return save_melody(data, file_id=target, sync_stage=sync_stage, state=None)
+    return save_melody_editor(
+        data,
+        file_id=target,
+        old_file_id=data.get("_file_id"),
+        sync_stage=sync_stage,
+        set_active=True,
+    )
 
 
 def timing_summary(data: dict[str, Any]) -> str:

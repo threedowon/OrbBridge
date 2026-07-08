@@ -1,0 +1,4 @@
+pyinstaller>=6.0
+python-osc>=1.8.0
+websockets>=12.0
+pyserial>=3.5

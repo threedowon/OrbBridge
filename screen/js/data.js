@@ -34,15 +34,10 @@ export const FINISH_LOOPS = 1;
 export const BEAT_COLS = 12;
 
 export const NOTE_REST = 'REST';
-export const NOTE_SKIP = 'X';
 
 export function noteName(entry) {
   if (typeof entry === 'string') return entry;
   return entry?.name ?? '';
-}
-
-export function isSkipNote(entry) {
-  return noteName(entry).toUpperCase() === NOTE_SKIP;
 }
 
 export function isRestNote(entry) {
@@ -50,18 +45,12 @@ export function isRestNote(entry) {
 }
 
 export function isPitchNote(entry) {
-  return !isSkipNote(entry) && !isRestNote(entry);
+  return !isRestNote(entry);
 }
 
 export function buildSlotLayout(notes) {
-  const visibleSlots = [];
-  const slotToDisplayCol = Array(notes.length).fill(-1);
-  notes.forEach((entry, slot) => {
-    if (!isSkipNote(entry)) {
-      slotToDisplayCol[slot] = visibleSlots.length;
-      visibleSlots.push(slot);
-    }
-  });
+  const visibleSlots = notes.map((_, slot) => slot);
+  const slotToDisplayCol = notes.map((_, slot) => slot);
   return { visibleSlots, slotToDisplayCol };
 }
 

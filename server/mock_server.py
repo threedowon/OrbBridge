@@ -60,6 +60,7 @@ def start_http_server(
     on_game_end=None,
     on_game_listen=None,
     on_game_play=None,
+    on_game_dispensa=None,
 ) -> None:
     host = cfg.get("host", "127.0.0.1")
     port = cfg.get("port", 8080)
@@ -228,6 +229,12 @@ def start_http_server(
             if self.path == "/api/game/play":
                 if on_game_play:
                     on_game_play()
+                self._json(200, {"ok": True})
+                return
+
+            if self.path == "/api/game/dispensa":
+                if on_game_dispensa:
+                    on_game_dispensa()
                 self._json(200, {"ok": True})
                 return
 

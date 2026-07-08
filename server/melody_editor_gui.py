@@ -4,11 +4,21 @@ from __future__ import annotations
 
 import tkinter as tk
 import tkinter.font as tkfont
-from tkinter import messagebox, ttk
+from tkinter import messagebox, simpledialog, ttk
 
-from melody_editor_core import load_active_melody, normalize_beat_steps, save_active_melody
+from melody_editor_core import (
+    create_melody,
+    list_melody_ids,
+    load_active_melody,
+    load_melody_for_editor,
+    normalize_beat_steps,
+    save_melody_editor,
+)
 from melody_preview import play_melody, stop_preview
-from melody_register_core import EDITOR_NOTE_CHOICES_UI, NOTE_CHOICES, NOTE_REST, NOTE_SKIP, is_allowed_step_note
+from melody_register_core import NOTE_CHOICES, NOTE_CHOICES_UI, NOTE_REST
+
+NOTE_REST_DISPLAY = "-"
+EDITOR_NOTE_CHOICES_DISPLAY = (*NOTE_CHOICES_UI, NOTE_REST_DISPLAY)
 
 UI_CANDIDATES = ("Inter", "Segoe UI", "Helvetica Neue", "Manrope", "Arial")
 DURATION_CHOICES = ("0.25", "0.5", "0.75", "1", "1.5", "2", "3", "4")
@@ -41,11 +51,19 @@ def _pick_font(root: tk.Tk, candidates: tuple[str, ...], fallback: str) -> str:
 def _display_note(note: str) -> str:
     note = str(note or "").strip()
     upper = note.upper()
-    if upper == NOTE_SKIP:
-        return NOTE_SKIP
-    if upper == NOTE_REST:
-        return NOTE_REST
+    if upper == NOTE_REST or upper in ("R", "X", "?") or note == NOTE_REST_DISPLAY:
+        return NOTE_REST_DISPLAY
     return note if note in NOTE_CHOICES else NOTE_CHOICES[0]
+
+
+def _note_from_display(display: str) -> str:
+    note = str(display or "").strip()
+    upper = note.upper()
+    if note == NOTE_REST_DISPLAY or upper == NOTE_REST or upper in ("R", "X", "?"):
+        return NOTE_REST
+    if note in NOTE_CHOICES:
+        return note
+    return NOTE_CHOICES[0]
 
 
 class MelodyEditorApp:
@@ -54,12 +72,13 @@ class MelodyEditorApp:
         self._file_id = ""
         self._data: dict = {}
         self._rows: list[dict] = []
+        self._dirty = False
 
         self.root = tk.Tk()
         ui = _pick_font(self.root, UI_CANDIDATES, "TkDefaultFont")
         self.root.title("Melody Editor")
         self.root.configure(bg=C["canvas_soft"])
-        self.root.minsize(360, 520)
+        self.root.minsize(380, 520)
         self.root.geometry("400x600")
 
         self._fonts = {
@@ -73,6 +92,8 @@ class MelodyEditorApp:
         }
 
         self.bpm_var = tk.StringVar(master=self.root, value="120")
+        self.song_var = tk.StringVar(master=self.root, value="")
+        self.bpm_var.trace_add("write", self._mark_dirty)
 
         self._setup_styles()
         self._build()
@@ -142,8 +163,23 @@ class MelodyEditorApp:
         card = tk.Frame(outer, bg=C["canvas"])
         card.pack(fill="both", expand=True)
 
+        song_bar = tk.Frame(card, bg=C["canvas"])
+        song_bar.pack(fill="x", padx=14, pady=(14, 8))
+        tk.Label(song_bar, text="노래", font=self._fonts["label"], bg=C["canvas"], fg=C["body"]).pack(
+            side="left", padx=(0, 8)
+        )
+        self.song_combo = ttk.Combobox(
+            song_bar,
+            textvariable=self.song_var,
+            state="readonly",
+            width=20,
+            style="Mono.TCombobox",
+        )
+        self.song_combo.pack(side="left")
+        self.song_combo.bind("<<ComboboxSelected>>", self._on_song_select)
+
         top = tk.Frame(card, bg=C["canvas"])
-        top.pack(fill="x", padx=14, pady=(14, 8))
+        top.pack(fill="x", padx=14, pady=(0, 8))
         tk.Label(top, text="BPM", font=self._fonts["label"], bg=C["canvas"], fg=C["body"]).pack(
             side="left", padx=(0, 8)
         )
@@ -199,6 +235,7 @@ class MelodyEditorApp:
 
         actions = tk.Frame(card, bg=C["canvas"])
         actions.pack(fill="x", padx=14, pady=(0, 14))
+        self._btn(actions, "새 노래", self._new_song, muted=True).pack(side="left")
         right = tk.Frame(actions, bg=C["canvas"])
         right.pack(side="right")
         self._btn(right, "미리듣기", self._preview, muted=True).pack(side="left", padx=(0, 8))
@@ -222,6 +259,73 @@ class MelodyEditorApp:
                 self._steps_canvas.yview_scroll(int(-event.delta / 120), "units")
                 break
             cur = cur.master
+
+    def _mark_dirty(self, *_args) -> None:
+        self._dirty = True
+
+    def _refresh_song_list(self, select: str | None = None) -> None:
+        ids = list_melody_ids()
+        self.song_combo["values"] = ids
+        target = select or self._file_id
+        if target in ids:
+            self.song_var.set(target)
+        elif ids:
+            self.song_var.set(ids[0])
+        else:
+            self.song_var.set("")
+
+    def _load_file(self, file_id: str) -> None:
+        stop_preview()
+        self._file_id, self._data = load_melody_for_editor(file_id)
+        self.bpm_var.set(str(self._data.get("bpm", 120)))
+        self._refresh_song_list(select=file_id)
+        self._build_rows()
+        self._dirty = False
+
+    def _on_song_select(self, _event=None) -> None:
+        file_id = self.song_var.get().strip()
+        if not file_id or file_id == self._file_id:
+            return
+        if self._dirty and not messagebox.askyesno(
+            "Melody Editor", "저장하지 않은 변경이 있습니다. 계속할까요?"
+        ):
+            self._refresh_song_list(select=self._file_id)
+            return
+        try:
+            self._load_file(file_id)
+        except FileNotFoundError as exc:
+            messagebox.showwarning("Melody Editor", str(exc))
+            try:
+                self._load()
+            except FileNotFoundError as exc2:
+                messagebox.showerror("Melody Editor", str(exc2))
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Melody Editor", str(exc))
+            self._refresh_song_list(select=self._file_id)
+
+    def _new_song(self) -> None:
+        if self._dirty and not messagebox.askyesno(
+            "Melody Editor", "저장하지 않은 변경이 있습니다. 새 노래를 만드시겠습니까?"
+        ):
+            return
+        name = simpledialog.askstring(
+            "Melody Editor",
+            "새 songId (파일명, 예: my_song):",
+            parent=self.root,
+        )
+        if not name:
+            return
+        try:
+            file_id, data = create_melody(name)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Melody Editor", str(exc))
+            return
+        self._file_id = file_id
+        self._data = data
+        self.bpm_var.set(str(data.get("bpm", 120)))
+        self._refresh_song_list(select=file_id)
+        self._build_rows()
+        self._dirty = False
 
     def _clear_rows(self) -> None:
         for row in self._rows:
@@ -248,16 +352,18 @@ class MelodyEditorApp:
             ).pack(side="left", padx=(0, 4))
 
             note_var = tk.StringVar(value=_display_note(step.get("note", "C4")))
+            note_var.trace_add("write", self._mark_dirty)
             ttk.Combobox(
                 frame,
                 textvariable=note_var,
-                values=list(EDITOR_NOTE_CHOICES_UI),
+                values=list(EDITOR_NOTE_CHOICES_DISPLAY),
                 width=6,
                 state="readonly",
                 style="Mono.TCombobox",
             ).pack(side="left", padx=(0, 8))
 
             dur_var = tk.StringVar(value=str(step.get("duration", 1)))
+            dur_var.trace_add("write", self._mark_dirty)
             dur_entry = tk.Entry(
                 frame,
                 textvariable=dur_var,
@@ -283,6 +389,7 @@ class MelodyEditorApp:
 
         self._bind_duration_tabs()
         self.root.after_idle(self._on_steps_frame_configure)
+        self._dirty = False
 
     def _bind_duration_tabs(self) -> None:
         entries = [row["dur_entry"] for row in self._rows]
@@ -307,7 +414,14 @@ class MelodyEditorApp:
             )
 
     def _collect(self) -> dict:
-        data = dict(self._data)
+        song_id = self.song_var.get().strip() or self._file_id
+        data = {
+            "songId": str(self._data.get("songId") or song_id),
+            "title": str(self._data.get("title") or song_id),
+            "artist": str(self._data.get("artist") or ""),
+            "range": list(self._data.get("range") or ["C4", "C5"]),
+            "_file_id": self._file_id,
+        }
         try:
             data["bpm"] = int(self.bpm_var.get().strip())
         except ValueError:
@@ -319,28 +433,32 @@ class MelodyEditorApp:
             base = dict(base_steps[i])
             base["step"] = i + 1
             note = row["note_var"].get().strip()
-            if note.upper() == NOTE_SKIP:
-                base["note"] = NOTE_SKIP
-            elif note.upper() == NOTE_REST:
-                base["note"] = NOTE_REST
-            elif note in NOTE_CHOICES:
-                base["note"] = note
-            else:
-                base["note"] = NOTE_CHOICES[0]
+            base["note"] = _note_from_display(note)
             try:
                 base["duration"] = float(row["dur_var"].get().strip())
             except ValueError:
                 base["duration"] = 1.0
+            base.pop("lyric", None)
             steps.append(base)
         data["steps"] = steps
-        data["_file_id"] = self._file_id
         return data
 
     def _load(self) -> None:
         stop_preview()
-        self._file_id, self._data = load_active_melody()
+        try:
+            self._file_id, self._data = load_active_melody()
+        except FileNotFoundError as exc:
+            messagebox.showerror("Melody Editor", str(exc))
+            self._file_id = ""
+            self._data = {}
+            self._refresh_song_list()
+            self._rows = []
+            self._dirty = False
+            return
         self.bpm_var.set(str(self._data.get("bpm", 120)))
+        self._refresh_song_list(select=self._file_id)
         self._build_rows()
+        self._dirty = False
 
     def _preview(self) -> None:
         data = self._collect()
@@ -350,13 +468,25 @@ class MelodyEditorApp:
 
     def _save(self) -> None:
         data = self._collect()
+        old_id = self._file_id
+        new_id = self.song_var.get().strip() or data["songId"].strip() or old_id
+        data["songId"] = new_id
         try:
-            save_active_melody(data, file_id=self._file_id, sync_stage=True)
+            save_melody_editor(
+                data,
+                file_id=new_id,
+                old_file_id=old_id,
+                sync_stage=True,
+                set_active=True,
+            )
         except (OSError, ValueError) as exc:
             messagebox.showerror("Melody Editor", str(exc))
             return
+        self._file_id = new_id
         self._data = data
-        messagebox.showinfo("Melody Editor", "저장됨")
+        self._refresh_song_list(select=new_id)
+        self._dirty = False
+        messagebox.showinfo("Melody Editor", f"{new_id}.json 저장됨 · active 설정됨")
 
     def _on_close(self) -> None:
         self._closing = True

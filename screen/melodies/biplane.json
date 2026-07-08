@@ -2,7 +2,7 @@
   "songId": "biplane",
   "title": "비행기",
   "artist": "윤석중",
-  "bpm": 120,
+  "bpm": 114,
   "range": [
     "C4",
     "C5"
@@ -11,74 +11,62 @@
     {
       "step": 1,
       "note": "E4",
-      "duration": 1.5,
-      "lyric": "떴"
+      "duration": 1.5
     },
     {
       "step": 2,
       "note": "D4",
-      "duration": 0.5,
-      "lyric": "다"
+      "duration": 0.5
     },
     {
       "step": 3,
       "note": "C4",
-      "duration": 1.0,
-      "lyric": "떴"
+      "duration": 1.0
     },
     {
       "step": 4,
       "note": "D4",
-      "duration": 1.0,
-      "lyric": "다"
+      "duration": 1.0
     },
     {
       "step": 5,
       "note": "E4",
-      "duration": 1.0,
-      "lyric": "비"
+      "duration": 1.0
     },
     {
       "step": 6,
       "note": "E4",
-      "duration": 1.0,
-      "lyric": "행"
+      "duration": 1.0
     },
     {
       "step": 7,
       "note": "E4",
-      "duration": 2.0,
-      "lyric": "기"
+      "duration": 2.0
     },
     {
       "step": 8,
       "note": "D4",
-      "duration": 1.0,
-      "lyric": "날"
+      "duration": 1.0
     },
     {
       "step": 9,
-      "note": "X",
-      "duration": 1.0,
-      "lyric": "아"
+      "note": "D4",
+      "duration": 1.0
     },
     {
       "step": 10,
-      "note": "X",
-      "duration": 1.0,
-      "lyric": "멀"
+      "note": "D4",
+      "duration": 2.0
     },
     {
       "step": 11,
-      "note": "X",
-      "duration": 1.0,
-      "lyric": "리"
+      "note": "REST",
+      "duration": 1.0
     },
     {
       "step": 12,
-      "note": "X",
-      "duration": 2.0,
-      "lyric": "라"
+      "note": "REST",
+      "duration": 2.0
     }
   ]
 }

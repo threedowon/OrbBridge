@@ -24,6 +24,7 @@ ALLOWED_ADDRESSES = (
     "/game/ready",
     "/game/listen",
     "/game/play",
+    "/game/dispensa",
     "/orb/added",
     "/orb/removed",
 )

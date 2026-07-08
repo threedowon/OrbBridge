@@ -12,10 +12,9 @@ from app_paths import data_dir, melodies_dir
 
 NOTE_CHOICES = ("C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5")
 NOTE_REST = "REST"
-NOTE_SKIP = "X"
-# Combobox 표시 순서 — 위로 갈수록 높은 음, 하단에 REST · X
+# Combobox 표시 순서 — 위로 갈수록 높은 음, 하단에 REST
 NOTE_CHOICES_UI = tuple(reversed(NOTE_CHOICES))
-EDITOR_NOTE_CHOICES_UI = (*NOTE_CHOICES_UI, NOTE_REST, NOTE_SKIP)
+EDITOR_NOTE_CHOICES_UI = (*NOTE_CHOICES_UI, NOTE_REST)
 DEFAULT_RANGE = ["C4", "C5"]
 BEAT_COLS = 12
 LOG_LIMIT = 80
@@ -126,9 +125,8 @@ def validate_melody(data: dict[str, Any]) -> list[str]:
 def normalize_step_note(note: str) -> str:
     raw = str(note or "").strip()
     upper = raw.upper()
-    if upper == NOTE_SKIP or upper == "?":
-        return NOTE_SKIP
-    if upper == NOTE_REST:
+    # legacy: X / ? were "unused" — treat as rest
+    if upper == NOTE_REST or upper in ("X", "?", "R") or raw == "-":
         return NOTE_REST
     if raw in NOTE_CHOICES:
         return raw
@@ -137,13 +135,11 @@ def normalize_step_note(note: str) -> str:
 
 def is_allowed_step_note(note: str) -> bool:
     note = normalize_step_note(note)
-    return note in NOTE_CHOICES or note in (NOTE_REST, NOTE_SKIP)
+    return note in NOTE_CHOICES or note == NOTE_REST
 
 
 def note_to_stage_key(note: str) -> str:
     note = normalize_step_note(note)
-    if note == NOTE_SKIP:
-        return ""
     if note == NOTE_REST:
         return "R"
     return note[0].upper()

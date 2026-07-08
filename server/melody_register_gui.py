@@ -13,7 +13,6 @@ from melody_register_core import (
     NOTE_CHOICES,
     NOTE_CHOICES_UI,
     NOTE_REST,
-    NOTE_SKIP,
     MelodyRegisterState,
     delete_melody,
     list_melody_ids,
@@ -463,7 +462,7 @@ class MelodyRegisterApp:
                 iid=str(i),
                 values=(
                     i + 1,
-                    step.get("note", NOTE_SKIP),
+                    step.get("note", NOTE_REST),
                     dur,
                     step.get("lyric", ""),
                     ms,
@@ -521,7 +520,7 @@ class MelodyRegisterApp:
             messagebox.showerror("Melody Register", "duration은 0보다 커야 합니다.")
             return
         steps = self._data.setdefault("steps", [])
-        steps[idx]["note"] = self.step_note_var.get().strip() or NOTE_SKIP
+        steps[idx]["note"] = self.step_note_var.get().strip() or NOTE_REST
         steps[idx]["duration"] = dur
         lyric = self.step_lyric_var.get().strip()
         if lyric:

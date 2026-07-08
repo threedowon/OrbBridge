@@ -3,7 +3,6 @@ import {
   FINISH_LOOPS,
   isPitchNote,
   isRestNote,
-  isSkipNote,
   melodyBeatCount,
   noteAt,
   durAt,
@@ -31,6 +30,7 @@ export function createEngine() {
   let resumeAfterPreview = false;
   let autoStart = true;
   let singlePass = false;
+  let unisonMode = false;
   let orbPositions = new Map();
   let listeners = {};
 
@@ -115,7 +115,7 @@ export function createEngine() {
     if (!melody) return;
     for (let c = 0; c < beats(); c++) {
       const entry = melody.notes[c];
-      if (isSkipNote(entry) || isRestNote(entry)) {
+      if (isRestNote(entry)) {
         locked[c] = true;
       } else if (isPitchNote(entry)) {
         locked[c] = grid[c][noteAt(entry)] >= 0;
@@ -150,12 +150,17 @@ export function createEngine() {
     const balls = placedInCol(col);
 
     for (const { row, voice: v } of balls) {
-      const note = rowToNoteIn(row, melody.scale);
+      let playRow = row;
+      if (unisonMode && isPitchNote(entry)) {
+        const targetRow = noteAt(entry);
+        if (targetRow >= 0) playRow = targetRow;
+      }
+      const note = rowToNoteIn(playRow, melody.scale);
       playTone(note.freq, v, toneDur, 0, { noteName: note.name });
     }
 
     let correct = false;
-    if (isPitchNote(entry)) {
+    if (!unisonMode && isPitchNote(entry)) {
       const targetRow = noteAt(entry);
       correct = grid[col][targetRow] >= 0;
       if (correct && !locked[col]) {
@@ -174,6 +179,7 @@ export function createEngine() {
     if (next >= beats()) {
       if (singlePass) {
         singlePass = false;
+        unisonMode = false;
         const holdMs = beatMs() * durAt(entry);
         timer = setTimeout(() => {
           timer = null;
@@ -266,7 +272,6 @@ export function createEngine() {
       if (!melody || phase === 'done') return;
       if (voiceId < 0) return;
       if (col < 0 || col >= gridCols() || row < 0 || row >= rows()) return;
-      if (isSkipNote(melody.notes[col])) return;
       clearPreview();
 
       if (orbId && orbPositions.has(orbId)) {
@@ -307,11 +312,20 @@ export function createEngine() {
     },
 
     playLoop() {
+      this._startSinglePass({ unison: false });
+    },
+
+    playDispensa() {
+      this._startSinglePass({ unison: true });
+    },
+
+    _startSinglePass({ unison = false } = {}) {
       if (!melody || phase === 'done') return;
       clearPreview();
       stopTimer();
       beat = -1;
       singlePass = true;
+      unisonMode = unison;
       locked = new Array(beats()).fill(false);
       syncLockedFromGrid();
       phase = 'running';
@@ -337,38 +351,39 @@ export function createEngine() {
 
     listen(onBeat) {
       if (!melody) return;
+      const wasRunning = phase === 'running' || phase === 'finishing';
+      const resumeFrom = beat;
+      if (wasRunning) resumeAfterPreview = true;
+      stopTimer();
+      singlePass = false;
+      unisonMode = false;
       clearPreview();
       const session = previewSession;
       beginPreviewAudio();
 
-      const wasRunning = phase === 'running' || phase === 'finishing';
-      const resumeFrom = beat;
-      if (wasRunning) {
-        resumeAfterPreview = true;
-        stopTimer();
-      }
-
-      const base = unlock().currentTime + 0.1;
+      unlock();
       const step = beatMs() / 1000;
       let acc = 0;
 
       melody.notes.forEach((entry, i) => {
         const d = durAt(entry);
-        if (isPitchNote(entry)) {
-          const note = rowToNoteIn(noteAt(entry), melody.scale);
-          playTone(note.freq, voice, Math.min(0.9, 0.2 + 0.22 * d), base + acc * step, {
-            preview: true,
-            noteName: note.name,
-          });
-        }
-
+        const at = acc;
+        const slotSec = d * step;
         const t = setTimeout(() => {
           if (session !== previewSession) return;
+          if (isPitchNote(entry)) {
+            const note = rowToNoteIn(noteAt(entry), melody.scale);
+            const toneDur = Math.min(slotSec * 0.92, 0.9);
+            playTone(note.freq, voice, toneDur, 0, {
+              preview: true,
+              noteName: note.name,
+            });
+          }
           previewStep = i;
           emit('previewBeat', i);
           redraw();
           onBeat?.(i);
-        }, acc * step * 1000);
+        }, at * step * 1000);
         previewTimers.push(t);
         acc += d;
       });

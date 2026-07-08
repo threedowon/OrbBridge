@@ -64,10 +64,7 @@ def play_melody(
                     on_step(i)
                 except Exception:
                     pass
-            if note in ("X", "?"):
-                time.sleep(beat_ms * dur / 1000)
-                continue
-            if note == "REST" or not note:
+            if note in ("REST", "X", "?", "R", "-") or not note:
                 time.sleep(beat_ms * dur / 1000)
                 continue
             freq = NOTE_FREQ.get(note, 440)

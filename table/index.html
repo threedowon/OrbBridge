@@ -38,9 +38,14 @@
       display: flex;
       flex-direction: column;
       align-items: stretch;
-      gap: clamp(10px, 1.8vh, 16px);
+      gap: clamp(6px, 1vh, 10px);
       width: min(calc(100vw - 24px), calc((100vh - 24px) * 24 / 10));
+      height: calc(100vh - 24px);
       max-height: calc(100vh - 24px);
+      --cell: 32px;
+      --gap-x: 14px;
+      --gap-y: 10px;
+      --action: 52px;
     }
 
     .ui-box {
@@ -50,10 +55,14 @@
     }
 
     .orb-palette {
-      flex-shrink: 0;
-      padding: clamp(10px, 1.6vh, 14px) clamp(16px, 3vw, 28px);
+      width: fit-content;
+      max-width: 100%;
+      padding: 8px 12px;
       display: flex;
       justify-content: center;
+      align-items: center;
+      background: #1e3a5f;
+      border-radius: 8px;
     }
 
     .orb-palette.drop-target {
@@ -64,10 +73,11 @@
     .play-panel {
       display: flex;
       flex-direction: column;
-      padding: 3% 4% 3.5%;
-      gap: 2.5%;
+      padding: 2% 3.5% 2.5%;
+      gap: 2%;
       position: relative;
-      aspect-ratio: 24 / 8;
+      flex: 1;
+      min-height: 0;
       width: 100%;
     }
 
@@ -96,33 +106,62 @@
       flex-wrap: nowrap;
       justify-content: center;
       align-items: center;
-      gap: clamp(6px, 1.4vw, 12px);
+      gap: var(--gap-x);
       min-height: 0;
     }
 
     .orb-row.two-rows {
       flex-wrap: wrap;
       justify-content: center;
-      max-width: calc(12 * clamp(30px, 4.6vw, 40px) + 11 * clamp(6px, 1.4vw, 12px));
+      max-width: calc(6 * var(--cell) + 5 * var(--gap-x));
+      min-height: calc(2 * var(--cell) + var(--gap-x));
       margin: 0 auto;
+    }
+
+    .bottom-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: clamp(12px, 2vw, 18px);
+      width: calc(var(--cell) * 12 + var(--gap-x) * 11);
+      margin: 10px auto 0;
+      padding-top: calc(2% + 8px);
+      flex-shrink: 0;
+    }
+
+    .bottom-bar .orb-slot,
+    .bottom-bar .orb-pick {
+      width: var(--cell);
+      height: var(--cell);
+    }
+
+    .right-actions {
+      display: flex;
+      align-items: center;
+      gap: clamp(8px, 1.5vw, 14px);
+    }
+
+    .orb-pick--placeholder {
+      visibility: hidden;
+      pointer-events: none;
     }
 
     .orb-slot {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: clamp(30px, 4.6vw, 40px);
-      height: clamp(30px, 4.6vw, 40px);
-      border: 1.5px solid var(--slot-border);
+      width: var(--cell);
+      height: var(--cell);
+      border: none;
       border-radius: 50%;
-      background: var(--slot-bg);
+      background: transparent;
     }
 
     .orb-pick {
-      width: clamp(20px, 3.2vw, 28px);
-      height: clamp(20px, 3.2vw, 28px);
+      width: var(--cell);
+      height: var(--cell);
       border-radius: 50%;
-      border: 2px solid var(--orb-idle-border);
+      border: 1.5px solid var(--orb-idle-border);
       background: var(--orb-idle);
       cursor: grab;
       padding: 0;
@@ -146,6 +185,7 @@
     }
 
     .playfield {
+      flex: 1;
       min-height: 0;
       display: flex;
       align-items: center;
@@ -159,9 +199,6 @@
     }
 
     .grid {
-      --cell: 32px;
-      --gap-x: 14px;
-      --gap-y: 10px;
       display: grid;
       grid-template-columns: repeat(12, var(--cell));
       grid-template-rows: repeat(8, var(--cell));
@@ -199,14 +236,9 @@
       box-shadow: inset 0 -2px 4px rgba(0,0,0,.1);
     }
 
-    .actions {
-      display: grid;
-      grid-template-columns: repeat(12, var(--cell));
-      column-gap: var(--gap-x);
-      align-items: center;
+    .grid-stack {
+      position: relative;
       width: calc(var(--cell) * 12 + var(--gap-x) * 11);
-      margin: 0 auto;
-      padding-top: 2%;
     }
 
     .action-btn {
@@ -225,12 +257,84 @@
       justify-self: center;
     }
 
-    .action-btn.listen { grid-column: 5; }
-    .action-btn.play { grid-column: 10; }
+    .dispensa-btn {
+      width: var(--action, 52px);
+      height: var(--action, 52px);
+      border-radius: 50%;
+      border: 2px solid var(--ink);
+      background: var(--surface);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      color: var(--ink);
+      transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.12s;
+    }
+
+    .dispensa-btn svg {
+      width: 42%;
+      height: 42%;
+      fill: currentColor;
+    }
+
+    .dispensa-btn.all-correct {
+      background: #7c3aed;
+      border-color: #5b21b6;
+      color: #fff;
+    }
+
+    .dispensa-btn:hover:not(:disabled) {
+      background: #f5f5f5;
+      transform: scale(1.04);
+    }
+
+    .dispensa-btn.all-correct:hover:not(:disabled) {
+      background: #8b5cf6;
+    }
+
+    .dispensa-btn:active:not(:disabled) { transform: scale(0.97); }
+    .dispensa-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .beat-lamps {
+      position: absolute;
+      left: 0;
+      top: calc(100% + 12px);
+      display: grid;
+      grid-template-columns: repeat(12, var(--cell));
+      column-gap: var(--gap-x);
+      align-items: center;
+      width: 100%;
+      pointer-events: none;
+    }
+
+    .beat-lamp {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      border: 1.5px solid var(--slot-border);
+      background: var(--slot-bg);
+      justify-self: center;
+      padding: 0;
+      transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .beat-lamp.lit {
+      background: #4ade80;
+      border-color: #16a34a;
+      box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.35);
+    }
+
+    body.not-ready .beat-lamp.lit {
+      background: var(--slot-bg);
+      border-color: var(--slot-border);
+      box-shadow: none;
+    }
 
     .action-btn:hover:not(:disabled) {
       background: #f5f5f5;
-      transform: scale(1.04);
+      border-color: #bbb;
+      color: #111;
     }
 
     .action-btn:active:not(:disabled) { transform: scale(0.97); }
@@ -251,10 +355,6 @@
 </head>
 <body>
   <div class="table-wrap">
-    <section class="ui-box orb-palette" id="orb-palette">
-      <div class="orb-row" id="orb-tray"></div>
-    </section>
-
     <section class="ui-box play-panel" id="play-panel">
       <div class="status-dots">
         <span class="dot-status wait" id="status-dot" title="대기 중"></span>
@@ -262,26 +362,42 @@
       </div>
 
       <div class="playfield">
-        <div class="grid" id="grid"></div>
+        <div class="grid-stack">
+          <div class="grid" id="grid"></div>
+          <div class="beat-lamps" id="beat-lamps" aria-hidden="true"></div>
+        </div>
       </div>
 
-      <div class="actions">
-        <button type="button" class="action-btn listen" id="btn-listen" title="문제 다시듣기" aria-label="문제 다시듣기">
+      <div class="bottom-bar">
+        <button type="button" class="dispensa-btn" id="btn-dispensa" title="디페스타 — 정답 음으로 통일 재생" aria-label="디페스타" disabled>
           <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/>
+            <path d="M12 2.4l2.35 7.23h7.6l-6.15 4.47 2.35 7.23L12 17.1l-6.15 4.23 2.35-7.23-6.15-4.47h7.6z"/>
           </svg>
         </button>
-        <button type="button" class="action-btn play" id="btn-play" title="재생" aria-label="재생" disabled>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M8 5v14l11-7z"/>
-          </svg>
-        </button>
+
+        <section class="orb-palette ui-box" id="orb-palette">
+          <div class="orb-row two-rows" id="orb-tray"></div>
+        </section>
+
+        <div class="right-actions">
+          <button type="button" class="action-btn listen" id="btn-listen" title="문제 다시듣기" aria-label="문제 다시듣기" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/>
+            </svg>
+          </button>
+          <button type="button" class="action-btn play" id="btn-play" title="재생" aria-label="재생" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </section>
   </div>
 
   <script>
     const BEAT_COLS = 12;
+    const TRAY_ORB_COUNT = 12;
     const COLS = BEAT_COLS;
     const ROWS = 8;
     const API = '';
@@ -290,18 +406,30 @@
     const ORB_COLORS = ['#f472b6', '#5eead4', '#fbbf24', '#a78bfa', '#60a5fa', '#4ade80', '#fb923c', '#f87171'];
     const groupColorMap = new Map();
 
+    const ROW_NOTES = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'];
+
     const boardEl = document.getElementById('play-panel');
+    const tableWrapEl = document.querySelector('.table-wrap');
     const orbPaletteEl = document.getElementById('orb-palette');
     const playfieldEl = document.querySelector('.playfield');
     const gridEl = document.getElementById('grid');
+    const beatLampsEl = document.getElementById('beat-lamps');
     const orbTrayEl = document.getElementById('orb-tray');
     const statusDot = document.getElementById('status-dot');
     const wsDot = document.getElementById('ws-dot');
     const btnPlay = document.getElementById('btn-play');
+    const btnDispensa = document.getElementById('btn-dispensa');
     const btnListen = document.getElementById('btn-listen');
 
     /** @type {Map<string, { id: string, voice: string, color: string, idx: number }>} */
     const placed = new Map();
+    /** @type {string[]} answer note name per beat col (C4, REST→'') */
+    let answerNotes = Array(BEAT_COLS).fill('');
+    /** @type {boolean[]} REST(쉼) 박자 — 비어 있어야 정답, 오브가 있으면 오답 */
+    let restColumns = Array(BEAT_COLS).fill(false);
+    let beatLamps = [];
+    let lampRefresh = 0;
+    let allOrbs = [];
     let orbs = [];
     let ready = false;
     let ws = null;
@@ -372,12 +500,227 @@
       return `${col}-${row}`;
     }
 
-    function setReady(on) {
+    function slaveCellToColRow(slave, cell) {
+      const q = cell % 2 === 1 ? 1 : 2;
+      const col = q + (slave - 1) * 2 - 1;
+      if (col < 0 || col >= COLS) return null;
+      const row = Math.floor((cell + 1) / 2);
+      if (row < 1 || row > ROWS) return null;
+      return { col, row };
+    }
+
+    function rowMatchesNote(row, noteName) {
+      return !!noteName && ROW_NOTES[row - 1] === noteName;
+    }
+
+    function colHasCorrectOrb(col, noteName) {
+      if (!noteName) return false;
+      for (let row = 1; row <= ROWS; row++) {
+        if (placed.has(key(col, row)) && rowMatchesNote(row, noteName)) return true;
+      }
+      return false;
+    }
+
+    function colHasAnyOrb(col) {
+      for (let row = 1; row <= ROWS; row++) {
+        if (placed.has(key(col, row))) return true;
+      }
+      return false;
+    }
+
+    function isColumnSatisfied(col) {
+      if (restColumns[col]) return !colHasAnyOrb(col);
+      const noteName = answerNotes[col];
+      if (!noteName) return true;
+      return colHasCorrectOrb(col, noteName);
+    }
+
+    function updateBeatLamps() {
+      if (!ready) {
+        beatLamps.forEach(l => l?.classList.remove('lit'));
+        btnDispensa.classList.remove('all-correct');
+        btnDispensa.disabled = true;
+        return;
+      }
+      let allCorrect = true;
+      let anyPitch = false;
+      for (let col = 0; col < COLS; col++) {
+        const lamp = beatLamps[col];
+        if (restColumns[col]) {
+          const satisfied = !colHasAnyOrb(col);
+          if (lamp) lamp.classList.toggle('lit', satisfied);
+          if (!satisfied) allCorrect = false;
+          continue;
+        }
+        const noteName = answerNotes[col];
+        if (!noteName) {
+          if (lamp) lamp.classList.remove('lit');
+          continue;
+        }
+        anyPitch = true;
+        const satisfied = isColumnSatisfied(col);
+        if (lamp) lamp.classList.toggle('lit', satisfied);
+        if (!satisfied) allCorrect = false;
+      }
+      const dispensaActive = anyPitch && allCorrect;
+      btnDispensa.classList.toggle('all-correct', dispensaActive);
+      btnDispensa.disabled = !ready || !dispensaActive;
+    }
+
+    function shufflePick(source, count) {
+      const copy = [...source];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy.slice(0, Math.min(count, copy.length));
+    }
+
+    function pickTrayOrbs() {
+      orbs = shufflePick(allOrbs, TRAY_ORB_COUNT);
+      buildGroupColors();
+      buildOrbTray();
+    }
+
+    function isDispensaActive() {
+      return ready && btnDispensa.classList.contains('all-correct');
+    }
+
+    function refreshDispensaState() {
+      updateBeatLamps();
+      if (lampRefresh) cancelAnimationFrame(lampRefresh);
+      lampRefresh = requestAnimationFrame(() => {
+        lampRefresh = 0;
+        updateBeatLamps();
+      });
+    }
+
+    function buildBeatLamps() {
+      beatLampsEl.innerHTML = '';
+      beatLamps = [];
+      for (let col = 0; col < COLS; col++) {
+        const lamp = document.createElement('div');
+        lamp.className = 'beat-lamp';
+        lamp.dataset.col = col;
+        beatLampsEl.appendChild(lamp);
+        beatLamps.push(lamp);
+      }
+      refreshDispensaState();
+    }
+
+    async function loadAnswerMap() {
+      answerNotes = Array(BEAT_COLS).fill('');
+      restColumns = Array(BEAT_COLS).fill(false);
+      try {
+        const status = await fetch(`${API}/api/status`).then(r => r.json());
+        const melodyId = status.melody || 'biplane';
+        const melody = await fetch(`${API}/screen/melodies/${melodyId}.json`).then(r => r.json());
+        const steps = melody.steps || [];
+        steps.forEach((step, col) => {
+          if (col >= BEAT_COLS) return;
+          const note = String(step.note || '').trim();
+          const upper = note.toUpperCase();
+          if (!note || upper === 'REST' || upper === 'R' || upper === 'X' || upper === '?' || note === '-') {
+            restColumns[col] = true;
+            answerNotes[col] = '';
+            return;
+          }
+          answerNotes[col] = note;
+        });
+      } catch (e) {
+        console.warn('answer map load failed', e);
+      }
+      refreshDispensaState();
+    }
+
+    function applyOrbAt(slave, cell, orbId, voice) {
+      const pos = slaveCellToColRow(slave, cell);
+      if (!pos || !ready) return;
+      const { col, row } = pos;
+      const prev = findCellWithOrbId(orbId);
+      if (prev && (prev.col !== col || prev.row !== row)) {
+        placed.delete(key(prev.col, prev.row));
+        renderCell(prev.col, prev.row);
+      }
+      const k = key(col, row);
+      const existing = placed.get(k);
+      if (existing && existing.id !== orbId) return;
+      const idx = orbs.findIndex(o => o.id === orbId);
+      const allIdx = allOrbs.findIndex(o => o.id === orbId);
+      placed.set(k, {
+        id: orbId,
+        voice: voice || allOrbs[allIdx]?.voice || 'unknown',
+        color: orbColorForVoice(voice || allOrbs[allIdx]?.voice),
+        idx: idx >= 0 ? idx : allIdx,
+      });
+      renderCell(col, row);
+      updateOrbTrayState();
+      refreshDispensaState();
+    }
+
+    function applyOrbRemoved(slave, cell) {
+      const pos = slaveCellToColRow(slave, cell);
+      if (!pos || !ready) return;
+      const { col, row } = pos;
+      const k = key(col, row);
+      if (!placed.has(k)) return;
+      placed.delete(k);
+      renderCell(col, row);
+      updateOrbTrayState();
+      refreshDispensaState();
+    }
+
+    async function syncPlacedFromCells() {
+      if (!ready) return;
+      try {
+        const cells = await fetch(`${API}/api/cells`).then(r => r.json());
+        placed.clear();
+        gridEl.querySelectorAll('.cell').forEach(el => {
+          el.className = 'cell';
+          el.draggable = false;
+          applyCellStyle(el, null);
+        });
+        for (const [cellKey, info] of Object.entries(cells)) {
+          const [slave, cell] = cellKey.split(':').map(Number);
+          if (!info?.id) continue;
+          applyOrbAt(slave, cell, info.id, info.voice);
+        }
+      } catch (e) {
+        console.warn('cells sync failed', e);
+      }
+    }
+
+    async function syncReadyFromServer() {
+      try {
+        const status = await fetch(`${API}/api/status`).then(r => r.json());
+        await setReady(!!status.game_active);
+      } catch {
+        await setReady(false);
+      }
+    }
+
+    async function setReady(on) {
       ready = on;
       document.body.classList.toggle('not-ready', !on);
       statusDot.className = 'dot-status ' + (on ? 'ok' : 'wait');
       statusDot.title = on ? 'READY' : '대기 중';
       btnPlay.disabled = !on;
+      btnListen.disabled = !on;
+      if (!on) btnDispensa.disabled = true;
+      if (on) {
+        clearAllOrbs();
+        if (allOrbs.length) pickTrayOrbs();
+        await loadAnswerMap();
+      } else {
+        clearAllOrbs();
+        orbs = [];
+        buildOrbTray();
+        answerNotes = Array(BEAT_COLS).fill('');
+        restColumns = Array(BEAT_COLS).fill(false);
+        beatLamps.forEach(l => l.classList.remove('lit'));
+        btnDispensa.classList.remove('all-correct');
+        refreshDispensaState();
+      }
       gridEl.querySelectorAll('.cell').forEach(el => {
         el.classList.toggle('disabled', !on);
         if (on) {
@@ -469,11 +812,12 @@
       const orb = orbs[orbIdx];
       if (!orb) return;
 
+      const prev = findCellWithOrbId(orb.id);
+      if (prev && prev.col === col && prev.row === row) return;
+      if (prev) await removeAt(prev.col, prev.row);
+
       const k = key(col, row);
       if (placed.has(k)) return;
-
-      const prev = findCellWithOrbId(orb.id);
-      if (prev) await removeAt(prev.col, prev.row);
 
       await sendEvent({
         type: 'added',
@@ -489,15 +833,19 @@
       });
       renderCell(col, row);
       updateOrbTrayState();
+      refreshDispensaState();
     }
 
     async function moveOrb(fromCol, fromRow, toCol, toRow) {
       if (fromCol === toCol && fromRow === toRow) return;
-      if (placed.has(key(toCol, toRow))) return;
 
       const fromK = key(fromCol, fromRow);
       const state = placed.get(fromK);
       if (!state) return;
+
+      const destK = key(toCol, toRow);
+      const destState = placed.get(destK);
+      if (destState && destState.id !== state.id) return;
 
       await sendEvent({
         type: 'removed',
@@ -514,9 +862,10 @@
         cell: posToCell(toRow, toCol),
         id: state.id,
       });
-      placed.set(key(toCol, toRow), state);
+      placed.set(destK, state);
       renderCell(toCol, toRow);
       updateOrbTrayState();
+      refreshDispensaState();
     }
 
     async function handleCellDrop(col, row, data) {
@@ -658,34 +1007,42 @@
 
     function buildOrbTray() {
       orbTrayEl.innerHTML = '';
-      orbTrayEl.classList.toggle('two-rows', orbs.length > 9);
-      orbs.forEach((o, i) => {
+      orbTrayEl.classList.add('two-rows');
+      for (let i = 0; i < TRAY_ORB_COUNT; i++) {
+        const o = orbs[i];
         const slot = document.createElement('div');
         slot.className = 'orb-slot';
 
-        const btn = document.createElement('div');
-        btn.className = 'orb-pick';
-        btn.draggable = true;
-        btn.role = 'button';
-        btn.tabIndex = 0;
-        btn.title = `${String.fromCharCode(65 + i)} · ${o.voice} — 드래그해서 배치`;
-        btn.addEventListener('dragstart', (e) => {
-          if (!ready) {
-            e.preventDefault();
-            return;
-          }
-          setDragData(e, { src: 'tray', idx: i, id: o.id });
-          setDragging(btn, true);
-          setEmptyDragImage(e);
-        });
-        btn.addEventListener('dragend', () => {
-          setDragging(btn, false);
-          dragPayload = null;
-        });
+        if (o) {
+          const btn = document.createElement('div');
+          btn.className = 'orb-pick';
+          btn.draggable = true;
+          btn.role = 'button';
+          btn.tabIndex = 0;
+          btn.title = `${String.fromCharCode(65 + i)} · ${o.voice} — 드래그해서 배치`;
+          btn.addEventListener('dragstart', (e) => {
+            if (!ready) {
+              e.preventDefault();
+              return;
+            }
+            setDragData(e, { src: 'tray', idx: i, id: o.id });
+            setDragging(btn, true);
+            setEmptyDragImage(e);
+          });
+          btn.addEventListener('dragend', () => {
+            setDragging(btn, false);
+            dragPayload = null;
+          });
+          slot.appendChild(btn);
+        } else {
+          const ph = document.createElement('div');
+          ph.className = 'orb-pick orb-pick--placeholder';
+          ph.setAttribute('aria-hidden', 'true');
+          slot.appendChild(ph);
+        }
 
-        slot.appendChild(btn);
         orbTrayEl.appendChild(slot);
-      });
+      }
       updateOrbTrayState();
     }
 
@@ -716,6 +1073,7 @@
         applyCellStyle(el, null);
       });
       updateOrbTrayState();
+      refreshDispensaState();
     }
 
     async function removeAt(col, row) {
@@ -731,6 +1089,7 @@
       placed.delete(k);
       renderCell(col, row);
       updateOrbTrayState();
+      refreshDispensaState();
       return true;
     }
 
@@ -750,12 +1109,21 @@
     function fitGrid() {
       const cols = COLS;
       const rows = ROWS;
+      const bottomBarEl = boardEl.querySelector('.bottom-bar');
+      const panelStyle = getComputedStyle(boardEl);
+      const padT = parseFloat(panelStyle.paddingTop) || 0;
+      const padB = parseFloat(panelStyle.paddingBottom) || 0;
+      const gap = parseFloat(panelStyle.rowGap) || 0;
+      const bottomH = bottomBarEl ? bottomBarEl.offsetHeight : 0;
+      const lampGap = 28;
+
       const w = playfieldEl.clientWidth;
-      const h = playfieldEl.clientHeight;
+      const availH = boardEl.clientHeight - padT - padB - bottomH - gap - lampGap;
+      const h = Math.max(playfieldEl.clientHeight, availH);
       if (w <= 0 || h <= 0) return;
 
       const base = Math.min(w / cols, h / rows);
-      const gapY = Math.max(10, Math.round(base * 0.32));
+      const gapY = Math.max(8, Math.round(base * 0.28));
       const gapX = Math.round(gapY * 1.4);
 
       const cell = Math.floor(Math.min(
@@ -764,24 +1132,25 @@
       ));
       if (cell < 12) return;
 
-      gridEl.style.setProperty('--cell', `${cell}px`);
-      gridEl.style.setProperty('--gap-x', `${gapX}px`);
-      gridEl.style.setProperty('--gap-y', `${gapY}px`);
-      boardEl.style.setProperty('--cell', `${cell}px`);
-      boardEl.style.setProperty('--gap-x', `${gapX}px`);
-      boardEl.style.setProperty('--action', `${Math.round(cell * 1.55)}px`);
+      tableWrapEl.style.setProperty('--cell', `${cell}px`);
+      tableWrapEl.style.setProperty('--gap-x', `${gapX}px`);
+      tableWrapEl.style.setProperty('--gap-y', `${gapY}px`);
+      tableWrapEl.style.setProperty('--action', `${Math.round(cell * 1.55)}px`);
     }
 
     async function loadOrbs() {
       const res = await fetch(`${API}/api/orbs`);
-      orbs = await res.json();
-      buildGroupColors();
-      buildOrbTray();
+      allOrbs = await res.json();
+      if (ready) pickTrayOrbs();
+      else buildOrbTray();
     }
 
     function connectWs() {
       ws = new WebSocket(WS_URL);
-      ws.onopen = () => setWsStatus(true);
+      ws.onopen = () => {
+        setWsStatus(true);
+        void syncReadyFromServer();
+      };
       ws.onclose = () => {
         setWsStatus(false);
         setTimeout(connectWs, 2000);
@@ -790,21 +1159,37 @@
       ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
-          if (msg.address === '/game/ready') setReady(!!msg.args[0]);
+          if (msg.address === '/game/ready') void setReady(!!msg.args[0]);
+          if (msg.address === '/game/start') {
+            clearAllOrbs();
+            if (ready && allOrbs.length) pickTrayOrbs();
+          }
           if (msg.address === '/game/end') {
             clearAllOrbs();
-            setReady(false);
+            void setReady(false);
+          }
+          if (msg.address === '/orb/added') {
+            const [slave, cell, voice, , , orbId] = msg.args;
+            if (orbId) applyOrbAt(slave, cell, orbId, voice);
+          }
+          if (msg.address === '/orb/removed') {
+            const [slave, cell] = msg.args;
+            applyOrbRemoved(slave, cell);
           }
         } catch { /* ignore */ }
       };
     }
 
     btnListen.addEventListener('click', async () => {
+      if (!ready || btnListen.disabled) return;
+      btnListen.disabled = true;
       try {
         const res = await fetch(`${API}/api/game/listen`, { method: 'POST' });
         if (!res.ok) throw new Error(await res.text());
       } catch (e) {
         console.error('listen:', e);
+      } finally {
+        if (ready) btnListen.disabled = false;
       }
     });
 
@@ -818,14 +1203,30 @@
       }
     });
 
+    btnDispensa.addEventListener('click', async () => {
+      if (!isDispensaActive()) return;
+      try {
+        const res = await fetch(`${API}/api/game/dispensa`, { method: 'POST' });
+        if (!res.ok) throw new Error(await res.text());
+      } catch (e) {
+        console.error('dispensa:', e);
+      }
+    });
+
     buildGrid();
+    buildBeatLamps();
     setupGridDragDrop();
     setupPlayfieldDragDrop();
     setupOrbTrayDragDrop();
     fitGrid();
+    new ResizeObserver(fitGrid).observe(tableWrapEl);
+    new ResizeObserver(fitGrid).observe(boardEl);
     new ResizeObserver(fitGrid).observe(playfieldEl);
     window.addEventListener('resize', fitGrid);
-    setReady(false);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') void syncReadyFromServer();
+    });
+    void syncReadyFromServer();
     connectWs();
     loadOrbs().catch(() => setWsStatus(false));
   </script>
