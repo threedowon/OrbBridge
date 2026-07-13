@@ -31,6 +31,8 @@ export function createEngine() {
   let autoStart = true;
   let singlePass = false;
   let unisonMode = false;
+  /** @type {number[]} voices of all placed orbs — used by dispensa */
+  let dispensaVoices = [];
   let orbPositions = new Map();
   let listeners = {};
 
@@ -141,6 +143,22 @@ export function createEngine() {
     return items;
   }
 
+  /** Unique voice ids from every orb currently on the staff. */
+  function allPlacedVoices() {
+    const seen = new Set();
+    const out = [];
+    for (let c = 0; c < gridCols(); c++) {
+      for (let r = 0; r < rows(); r++) {
+        const v = grid[c][r];
+        if (v >= 0 && !seen.has(v)) {
+          seen.add(v);
+          out.push(v);
+        }
+      }
+    }
+    return out;
+  }
+
   function tick(col) {
     beat = col;
     emit('beat', col);
@@ -149,14 +167,22 @@ export function createEngine() {
     const toneDur = noteDurationSec(col);
     const balls = placedInCol(col);
 
-    for (const { row, voice: v } of balls) {
-      let playRow = row;
-      if (unisonMode && isPitchNote(entry)) {
+    if (unisonMode) {
+      // 디페스타: 테이블 위 모든 오브 목소리로 정답 멜로디 재생
+      if (isPitchNote(entry) && dispensaVoices.length) {
         const targetRow = noteAt(entry);
-        if (targetRow >= 0) playRow = targetRow;
+        if (targetRow >= 0) {
+          const note = rowToNoteIn(targetRow, melody.scale);
+          for (const v of dispensaVoices) {
+            playTone(note.freq, v, toneDur, 0, { noteName: note.name });
+          }
+        }
       }
-      const note = rowToNoteIn(playRow, melody.scale);
-      playTone(note.freq, v, toneDur, 0, { noteName: note.name });
+    } else {
+      for (const { row, voice: v } of balls) {
+        const note = rowToNoteIn(row, melody.scale);
+        playTone(note.freq, v, toneDur, 0, { noteName: note.name });
+      }
     }
 
     let correct = false;
@@ -180,6 +206,7 @@ export function createEngine() {
       if (singlePass) {
         singlePass = false;
         unisonMode = false;
+        dispensaVoices = [];
         const holdMs = beatMs() * durAt(entry);
         timer = setTimeout(() => {
           timer = null;
@@ -326,6 +353,7 @@ export function createEngine() {
       beat = -1;
       singlePass = true;
       unisonMode = unison;
+      dispensaVoices = unison ? allPlacedVoices() : [];
       locked = new Array(beats()).fill(false);
       syncLockedFromGrid();
       phase = 'running';
@@ -357,6 +385,7 @@ export function createEngine() {
       stopTimer();
       singlePass = false;
       unisonMode = false;
+      dispensaVoices = [];
       clearPreview();
       const session = previewSession;
       beginPreviewAudio();
