@@ -17,7 +17,8 @@
 #define RGB_PIN      48
 #define LED_BRIGHTNESS 32   // 255의 1/8
 #define RS485_BAUD   9600
-#define SLAVE_ID     1   // 보드 추가 시 2, 3…
+#define SLAVE_ID     6   // 보드 추가 시 2, 3…
+#define HEARTBEAT_MS 3000   // 하트비트 주기(ms) — 오브가 없어도 살아있음을 알림
 
 // NeoPixel 링: DS2431 버스 1개당 12 LED 링 1개, GPIO 38 한 데이터선에 체인
 #define RING_PIN        38   
@@ -49,6 +50,7 @@ Adafruit_NeoPixel ring(BUS_COUNT * LEDS_PER_RING, RING_PIN, NEO_GRB + NEO_KHZ800
 
 byte lastAddr[BUS_COUNT][8];
 bool hasLast[BUS_COUNT] = {false};
+unsigned long lastHeartbeatMs = 0;
 
 void rs485SendLine(const String& line) {
   RS485.println(line);
@@ -115,6 +117,14 @@ void sendAdded(int busIndex, const byte addr[8]) {
   flashRed();
 }
 
+// 오브가 없어도 주기적으로 살아있음을 알림 → 진단 도구의 online/offline 판정용
+void sendHeartbeat() {
+  String msg = "{\"type\":\"heartbeat\",\"slave\":";
+  msg += SLAVE_ID;
+  msg += "}";
+  rs485SendLine(msg);
+}
+
 bool readBus(int i, byte addr[8]) {
   buses[i].reset_search();
   if (!buses[i].search(addr)) {
@@ -147,6 +157,10 @@ void setup() {
   ring.show();
 
   RS485.begin(RS485_BAUD, SERIAL_8N1, RX_PIN, TX_PIN);
+
+  // 하트비트 위상을 슬레이브마다 어긋나게 → RS485 버스 충돌 완화
+  // (부호 없는 modular 연산이라 첫 전송 시점만 앞당겨질 뿐 안전)
+  lastHeartbeatMs = millis() - (unsigned long)SLAVE_ID * 350;
 }
 
 void loop() {
@@ -172,5 +186,11 @@ void loop() {
       }
     }
   }
+
+  if (millis() - lastHeartbeatMs >= HEARTBEAT_MS) {
+    sendHeartbeat();
+    lastHeartbeatMs = millis();
+  }
+
   delay(100);
 }

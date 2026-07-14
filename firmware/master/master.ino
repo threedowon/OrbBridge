@@ -56,6 +56,8 @@ void pollButton(int pin, bool& wasDown, unsigned long& lastFire, const char* act
 void forwardSlaveLine(const String& line) {
   if (!line.startsWith("{")) return;
   pcSendLine(line);
+  // 하트비트는 LED 깜빡 없이 조용히 relay (3초마다 깜빡이면 혼란)
+  if (line.indexOf("heartbeat") >= 0) return;
   // slave JSON 수신 시 잠깐 노란색
   led.setPixelColor(0, led.Color(255, 255, 0));
   led.show();

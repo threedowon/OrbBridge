@@ -86,8 +86,11 @@ def get_events() -> list:
 
 # ── 셀 파싱 ────────────────────────────────────────────
 def parse_cell(cell: int):
-    q    = 1 if cell % 2 == 1 else 2
-    row  = (cell + 1) // 2
+    """cell 1–8 → Q1 도~도, cell 9–16 → Q2 도~도."""
+    if cell <= 8:
+        q, row = 1, cell
+    else:
+        q, row = 2, cell - 8
     note = NOTE_MAP.get(row, "invalid")
     return q, note
 
@@ -172,6 +175,8 @@ def handle_serial_message(event: dict) -> None:
         else:
             print(f"[WARN] unknown game action: {action}")
         return
+    if t == "heartbeat":
+        return  # 슬레이브 생존 신호 — 진단 도구용, 게임 로직과 무관하므로 무시
     handle_event(event)
 
 # ── 이벤트 처리 ────────────────────────────────────────
