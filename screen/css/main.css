@@ -273,6 +273,7 @@ body {
   padding: 0;
   min-height: 100vh;
   justify-content: center;
+  align-items: stretch; /* center면 staff-stage가 내용 폭으로 쪼그라듦 */
   position: relative;
 }
 
@@ -290,14 +291,27 @@ body {
 #view-play > * { position: relative; z-index: 1; }
 
 .staff-stage {
-  width: min(100%, 1200px);
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
   padding: 72px 32px 48px;
   overflow: visible;
+  box-sizing: border-box;
 }
 
 #view-play .staff-frame {
   width: 100%;
   align-self: center;
+}
+
+#staff-canvas {
+  position: relative;
+  z-index: 3;
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: crosshair;
+  background: transparent;
 }
 
 .conn-dot {
@@ -505,15 +519,6 @@ body {
     rgba(99, 179, 237, 0.2) 45%,
     transparent 70%);
   filter: none;
-}
-
-#staff-canvas {
-  position: relative;
-  z-index: 3;
-  display: block;
-  width: 100%;
-  cursor: crosshair;
-  background: transparent;
 }
 
 .beat-track {

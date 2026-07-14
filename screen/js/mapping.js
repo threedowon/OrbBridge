@@ -23,13 +23,14 @@ export function setVoiceIndex(index) {
   }
 }
 
+/** cell 1–8 → row 1–8 (도~도), cell 9–16 → row 1–8 */
 export function cellToTableRow(cell) {
-  return Math.floor((cell + 1) / 2);
+  return cell <= 8 ? cell : cell - 8;
 }
 
-/** slave + cell(Q슬롯) → 멜로디 beat column (0-based, 최대 BEAT_COLS-1) */
+/** slave + cell → beat column. cell 1–8 = Q1, 9–16 = Q2 */
 export function slaveCellToCol(slave, cell) {
-  const q = cell % 2 === 1 ? 1 : 2;
+  const q = cell <= 8 ? 1 : 2;
   const col = q + (slave - 1) * 2 - 1;
   if (col < 0 || col >= BEAT_COLS) {
     throw new Error(`column out of range: slave=${slave} cell=${cell}`);

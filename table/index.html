@@ -493,7 +493,8 @@
     }
 
     function posToCell(row, col) {
-      return (row - 1) * 2 + colToQ(col);
+      const q = colToQ(col);
+      return row + (q - 1) * 8;
     }
 
     function key(col, row) {
@@ -501,10 +502,10 @@
     }
 
     function slaveCellToColRow(slave, cell) {
-      const q = cell % 2 === 1 ? 1 : 2;
+      const q = cell <= 8 ? 1 : 2;
       const col = q + (slave - 1) * 2 - 1;
       if (col < 0 || col >= COLS) return null;
-      const row = Math.floor((cell + 1) / 2);
+      const row = cell <= 8 ? cell : cell - 8;
       if (row < 1 || row > ROWS) return null;
       return { col, row };
     }

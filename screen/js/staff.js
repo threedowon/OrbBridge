@@ -13,6 +13,7 @@ const MARGIN_L = 24;
 const MARGIN_T = 20;
 const R_SMALL = 4.5;   /* 오답 — 직경 d */
 const R_LARGE = 6.75;  /* 정답 — 직경 1.5d */
+const CELL_H = 58;
 
 const PAL = {
   bg: '#f5f2e9',
@@ -216,11 +217,19 @@ function drawOrbLabel(x, y, voiceId, radius) {
   ctx.restore();
 }
 
+function measureStageWidth() {
+  const stage = canvas?.closest?.('.staff-stage');
+  const fromDom = stage?.clientWidth ?? canvas?.parentElement?.clientWidth ?? 0;
+  const fromWindow = Math.min(window.innerWidth - 48, 1200);
+  // flex shrink로 DOM 폭이 비정상적으로 작으면 창 폭 기준 사용
+  if (fromDom < fromWindow * 0.55) return Math.max(fromWindow, 640);
+  return Math.max(fromDom, 640);
+}
+
 function computeCanvasLayout(melody, wrapW) {
   const rows = rowCount(melody);
-  const innerW = wrapW - MARGIN_L * 2;
-  const targetH = Math.min(window.innerHeight * 0.62, 560);
-  cellH = Math.max(46, Math.min(58, (targetH - MARGIN_T - 24) / rows));
+  const innerW = Math.max(wrapW - MARGIN_L * 2, 1);
+  cellH = CELL_H;
   const h = MARGIN_T + cellH * rows + 24;
   const w = MARGIN_L * 2 + innerW;
   return { w, h, rows, innerW };
@@ -233,8 +242,7 @@ export function initStaff(el, clickCb) {
   initGlowLayers();
 
   const resize = () => {
-    const wrap = canvas.parentElement?.parentElement ?? canvas.parentElement;
-    const wrapW = Math.max(wrap.clientWidth, 320);
+    const wrapW = measureStageWidth();
     if (lastState?.melody) {
       const layout = computeCanvasLayout(lastState.melody, wrapW);
       rowN = layout.rows;
@@ -244,6 +252,8 @@ export function initStaff(el, clickCb) {
       beatN = cols.n;
       canvas.width = layout.w;
       canvas.height = layout.h;
+      canvas.style.width = '100%';
+      canvas.style.height = 'auto';
     }
     if (lastState) paint(lastState);
   };
@@ -293,8 +303,7 @@ function hitTest(e) {
 export function draw(state) {
   if (!ctx || !state) return;
   lastState = state;
-  const wrap = canvas.parentElement?.parentElement ?? canvas.parentElement;
-  const wrapW = Math.max(wrap.clientWidth, 320);
+  const wrapW = measureStageWidth();
   const layout = computeCanvasLayout(state.melody, wrapW);
   rowN = layout.rows;
   const cols = computeCols(state.melody, layout.innerW);
@@ -303,6 +312,8 @@ export function draw(state) {
   beatN = cols.n;
   canvas.width = layout.w;
   canvas.height = layout.h;
+  canvas.style.width = '100%';
+  canvas.style.height = 'auto';
   paint(state);
 }
 

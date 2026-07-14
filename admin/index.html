@@ -416,7 +416,7 @@
 
     function colToSlave(col) { return Math.floor(col / 2) + 1; }
     function colToQ(col) { return col % 2 === 0 ? 1 : 2; }
-    function posToCell(row, col) { return (row - 1) * 2 + colToQ(col); }
+    function posToCell(row, col) { return row + (colToQ(col) - 1) * 8; }
     function cellKey(slave, cell) { return `${slave}:${cell}`; }
     function gridKey(col, row) { return `${col}-${row}`; }
 
@@ -499,8 +499,8 @@
     }
 
     function colRowFromSlaveCell(slave, cell) {
-      const q = cell % 2 === 1 ? 1 : 2;
-      const row = Math.floor((cell + 1) / 2);
+      const q = cell <= 8 ? 1 : 2;
+      const row = cell <= 8 ? cell : cell - 8;
       const col = (slave - 1) * 2 + (q === 1 ? 0 : 1);
       return { col, row };
     }
