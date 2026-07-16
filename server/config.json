@@ -7,7 +7,7 @@
     "port": 8080
   },
   "serial": {
-    "port": "COM23",
+    "port": "COM5",
     "baudrate": 115200
   },
   "osc": {
