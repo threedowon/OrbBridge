@@ -56,10 +56,10 @@ FILTERS = (900, 2200, 1100, 2000, 1400, 1600, 800, 1800, 2400)
 GAINS = (0.20, 0.18, 0.16, 0.19, 0.14, 0.17, 0.21, 0.15, 0.18)
 
 SEED_PROFILES: dict[str, dict] = {
-    "aspa_1": {"color": "#f472b6", "wave": "sine", "filter": 900, "gain": 0.20},
-    "aspa_2": {"color": "#5eead4", "wave": "triangle", "filter": 2200, "gain": 0.18},
-    "aspa_3": {"color": "#fbbf24", "wave": "sawtooth", "filter": 1100, "gain": 0.16},
-    "aspa_4": {"color": "#a78bfa", "wave": "sine", "filter": 2000, "gain": 0.19},
+    "aespa_1": {"color": "#f472b6", "wave": "sine", "filter": 900, "gain": 0.20},
+    "aespa_2": {"color": "#5eead4", "wave": "triangle", "filter": 2200, "gain": 0.18},
+    "aespa_3": {"color": "#fbbf24", "wave": "sawtooth", "filter": 1100, "gain": 0.16},
+    "aespa_4": {"color": "#a78bfa", "wave": "sine", "filter": 2000, "gain": 0.19},
     "ive_1": {"color": "#60a5fa", "wave": "square", "filter": 1400, "gain": 0.14},
     "ive_2": {"color": "#4ade80", "wave": "triangle", "filter": 1600, "gain": 0.17},
     "ive_3": {"color": "#fb923c", "wave": "sine", "filter": 800, "gain": 0.21},

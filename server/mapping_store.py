@@ -133,5 +133,5 @@ def suggest_voice(mapping: dict, group: str) -> str:
 def validate_voice(voice: str) -> str:
     voice = voice.strip()
     if not VOICE_RE.fullmatch(voice):
-        raise ValueError("voice must look like aspa_1, ive_2, cortis_1")
+        raise ValueError("voice must look like aespa_1, ive_2, cortis_1")
     return voice
