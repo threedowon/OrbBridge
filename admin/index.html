@@ -292,6 +292,40 @@
       margin-top: 2px;
     }
 
+    .slave-status {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .slave-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+
+    .slave-row .sid { font-weight: 600; }
+    .slave-row .state-txt { color: var(--muted); }
+    .slave-row.online .state-txt { color: var(--ok); }
+    .slave-row.offline .state-txt { color: var(--err); }
+    .slave-row .age {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 11px;
+      font-family: "Cascadia Code", "Consolas", monospace;
+    }
+
+    .slave-empty {
+      color: var(--muted);
+      font-size: 12px;
+      padding: 4px 2px;
+    }
+
     .toolbar {
       display: flex;
       gap: 8px;
@@ -378,6 +412,13 @@
           <div class="stat-box"><div class="num" id="stat-orbs">0</div><div class="lbl">등록 Orb</div></div>
           <div class="stat-box"><div class="num" id="stat-stage">—</div><div class="lbl">Stage</div></div>
           <div class="stat-box"><div class="num" id="stat-mode">—</div><div class="lbl">입력 모드</div></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">슬레이브 상태</div>
+        <div class="slave-status" id="slave-status">
+          <div class="slave-empty">감지된 슬레이브 없음</div>
         </div>
       </div>
 
@@ -551,6 +592,39 @@
       el.className = 'dot ' + (state || '');
     }
 
+    function fmtAge(ms) {
+      if (ms == null) return '—';
+      const s = Math.round(ms / 1000);
+      if (s < 60) return `${s}초`;
+      const m = Math.floor(s / 60);
+      return `${m}분 ${s % 60}초`;
+    }
+
+    function renderSlaves(slaves) {
+      const box = document.getElementById('slave-status');
+      if (!slaves || slaves.length === 0) {
+        box.innerHTML = '<div class="slave-empty">감지된 슬레이브 없음</div>';
+        return;
+      }
+      box.innerHTML = '';
+      for (const sv of slaves) {
+        // online=초록, 하트비트 있었지만 끊김=빨강(offline), 하트비트 자체가 없음=노랑
+        const dotState = sv.online ? 'ok' : (sv.has_heartbeat ? 'err' : 'warn');
+        const rowState = sv.online ? 'online' : (sv.has_heartbeat ? 'offline' : '');
+        const stateTxt = sv.online
+          ? '온라인'
+          : (sv.has_heartbeat ? `오프라인 (${fmtAge(sv.hb_age_ms)} 무신호)` : '하트비트 없음');
+        const row = document.createElement('div');
+        row.className = 'slave-row ' + rowState;
+        row.innerHTML =
+          `<span class="dot ${dotState}"></span>` +
+          `<span class="sid">Slave ${sv.slave}</span>` +
+          `<span class="state-txt">${stateTxt}</span>` +
+          `<span class="age" title="마지막 메시지">최근 ${fmtAge(sv.last_seen_age_ms)} 전</span>`;
+        box.appendChild(row);
+      }
+    }
+
     async function fetchStatus() {
       try {
         const res = await fetch('/api/status');
@@ -572,6 +646,8 @@
         document.getElementById('stat-stage').textContent = s.current_stage;
         document.getElementById('stat-mode').textContent = s.input_mode;
         document.getElementById('stat-orbs').textContent = s.orb_count ?? '—';
+
+        renderSlaves(s.slaves);
       } catch { /* server may be starting */ }
     }
 

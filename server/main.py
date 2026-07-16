@@ -42,6 +42,12 @@ _event_log: list[dict] = []
 EVENT_LOG_LIMIT = 100
 _serial_status = {"connected": False, "port": "", "error": ""}
 
+# ── 슬레이브 생존 추적 (heartbeat 기반 online/offline) ──
+# slave.ino 가 3초(HEARTBEAT_MS)마다 heartbeat 를 보낸다. 이 시간(주기의 ~2.5배)
+# 안에 heartbeat 가 없으면 offline 으로 본다. 몇 개 놓쳐도 깜빡이지 않도록 여유.
+SLAVE_ONLINE_TIMEOUT_S = 8.0
+_slaves: dict[int, dict] = {}
+
 
 def _cell_key(slave: int, cell: int) -> str:
     return f"{slave}:{cell}"
@@ -55,9 +61,54 @@ def _record_event(entry: dict) -> None:
             del _event_log[: len(_event_log) - EVENT_LOG_LIMIT]
 
 
+def _touch_slave(slave_id: int, *, heartbeat: bool) -> None:
+    """슬레이브에서 온 메시지로 생존 상태 갱신. heartbeat 는 online 판정 기준."""
+    now = time.time() * 1000
+    with _state_lock:
+        s = _slaves.get(slave_id)
+        if s is None:
+            s = {
+                "slave": slave_id,
+                "first_seen": now,
+                "last_seen": now,
+                "last_heartbeat": 0.0,
+                "heartbeat_count": 0,
+                "msg_count": 0,
+            }
+            _slaves[slave_id] = s
+        s["last_seen"] = now
+        if heartbeat:
+            s["last_heartbeat"] = now
+            s["heartbeat_count"] += 1
+        else:
+            s["msg_count"] += 1
+
+
+def _slave_list_locked(now: float) -> list:
+    """_state_lock 을 이미 잡은 상태에서 슬레이브 스냅샷을 만든다."""
+    out = []
+    for sid in sorted(_slaves):
+        s = _slaves[sid]
+        has_hb = s["last_heartbeat"] > 0
+        hb_age = (now - s["last_heartbeat"]) if has_hb else None
+        online = has_hb and hb_age <= SLAVE_ONLINE_TIMEOUT_S * 1000
+        out.append({
+            "slave": sid,
+            "online": online,
+            "has_heartbeat": has_hb,
+            "hb_age_ms": hb_age,
+            "last_seen_age_ms": now - s["last_seen"],
+            "heartbeat_count": s["heartbeat_count"],
+            "msg_count": s["msg_count"],
+        })
+    return out
+
+
 def get_status() -> dict:
+    now = time.time() * 1000
     with _state_lock:
         serial = dict(_serial_status)
+        slaves = _slave_list_locked(now)
         return {
             "input_mode": input_mode,
             "game_active": game_active,
@@ -66,6 +117,8 @@ def get_status() -> dict:
             "orb_count": len(orb_mapping),
             "serial": serial,
             "cell_count": len(_cells),
+            "slaves": slaves,
+            "slave_online_timeout_s": SLAVE_ONLINE_TIMEOUT_S,
         }
 
 
@@ -166,6 +219,16 @@ def request_dispensa() -> None:
 def handle_serial_message(event: dict) -> None:
     """USB/serial 한 줄 JSON — orb 이벤트 또는 game 버튼."""
     t = event.get("type")
+
+    # 슬레이브 생존 추적: slave 필드가 있는 모든 메시지로 last_seen 을 갱신하고,
+    # heartbeat 는 online/offline 판정 기준으로 별도 기록. (admin /api/status 로 노출)
+    sid = event.get("slave")
+    if sid is not None:
+        try:
+            _touch_slave(int(sid), heartbeat=(t == "heartbeat"))
+        except (TypeError, ValueError):
+            pass  # 이상한 slave 값은 생존 추적만 건너뜀
+
     if t == "game":
         action = str(event.get("action", "")).lower()
         if action == "listen":
@@ -176,7 +239,7 @@ def handle_serial_message(event: dict) -> None:
             print(f"[WARN] unknown game action: {action}")
         return
     if t == "heartbeat":
-        return  # 슬레이브 생존 신호 — 진단 도구용, 게임 로직과 무관하므로 무시
+        return  # 생존 신호는 위에서 기록 완료 — 게임 로직과 무관하므로 여기서 종료
     handle_event(event)
 
 # ── 이벤트 처리 ────────────────────────────────────────

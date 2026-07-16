@@ -52,10 +52,11 @@ python debug.py --no-open  # 포트 안 열고 목록만 확인
 > 구 펌웨어(하트비트 없음)를 물리면 대시보드가 자동으로 "이벤트 최근성"
 > 방식으로 표시합니다(하트비트 없음 표기). 이때는 오브를 올렸다 빼서 확인하세요.
 
-### 펌웨어 쪽 변경 요약
+### 펌웨어·서버 쪽 변경 요약
 - `firmware/slave/slave.ino` — `HEARTBEAT_MS`, `sendHeartbeat()`, loop 주기 송신
 - `firmware/master/master.ino` — 하트비트는 LED 깜빡 없이 조용히 relay
-- `server/main.py` — 하트비트는 게임 로직과 무관하므로 무시(early return)
+- `server/main.py` — 하트비트로 슬레이브별 online/offline 을 판정해 `/api/status`
+  (`slaves` 필드)로 노출. `/admin` 이 이를 표시(게임 로직 자체와는 무관).
 
 ## 대시보드 구성
 
@@ -67,11 +68,19 @@ python debug.py --no-open  # 포트 안 열고 목록만 확인
 | 활성 셀 | 지금 오브가 올려진 셀 (slave·cell·orb id) |
 | 원시 로그 | 시리얼로 들어오는 raw 줄 실시간 (JSON=초록, 기타=회색) |
 
+## 게임 중 실시간 모니터링 (구현됨)
+
+이 진단 도구는 마스터 COM 포트를 직접 열기 때문에 `main.py` 와 **동시에 쓸 수
+없습니다**. 그래서 게임 실행 중 슬레이브 생존 확인은 `main.py` 쪽에 붙여 두었습니다.
+
+- `server/main.py` 가 heartbeat 로 슬레이브별 online/offline 을 판정해
+  `GET /api/status` 의 `slaves` 배열로 노출합니다(추가 시리얼 연결 없음 → 지연 0).
+- `/admin` 사이드 패널의 **"슬레이브 상태"** 에서 실시간으로 보입니다.
+- 이 진단 도구는 여전히 **오프라인 심층 진단**(원시 로그, 포트 탐색, 노이즈/
+  JSON 카운트 등)에 사용하세요.
+
 ## 향후 개선 아이디어 (선택)
 
-- **게임 중 실시간 모니터링**: 지금은 진단 도구가 COM 포트를 직접 열기 때문에
-  `main.py` 와 동시에 못 씁니다. `main.py` 에 슬레이브별 하트비트 상태를 담은
-  디버그 API(`/api/slaves`)를 추가하면 게임 실행 중에도 `/admin` 에서
-  online/offline 을 볼 수 있습니다. (추가 시리얼 연결이 없어 지연 0)
-- **하트비트 주기 조정**: `slave.ino` 의 `HEARTBEAT_MS` 와 진단 도구의
-  `ONLINE_TIMEOUT_S` 를 함께 조정하면 판정 민감도를 바꿀 수 있습니다.
+- **하트비트 주기 조정**: `slave.ino` 의 `HEARTBEAT_MS` 와 판정 창
+  (`ONLINE_TIMEOUT_S` / `main.py` 의 `SLAVE_ONLINE_TIMEOUT_S`)을 함께 조정하면
+  민감도를 바꿀 수 있습니다.

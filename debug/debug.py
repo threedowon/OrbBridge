@@ -13,8 +13,9 @@ OrbBridge 진단 도구 (Diagnostics)
   [Slave] ──RS485 9600──► [Master] ──USB──► PC (이 도구가 여는 COM 포트)
   슬레이브는 PC 에 COM 으로 잡히지 않는다. 마스터를 통해 들어오는 JSON 의
   "slave" 필드(SLAVE_ID)로만 감지한다.
-  펌웨어에 heartbeat 가 없어서, 오브를 올리거나 뺄 때만 신호가 온다.
-  → 슬레이브 상태는 "마지막 신호 이후 경과 시간"으로 판단한다.
+  펌웨어가 약 3초마다 heartbeat 를 보내므로 오브가 없어도 생존을 알 수 있다.
+  → 슬레이브 online/offline 은 "마지막 heartbeat 이후 경과 시간"으로 판단한다.
+  (게임 실행 중 실시간 판정은 server/main.py 가 같은 로직으로 /admin 에 노출)
 
 사용:
   python debug.py                 # config.json 의 serial.port 로 자동 연결
