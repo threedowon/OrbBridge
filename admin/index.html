@@ -485,7 +485,8 @@
     function buildGrid() {
       const headers = document.getElementById('slave-headers');
       headers.innerHTML = '';
-      for (let s = 1; s <= 5; s++) {
+      // slave 1개 = 2열(Q1·Q2) → 헤더 개수는 열 수에서 자동 산출(하드코딩 5 금지)
+      for (let s = 1; s <= COLS / 2; s++) {
         const h = document.createElement('div');
         h.className = 'slave-header';
         h.textContent = `Slave ${s}`;
