@@ -48,6 +48,11 @@ _serial_status = {"connected": False, "port": "", "error": ""}
 SLAVE_ONLINE_TIMEOUT_S = 8.0
 _slaves: dict[int, dict] = {}
 
+# 유효 slave ID 범위. 이 밖(예: 충돌로 깨진 slave:0)의 메시지는 폐기해
+# admin 에 '유령 슬레이브'가 잡히지 않게 한다. 보드가 늘면 MAX 만 올리면 됨.
+SLAVE_ID_MIN = 1
+SLAVE_ID_MAX = 99
+
 
 def _cell_key(slave: int, cell: int) -> str:
     return f"{slave}:{cell}"
@@ -223,12 +228,18 @@ def handle_serial_message(event: dict) -> None:
 
     # 슬레이브 생존 추적: slave 필드가 있는 모든 메시지로 last_seen 을 갱신하고,
     # heartbeat 는 online/offline 판정 기준으로 별도 기록. (admin /api/status 로 노출)
+    # 유효 범위 밖 slave(예: 시리얼 손상으로 깨진 slave:0)는 메시지 자체를 폐기 →
+    # admin 에 '유령 슬레이브'가 잡히지 않는다.
     sid = event.get("slave")
     if sid is not None:
         try:
-            _touch_slave(int(sid), heartbeat=(t == "heartbeat"))
+            sid = int(sid)
         except (TypeError, ValueError):
-            pass  # 이상한 slave 값은 생존 추적만 건너뜀
+            return  # slave 필드가 손상된 메시지 → 폐기
+        if not (SLAVE_ID_MIN <= sid <= SLAVE_ID_MAX):
+            print(f"[WARN] 유효 범위 밖 slave id 무시: {sid} (손상 메시지 또는 오설정 보드)")
+            return
+        _touch_slave(sid, heartbeat=(t == "heartbeat"))
 
     if t == "game":
         action = str(event.get("action", "")).lower()
@@ -241,11 +252,12 @@ def handle_serial_message(event: dict) -> None:
         return
     if t == "heartbeat":
         # 생존 기록은 위에서 완료. state 마스크가 있으면 유실 이벤트 자가복구.
+        # (sid 는 위에서 유효 범위 검증·int 변환 완료된 값)
         if sid is not None and "state" in event:
             try:
-                reconcile_slave_state(int(sid), int(event["state"]))
+                reconcile_slave_state(sid, int(event["state"]))
             except (TypeError, ValueError):
-                pass  # 이상한 state/slave 값은 reconcile 만 건너뜀
+                pass  # 이상한 state 값은 reconcile 만 건너뜀
         return
     handle_event(event)
 
