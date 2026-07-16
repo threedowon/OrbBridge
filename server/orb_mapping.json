@@ -6,7 +6,7 @@
     "voice": "ive_2"
   },
   "2D:16:B0:A1:23:00:00:27": {
-    "voice": "aspa_1"
+    "voice": "aespa_1"
   },
   "2D:23:E7:A1:23:00:00:E5": {
     "voice": "cortis_3"
@@ -44,8 +44,11 @@
   "2D:AA:C8:A1:23:00:00:0E": {
     "voice": "cortis_1"
   },
+  "2D:AD:9D:A1:23:00:00:CC": {
+    "voice": "enhypen_2"
+  },
   "2D:B6:AD:A1:23:00:00:EB": {
-    "voice": "aspa_3"
+    "voice": "aespa_3"
   },
   "2D:CB:C6:A1:23:00:00:58": {
     "voice": "ive_6"
@@ -54,10 +57,13 @@
     "voice": "bts_7"
   },
   "2D:DC:BF:A1:23:00:00:18": {
-    "voice": "aspa_2"
+    "voice": "aespa_2"
   },
   "2D:E1:DD:A1:23:00:00:2D": {
-    "voice": "aspa_4"
+    "voice": "aespa_4"
+  },
+  "2D:E8:B1:9F:24:00:00:AC": {
+    "voice": "enhypen_1"
   },
   "2D:EB:3E:A1:23:00:00:76": {
     "voice": "ive_3"

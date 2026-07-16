@@ -6,10 +6,10 @@ export const ROW_LABELS = ['C', 'D', 'E', 'F', 'G', 'A', 'B', 'C'];
 
 /** orb_mapping.json voice → VOICES index (loaded from GET /api/voices) */
 let VOICE_INDEX = {
-  aspa_1: 0,
-  aspa_2: 1,
-  aspa_3: 2,
-  aspa_4: 3,
+  aespa_1: 0,
+  aespa_2: 1,
+  aespa_3: 2,
+  aespa_4: 3,
   ive_1: 4,
   ive_2: 5,
   ive_3: 6,

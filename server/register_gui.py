@@ -1068,4 +1068,11 @@ def run_gui(
 ) -> None:
     mgr = SerialManager(state, baudrate, default_port)
     mgr.start()
-    RegisterApp(state, mgr, default_port).run()
+    app = RegisterApp(state, mgr, default_port)
+    try:
+        from roster_tracker import open_roster_tracker
+
+        open_roster_tracker(app.root, state)
+    except Exception as exc:  # 트래커 실패해도 등록 도구는 정상 동작
+        print(f"[roster] 트래커 창 열기 실패: {exc}")
+    app.run()

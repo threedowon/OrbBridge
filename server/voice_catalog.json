@@ -1,79 +1,79 @@
 {
   "voices": {
-    "aspa_1": {
+    "aespa_1": {
       "color": "#f472b6",
       "wave": "sine",
       "filter": 900,
       "gain": 0.2,
       "notes": {
-        "C4": "sounds/aspa_1/C4.mp3",
-        "D4": "sounds/aspa_1/D4.mp3",
-        "E4": "sounds/aspa_1/E4.mp3",
-        "F4": "sounds/aspa_1/F4.mp3",
-        "G4": "sounds/aspa_1/G4.mp3",
-        "A4": "sounds/aspa_1/A4.mp3",
-        "B4": "sounds/aspa_1/B4.mp3",
-        "C5": "sounds/aspa_1/C5.mp3"
+        "C4": "sounds/aespa_1/C4.mp3",
+        "D4": "sounds/aespa_1/D4.mp3",
+        "E4": "sounds/aespa_1/E4.mp3",
+        "F4": "sounds/aespa_1/F4.mp3",
+        "G4": "sounds/aespa_1/G4.mp3",
+        "A4": "sounds/aespa_1/A4.mp3",
+        "B4": "sounds/aespa_1/B4.mp3",
+        "C5": "sounds/aespa_1/C5.mp3"
       },
       "labels": {
         "kr": "닝닝",
         "en": "NINGNING"
       }
     },
-    "aspa_2": {
+    "aespa_2": {
       "color": "#5eead4",
       "wave": "triangle",
       "filter": 2200,
       "gain": 0.18,
       "notes": {
-        "C4": "sounds/aspa_2/C4.mp3",
-        "D4": "sounds/aspa_2/D4.mp3",
-        "E4": "sounds/aspa_2/E4.mp3",
-        "F4": "sounds/aspa_2/F4.mp3",
-        "G4": "sounds/aspa_2/G4.mp3",
-        "A4": "sounds/aspa_2/A4.mp3",
-        "B4": "sounds/aspa_2/B4.mp3",
-        "C5": "sounds/aspa_2/C5.mp3"
+        "C4": "sounds/aespa_2/C4.mp3",
+        "D4": "sounds/aespa_2/D4.mp3",
+        "E4": "sounds/aespa_2/E4.mp3",
+        "F4": "sounds/aespa_2/F4.mp3",
+        "G4": "sounds/aespa_2/G4.mp3",
+        "A4": "sounds/aespa_2/A4.mp3",
+        "B4": "sounds/aespa_2/B4.mp3",
+        "C5": "sounds/aespa_2/C5.mp3"
       },
       "labels": {
         "kr": "윈터",
         "en": "WINTER"
       }
     },
-    "aspa_3": {
+    "aespa_3": {
       "color": "#fbbf24",
       "wave": "sawtooth",
       "filter": 1100,
       "gain": 0.16,
       "notes": {
-        "C4": "sounds/aspa_3/C4.mp3",
-        "D4": "sounds/aspa_3/D4.mp3",
-        "E4": "sounds/aspa_3/E4.mp3",
-        "F4": "sounds/aspa_3/F4.mp3",
-        "G4": "sounds/aspa_3/G4.mp3",
-        "A4": "sounds/aspa_3/A4.mp3",
-        "B4": "sounds/aspa_3/B4.mp3",
-        "C5": "sounds/aspa_3/C5.mp3"
+        "C4": "sounds/aespa_3/C4.mp3",
+        "D4": "sounds/aespa_3/D4.mp3",
+        "E4": "sounds/aespa_3/E4.mp3",
+        "F4": "sounds/aespa_3/F4.mp3",
+        "G4": "sounds/aespa_3/G4.mp3",
+        "A4": "sounds/aespa_3/A4.mp3",
+        "B4": "sounds/aespa_3/B4.mp3",
+        "C5": "sounds/aespa_3/C5.mp3"
       },
       "labels": {
         "kr": "지젤",
         "en": "GISELLE"
       }
     },
-    "aspa_4": {
+    "aespa_4": {
       "color": "#a78bfa",
       "wave": "sine",
       "filter": 2000,
       "gain": 0.19,
       "notes": {
-        "C4": "sounds/aspa_4/C4.mp3",
-        "D4": "sounds/aspa_4/D4.mp3",
-        "E4": "sounds/aspa_4/E4.mp3",
-        "F4": "sounds/aspa_4/F4.mp3",
-        "G4": "sounds/aspa_4/G4.mp3",
-        "A4": "sounds/aspa_4/A4.mp3",
-        "B4": "sounds/aspa_4/B4.mp3",
-        "C5": "sounds/aspa_4/C5.mp3"
+        "C4": "sounds/aespa_4/C4.mp3",
+        "D4": "sounds/aespa_4/D4.mp3",
+        "E4": "sounds/aespa_4/E4.mp3",
+        "F4": "sounds/aespa_4/F4.mp3",
+        "G4": "sounds/aespa_4/G4.mp3",
+        "A4": "sounds/aespa_4/A4.mp3",
+        "B4": "sounds/aespa_4/B4.mp3",
+        "C5": "sounds/aespa_4/C5.mp3"
       },
       "labels": {
         "kr": "카리나",
@@ -318,6 +318,38 @@
       "labels": {
         "kr": "주훈",
         "en": "JUHOON"
+      }
+    },
+    "enhypen_1": {
+      "color": "#fbbf24",
+      "wave": "sine",
+      "filter": 1100,
+      "gain": 0.16,
+      "notes": {
+        "C4": "",
+        "D4": "",
+        "E4": "",
+        "F4": "",
+        "G4": "",
+        "A4": "",
+        "B4": "",
+        "C5": ""
+      }
+    },
+    "enhypen_2": {
+      "color": "#fbbf24",
+      "wave": "triangle",
+      "filter": 2000,
+      "gain": 0.19,
+      "notes": {
+        "C4": "",
+        "D4": "",
+        "E4": "",
+        "F4": "",
+        "G4": "",
+        "A4": "",
+        "B4": "",
+        "C5": ""
       }
     },
     "ive_1": {

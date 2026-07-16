@@ -1,9 +1,9 @@
 /** Fallback when /api/voices is unavailable */
 export let VOICES = [
-  { id: 0, name: 'aspa_1',   color: '#f472b6', wave: 'sine',     filter: 900,  gain: 0.20 },
-  { id: 1, name: 'aspa_2',   color: '#5eead4', wave: 'triangle', filter: 2200, gain: 0.18 },
-  { id: 2, name: 'aspa_3',   color: '#fbbf24', wave: 'sawtooth', filter: 1100, gain: 0.16 },
-  { id: 3, name: 'aspa_4',   color: '#a78bfa', wave: 'sine',     filter: 2000, gain: 0.19 },
+  { id: 0, name: 'aespa_1',   color: '#f472b6', wave: 'sine',     filter: 900,  gain: 0.20 },
+  { id: 1, name: 'aespa_2',   color: '#5eead4', wave: 'triangle', filter: 2200, gain: 0.18 },
+  { id: 2, name: 'aespa_3',   color: '#fbbf24', wave: 'sawtooth', filter: 1100, gain: 0.16 },
+  { id: 3, name: 'aespa_4',   color: '#a78bfa', wave: 'sine',     filter: 2000, gain: 0.19 },
   { id: 4, name: 'ive_1',    color: '#60a5fa', wave: 'square',   filter: 1400, gain: 0.14 },
   { id: 5, name: 'ive_2',    color: '#4ade80', wave: 'triangle', filter: 1600, gain: 0.17 },
   { id: 6, name: 'ive_3',    color: '#fb923c', wave: 'sine',     filter: 800,  gain: 0.21 },
