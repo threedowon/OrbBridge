@@ -17,7 +17,9 @@
 #define RX_PIN       21
 #define RGB_PIN      48
 #define LED_BRIGHTNESS 32   // 255의 1/8
-#define RS485_BAUD   115200
+// 115200은 저가형 auto-direction 트랜시버·무종단 버스에서 바이트가 깨질 수 있어 57600으로.
+// 폴링이라 충돌은 baud 와 무관하게 0 → 낮춰도 안전(지연만 소폭↑). 여전히 깨지면 38400.
+#define RS485_BAUD   57600
 
 #define PIN_BTN_LISTEN 41
 #define PIN_BTN_PLAY   42
