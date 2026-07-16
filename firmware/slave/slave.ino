@@ -8,7 +8,7 @@
  *   - OneWire 버스 하나 읽을 때마다 RS485 수신을 확인해 응답 턴어라운드 최소화
  * NeoPixel 링 16개 (각 12 LED) → GPIO 38 체인, DS2431 1개당 링 1개
  *
- * RS485 핀·속도: TX=20, RX=21, 115200 8N1
+ * RS485 핀·속도: TX=20, RX=21, 57600 8N1
  */
 
 #include <OneWire.h>

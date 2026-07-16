@@ -7,7 +7,7 @@
  * USB Serial → PC (main.py), 115200
  * 버튼: 다시듣기 / 재생 (INPUT_PULLUP)
  *
- * RS485 핀·속도: TX=20, RX=21, 115200 8N1
+ * RS485 핀·속도: TX=20, RX=21, 57600 8N1
  */
 
 #include <Adafruit_NeoPixel.h>
