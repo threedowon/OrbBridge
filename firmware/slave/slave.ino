@@ -117,10 +117,19 @@ void sendAdded(int busIndex, const byte addr[8]) {
   flashRed();
 }
 
-// 오브가 없어도 주기적으로 살아있음을 알림 → 진단 도구의 online/offline 판정용
+// 오브가 없어도 주기적으로 살아있음을 알림 → PC 의 online/offline 판정용.
+// "state": 16칸 점유 비트마스크(bit i = cell i+1 점유). PC 가 이걸로 유실된
+// added/removed 를 자가복구(reconcile)한다. 비트마스크는 UID 를 담지 않으므로
+// PC 는 "점유 여부"만 신뢰하고, 정체(voice)는 실제 added 이벤트로만 채운다.
 void sendHeartbeat() {
+  uint16_t state = 0;
+  for (int i = 0; i < BUS_COUNT; i++) {
+    if (hasLast[i]) state |= (uint16_t)(1u << i);
+  }
   String msg = "{\"type\":\"heartbeat\",\"slave\":";
   msg += SLAVE_ID;
+  msg += ",\"state\":";
+  msg += state;
   msg += "}";
   rs485SendLine(msg);
 }

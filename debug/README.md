@@ -40,8 +40,10 @@ python debug.py --no-open  # 포트 안 열고 목록만 확인
 ## 슬레이브 상태 판정 방식 (하트비트)
 
 각 슬레이브는 `slave.ino` 의 `sendHeartbeat()` 로 **약 3초마다**
-`{"type":"heartbeat","slave":ID}` 를 RS485 로 보냅니다(`HEARTBEAT_MS` 상수).
-오브가 하나도 없어도 신호가 오므로 대시보드가 실시간으로 판정합니다.
+`{"type":"heartbeat","slave":ID,"state":<16비트 점유마스크>}` 를 RS485 로
+보냅니다(`HEARTBEAT_MS` 상수). 오브가 하나도 없어도 신호가 오므로 대시보드가
+실시간으로 판정합니다. `state` 는 `main.py` 가 유실된 added/removed 를
+자가복구(reconcile)하는 데 쓰입니다(이 진단 도구는 online/offline 판정만 사용).
 
 - **🟢 ONLINE** — 최근 `ONLINE_TIMEOUT_S`(기본 8초) 안에 하트비트 수신.
 - **🔴 OFFLINE** — 8초 넘게 하트비트 없음(슬레이브 정지 / RS485 단선 / 전원).

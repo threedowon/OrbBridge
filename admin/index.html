@@ -192,6 +192,8 @@
     .cell.wrong { background: rgba(248, 113, 113, 0.25); border-color: var(--err); }
     .cell.inactive { background: rgba(91, 141, 239, 0.2); border-color: var(--accent); }
     .cell.unknown { background: rgba(250, 204, 21, 0.2); border-color: var(--warn); }
+    /* 자가복구로 추정된 '미상' 칸 — 실제 미등록 오브와 구분되게 점선 테두리 */
+    .cell.synthetic { border-style: dashed; border-color: var(--warn); }
 
     .cell .note {
       font-size: 11px;
@@ -530,10 +532,11 @@
       el.querySelector('.note').textContent = '';
       el.querySelector('.voice').textContent = '';
 
-      if (!data || !data.id) return;
+      if (!data || (!data.id && !data.synthetic)) return;
 
       el.classList.add('filled');
       if (data.result) el.classList.add(data.result);
+      if (data.synthetic) el.classList.add('synthetic');
       el.querySelector('.note').textContent = data.note || '?';
       el.querySelector('.voice').textContent = data.voice || shortId(data.id);
       if (selectedKey === gridKey(col, row)) el.classList.add('selected');
@@ -548,7 +551,7 @@
 
     function applyCellState(slave, cell, data) {
       const key = cellKey(slave, cell);
-      if (data && data.id) {
+      if (data && (data.id || data.synthetic)) {
         cells.set(key, data);
       } else {
         cells.delete(key);
@@ -689,6 +692,11 @@
         const [slave, cell, voice, note, orb_id] = args;
         applyCellState(slave, cell, null);
         addLog('removed', `S${slave} C${cell} ${voice} ${note}`, 'log-removed');
+      } else if (address === '/orb/recovered' && args.length >= 3) {
+        // 유실 추정: admin 에만 '미상'으로 표시(screen 엔 안 뜸 → 관람자가 다시 올림)
+        const [slave, cell, note] = args;
+        applyCellState(slave, cell, { id: '', voice: '미상', note, result: 'unknown', synthetic: true });
+        addLog('복구', `S${slave} C${cell} ${note} → 유실 추정(미상, 화면 미표시)`, 'log-warn');
       } else if (address === '/game/ready') {
         addLog('ready', args[0] ? 'READY' : '대기', 'log-info');
       } else if (address === '/game/start') {

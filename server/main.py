@@ -74,6 +74,7 @@ def _touch_slave(slave_id: int, *, heartbeat: bool) -> None:
                 "last_heartbeat": 0.0,
                 "heartbeat_count": 0,
                 "msg_count": 0,
+                "prev_state_mask": None,  # 직전 heartbeat 의 점유 마스크 (debounce용)
             }
             _slaves[slave_id] = s
         s["last_seen"] = now
@@ -239,7 +240,13 @@ def handle_serial_message(event: dict) -> None:
             print(f"[WARN] unknown game action: {action}")
         return
     if t == "heartbeat":
-        return  # 생존 신호는 위에서 기록 완료 — 게임 로직과 무관하므로 여기서 종료
+        # 생존 기록은 위에서 완료. state 마스크가 있으면 유실 이벤트 자가복구.
+        if sid is not None and "state" in event:
+            try:
+                reconcile_slave_state(int(sid), int(event["state"]))
+            except (TypeError, ValueError):
+                pass  # 이상한 state/slave 값은 reconcile 만 건너뜀
+        return
     handle_event(event)
 
 # ── 이벤트 처리 ────────────────────────────────────────
@@ -294,6 +301,67 @@ def handle_event(event: dict):
 
         print(f"[removed] slave={slave} cell={cell} Q={q_actual} note={note} voice={voice}")
         osc.send_message("/orb/removed", [slave, cell, voice, note, orb_key or orb_id or ""])
+
+# ── 자가복구 (heartbeat state mask 기반 reconcile) ────
+# slave heartbeat 의 16비트 점유 마스크로 유실된 added/removed 를 스스로 메꾼다.
+#  - mask=점유 / memory=빔  → added 유실. UID 를 모르므로 "미상"으로 admin 에만 표시
+#                             (/orb/recovered — screen 은 이 주소를 처리 안 함).
+#                             관람자가 스스로 다시 올리면 진짜 added 로 정확히 복구됨.
+#  - mask=빔  / memory=점유 → removed 유실. UID 불필요 → 정식 /orb/removed 로 화면도 정리.
+# 센서 순간 오검출(flicker) 방지: "직전 heartbeat 와 같은 마스크"일 때만 반영(연속 2회).
+
+def _synth_added_unknown(slave_id: int, cell: int) -> None:
+    """유실된 added 추정 — 정체 미상. admin 에만 표시하고 screen 에는 보내지 않는다."""
+    _q, note = parse_cell(cell)
+    with _state_lock:
+        _cells[_cell_key(slave_id, cell)] = {
+            "id": "", "voice": "미상", "note": note,
+            "result": "unknown", "synthetic": True,
+        }
+    _record_event({"type": "recovered", "slave": slave_id, "cell": cell,
+                   "note": note, "voice": "미상", "synthetic": True})
+    print(f"[recover] slave={slave_id} cell={cell} note={note} → added 유실 추정(미상, admin만)")
+    osc.send_message("/orb/recovered", [slave_id, cell, note])
+
+
+def _synth_removed(slave_id: int, cell: int) -> None:
+    """유실된 removed 추정 — 정식 removed 로 처리해 screen·admin 모두 칸을 비운다."""
+    with _state_lock:
+        cell_data = _cells.pop(_cell_key(slave_id, cell), None)
+    voice   = (cell_data or {}).get("voice", "unknown")
+    orb_key = (cell_data or {}).get("id", "") or ""
+    _q, note = parse_cell(cell)
+    _record_event({"type": "removed", "slave": slave_id, "cell": cell,
+                   "id": orb_key, "voice": voice, "note": note, "synthetic": True})
+    print(f"[recover] slave={slave_id} cell={cell} → removed 유실 복구(screen+admin)")
+    osc.send_message("/orb/removed", [slave_id, cell, voice, note, orb_key])
+
+
+def reconcile_slave_state(slave_id: int, state: int) -> None:
+    """heartbeat 점유 마스크(state)로 메모리와의 불일치를 자가복구. flicker debounce 포함."""
+    with _state_lock:
+        s = _slaves.get(slave_id)
+        prev = s.get("prev_state_mask") if s else None
+        if s is not None:
+            s["prev_state_mask"] = state
+        # 직전 heartbeat 와 마스크가 동일해야(=~3초 안정) 반영. 순간 오검출 1회는 무시.
+        stable = prev is not None and prev == state
+        occupied_mem = {
+            int(k.split(":", 1)[1])
+            for k in _cells
+            if k.startswith(f"{slave_id}:")
+        }
+
+    if not stable:
+        return
+
+    for cell in range(1, 17):
+        mask_occ = bool((state >> (cell - 1)) & 1)
+        mem_occ  = cell in occupied_mem
+        if mask_occ and not mem_occ:
+            _synth_added_unknown(slave_id, cell)
+        elif not mask_occ and mem_occ:
+            _synth_removed(slave_id, cell)
 
 # ── 시리얼 수신 루프 ───────────────────────────────────
 def serial_loop():
