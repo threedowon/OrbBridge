@@ -43,8 +43,10 @@ CONFIG_PATH = HERE.parent / "server" / "config.json"
 INDEX_HTML = HERE / "index.html"
 
 HTTP_HOST = "127.0.0.1"
-HTTP_PORT = 8090
 
+# ── 기본값 (server/config.json 의 "debug" 섹션으로 덮어쓸 수 있음) ──
+# 우선순위: CLI 인자 > config.json 의 "debug" > 아래 기본값
+HTTP_PORT = 8090
 # 슬레이브를 "최근 활동"으로 볼 시간 창(초). 이 안에 신호가 왔으면 최근 활동.
 RECENT_WINDOW_S = 10.0
 # 하트비트 기반 online/offline 판정 창(초). 슬레이브 하트비트 주기(3초)의 2~3배.
@@ -386,20 +388,36 @@ def make_handler():
     return Handler
 
 
-def load_default_serial() -> tuple[str, int]:
-    port, baud = "", 115200
+def load_config() -> dict:
     try:
-        cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        ser = cfg.get("serial", {})
-        port = ser.get("port", "")
-        baud = int(ser.get("baudrate", 115200))
+        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except Exception as e:
         print(f"[config] {CONFIG_PATH} 읽기 실패: {e}")
-    return port, baud
+        return {}
+
+
+def apply_debug_config(cfg: dict) -> None:
+    """config.json 의 "debug" 섹션으로 모듈 기본값(전역)을 덮어쓴다."""
+    global HTTP_PORT, RECENT_WINDOW_S, ONLINE_TIMEOUT_S, RAW_LOG_LIMIT
+    dbg = cfg.get("debug", {})
+    if not isinstance(dbg, dict):
+        return
+    try:
+        HTTP_PORT        = int(dbg.get("http_port", HTTP_PORT))
+        RECENT_WINDOW_S  = float(dbg.get("recent_window_s", RECENT_WINDOW_S))
+        ONLINE_TIMEOUT_S = float(dbg.get("online_timeout_s", ONLINE_TIMEOUT_S))
+        RAW_LOG_LIMIT    = int(dbg.get("raw_log_limit", RAW_LOG_LIMIT))
+    except (TypeError, ValueError) as e:
+        print(f"[config] debug 섹션 값 오류, 기본값 사용: {e}")
 
 
 def main() -> None:
-    def_port, def_baud = load_default_serial()
+    cfg = load_config()
+    apply_debug_config(cfg)
+
+    ser = cfg.get("serial", {})
+    def_port = ser.get("port", "")
+    def_baud = int(ser.get("baudrate", 115200))
 
     ap = argparse.ArgumentParser(description="OrbBridge 진단 도구")
     ap.add_argument("--port", default=def_port, help=f"마스터 COM 포트 (기본: {def_port or '없음'})")
