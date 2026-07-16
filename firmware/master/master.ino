@@ -7,7 +7,7 @@
  * USB Serial → PC (main.py), 115200
  * 버튼: 다시듣기 / 재생 (INPUT_PULLUP)
  *
- * RS485 핀·속도: TX=20, RX=21, 57600 8N1
+ * RS485 핀·속도: TX=20, RX=21, 38400 8N1 (모듈 한계로 낮춤)
  */
 
 #include <Adafruit_NeoPixel.h>
@@ -17,9 +17,10 @@
 #define RX_PIN       21
 #define RGB_PIN      48
 #define LED_BRIGHTNESS 32   // 255의 1/8
-// 115200은 저가형 auto-direction 트랜시버·무종단 버스에서 바이트가 깨질 수 있어 57600으로.
-// 폴링이라 충돌은 baud 와 무관하게 0 → 낮춰도 안전(지연만 소폭↑). 여전히 깨지면 38400.
-#define RS485_BAUD   57600
+// 저가형 auto-direction 트랜시버가 송신 시작/끝 바이트를 갉아먹어 고속에서 깨진다.
+// 폴링이라 충돌은 baud 와 무관하게 0 → 깨끗해질 때까지 내려도 안전(지연만 소폭↑).
+// 순서: 38400 → 여전히 깨지면 19200 → 9600. (원래 9600에서 멀쩡히 돌던 시스템)
+#define RS485_BAUD   38400
 
 #define PIN_BTN_LISTEN 41
 #define PIN_BTN_PLAY   42
