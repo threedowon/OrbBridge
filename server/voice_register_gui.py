@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tkinter as tk
 import tkinter.font as tkfont
 from datetime import datetime
@@ -11,6 +12,7 @@ from tkinter import filedialog, messagebox, ttk
 from voice_preview import play_preview, stop_preview
 from voice_register_core import VoiceRegisterState, save_voice
 from voice_store import (
+    NOTE_KEYS,
     NOTE_SLOTS,
     ensure_voice_profile,
     list_catalog_voices,
@@ -21,27 +23,37 @@ from voice_store import (
     resolve_media_path,
 )
 
-MONO_CANDIDATES = ("JetBrains Mono", "Consolas", "Cascadia Mono", "Courier New")
-UI_CANDIDATES = ("Inter", "Segoe UI", "Helvetica Neue", "Manrope", "Arial")
+MONO_CANDIDATES = ("Cascadia Mono", "Cascadia Code", "JetBrains Mono", "D2Coding", "Consolas", "Courier New")
+UI_CANDIDATES = (
+    "Pretendard",
+    "Pretendard Variable",
+    "Malgun Gothic",
+    "Apple SD Gothic Neo",
+    "Noto Sans KR",
+    "Segoe UI Variable",
+    "Segoe UI",
+    "Arial",
+)
 AUDIO_EXTS = (
     ("미디어", "*.mp4 *.m4a *.mov *.webm *.mkv *.wav *.mp3 *.ogg *.flac *.aac"),
     ("모든 파일", "*.*"),
 )
 
 C = {
-    "canvas": "#ffffff",
-    "canvas_soft": "#e8ebe6",
-    "primary": "#9fe870",
-    "primary_active": "#cdffad",
-    "primary_neutral": "#c5edab",
-    "primary_pale": "#e2f6d5",
-    "ink": "#0e0f0c",
-    "body": "#454745",
-    "mute": "#868685",
-    "on_primary": "#0e0f0c",
-    "positive": "#2ead4b",
-    "warning_deep": "#b86700",
-    "negative": "#d03238",
+    "canvas": "#ffffff",        # 카드/입력 표면
+    "canvas_soft": "#f4f5f6",   # 페이지 배경 · 보조 버튼 · 내부 패널
+    "border": "#dcdee1",        # 카드·입력 테두리 (연회색)
+    "primary": "#2a2d31",       # 주요 버튼 (charcoal)
+    "primary_active": "#43474c",
+    "primary_neutral": "#e6e7e9",  # 보조 버튼 hover
+    "primary_pale": "#ececee",     # Treeview 선택 배경
+    "ink": "#1a1c1f",           # 본문 텍스트
+    "body": "#55595f",
+    "mute": "#9a9ea5",
+    "on_primary": "#ffffff",    # charcoal 버튼 위 텍스트
+    "positive": "#3f4247",      # 로그 ok (중간 회색)
+    "warning_deep": "#6c7075",  # 로그 warn (밝은 회색)
+    "negative": "#111316",      # 로그 error (거의 검정)
 }
 
 
@@ -51,6 +63,48 @@ def _pick_font(root: tk.Tk, candidates: tuple[str, ...], fallback: str) -> str:
         if name in families:
             return name
     return fallback
+
+
+def _natural_key(name: str) -> list:
+    """숫자를 숫자로 비교하는 자연 정렬 키 ('2' < '10')."""
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)]
+
+
+def _infer_note_key(stem: str) -> str | None:
+    """파일명에서 음이름(C4..C5) 또는 번호(1~8)를 추론. 못 찾으면 None."""
+    up = stem.upper()
+    for nk in NOTE_KEYS:  # 'C4','D4',...,'C5'
+        if re.search(rf"(?<![A-Z0-9]){nk}(?![A-Z0-9])", up):
+            return nk
+    m = re.search(r"(?<!\d)([1-8])(?!\d)", stem)
+    if m:
+        return NOTE_KEYS[int(m.group(1)) - 1]
+    return None
+
+
+def order_files_to_slots(paths: list[str]) -> tuple[dict[str, str], str]:
+    """선택한 파일들을 8음(C4~C5) 슬롯에 배정.
+
+    1) 모든 파일이 파일명으로 음이름/번호가 유일하게 추론되면 그대로 매핑
+    2) 아니면 파일명 자연 정렬 순서대로 C4→C5 배정
+    반환: (note_key → path, 방식 설명)
+    """
+    inferred: dict[str, str] = {}
+    used: set[str] = set()
+    ok = bool(paths)
+    for p in paths:
+        nk = _infer_note_key(Path(p).stem)
+        if nk is None or nk in used:
+            ok = False
+            break
+        inferred[nk] = p
+        used.add(nk)
+    if ok and len(inferred) == len(paths):
+        return inferred, "파일명 음이름/번호 인식"
+
+    ordered = sorted(paths, key=lambda p: _natural_key(Path(p).stem))
+    mapping = {NOTE_KEYS[i]: p for i, p in enumerate(ordered[: len(NOTE_KEYS)])}
+    return mapping, "파일명 순서대로 배정"
 
 
 class VoiceRegisterApp:
@@ -66,17 +120,17 @@ class VoiceRegisterApp:
         mono = _pick_font(self.root, MONO_CANDIDATES, "TkFixedFont")
         self.root.title("Voice Register")
         self.root.configure(bg=C["canvas_soft"])
-        self.root.minsize(820, 640)
-        self.root.geometry("920x700")
+        self.root.minsize(960, 840)
+        self.root.geometry("1060x935")
 
         self._fonts = {
-            "title": tkfont.Font(family=ui, size=28, weight="bold"),
-            "section": tkfont.Font(family=ui, size=16, weight="bold"),
+            "title": tkfont.Font(family=ui, size=26, weight="bold"),
+            "section": tkfont.Font(family=ui, size=15, weight="bold"),
             "body": tkfont.Font(family=ui, size=12),
             "label": tkfont.Font(family=ui, size=12, weight="bold"),
-            "mono": tkfont.Font(family=mono, size=10),
-            "btn": tkfont.Font(family=ui, size=11, weight="bold"),
-            "btn_sm": tkfont.Font(family=ui, size=10, weight="bold"),
+            "mono": tkfont.Font(family=mono, size=11),
+            "btn": tkfont.Font(family=ui, size=12, weight="bold"),
+            "btn_sm": tkfont.Font(family=ui, size=11, weight="bold"),
             "tab": tkfont.Font(family=ui, size=10),
             "tab_sel": tkfont.Font(family=ui, size=10, weight="bold"),
         }
@@ -99,7 +153,7 @@ class VoiceRegisterApp:
             background=C["canvas"],
             fieldbackground=C["canvas"],
             foreground=C["ink"],
-            rowheight=34,
+            rowheight=38,
             font=self._fonts["body"],
             borderwidth=0,
         )
@@ -107,8 +161,9 @@ class VoiceRegisterApp:
             "Treeview.Heading",
             font=self._fonts["label"],
             background=C["canvas_soft"],
-            foreground=C["ink"],
+            foreground=C["body"],
             relief="flat",
+            padding=(8, 8),
         )
         style.map(
             "Treeview",
@@ -124,7 +179,7 @@ class VoiceRegisterApp:
             insertbackground=C["ink"],
             relief=tk.FLAT,
             highlightthickness=1,
-            highlightbackground=C["ink"],
+            highlightbackground=C["border"],
             highlightcolor=C["ink"],
         )
         opts.update(kwargs)
@@ -141,28 +196,39 @@ class VoiceRegisterApp:
             bg=bg,
             fg=fg,
             activebackground=C["primary_active"] if primary else C["primary_neutral"],
-            activeforeground=fg,
+            activeforeground=C["on_primary"] if primary else C["ink"],
             relief=tk.FLAT,
-            padx=12 if small else 14,
-            pady=4 if small else 5,
+            borderwidth=0,
+            highlightthickness=0,
+            padx=14 if small else 20,
+            pady=7 if small else 10,
             cursor="hand2",
         )
 
     def _card(self, parent, title: str) -> tuple[tk.Frame, tk.Frame]:
-        outer = tk.Frame(parent, bg=C["canvas"], padx=20, pady=16)
-        tk.Label(
-            outer,
-            text=title,
-            font=self._fonts["section"],
+        outer = tk.Frame(
+            parent,
             bg=C["canvas"],
-            fg=C["ink"],
-        ).pack(anchor=tk.W, pady=(0, 8))
+            padx=24,
+            pady=16,
+            highlightbackground=C["border"],
+            highlightcolor=C["border"],
+            highlightthickness=1,
+        )
+        if title:
+            tk.Label(
+                outer,
+                text=title,
+                font=self._fonts["section"],
+                bg=C["canvas"],
+                fg=C["ink"],
+            ).pack(anchor=tk.W, pady=(0, 10))
         inner = tk.Frame(outer, bg=C["canvas"])
         inner.pack(fill=tk.BOTH, expand=True)
         return outer, inner
 
     def _build(self) -> None:
-        shell = tk.Frame(self.root, bg=C["canvas_soft"], padx=20, pady=16)
+        shell = tk.Frame(self.root, bg=C["canvas_soft"], padx=28, pady=18)
         shell.pack(fill=tk.BOTH, expand=True)
 
         header = tk.Frame(shell, bg=C["canvas_soft"])
@@ -184,13 +250,13 @@ class VoiceRegisterApp:
 
         body = tk.Frame(shell, bg=C["canvas_soft"])
         body.pack(fill=tk.BOTH, expand=True)
-        body.columnconfigure(0, weight=2, minsize=260)
-        body.columnconfigure(1, weight=5)
+        body.columnconfigure(0, weight=2, minsize=300)
+        body.columnconfigure(1, weight=5, minsize=480)
         body.rowconfigure(0, weight=1)
 
         left_wrap = tk.Frame(body, bg=C["canvas_soft"])
-        left_wrap.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-        left_card, left = self._card(left_wrap, "Voice 목록")
+        left_wrap.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
+        left_card, left = self._card(left_wrap, "")
         left_card.pack(fill=tk.BOTH, expand=True)
 
         search_row = tk.Frame(left, bg=C["canvas"])
@@ -205,13 +271,13 @@ class VoiceRegisterApp:
         tree_wrap = tk.Frame(left, bg=C["canvas"])
         tree_wrap.pack(fill=tk.BOTH, expand=True)
         cols = ("voice", "orbs", "samples")
-        self.tree = ttk.Treeview(tree_wrap, columns=cols, show="headings", height=12)
+        self.tree = ttk.Treeview(tree_wrap, columns=cols, show="headings", height=10)
         self.tree.heading("voice", text="Voice")
         self.tree.heading("orbs", text="Orbs")
         self.tree.heading("samples", text="Samples")
-        self.tree.column("voice", width=120, stretch=True)
-        self.tree.column("orbs", width=48, stretch=False, anchor=tk.CENTER)
-        self.tree.column("samples", width=72, stretch=False, anchor=tk.CENTER)
+        self.tree.column("voice", width=150, minwidth=100, stretch=True, anchor=tk.W)
+        self.tree.column("orbs", width=62, minwidth=52, stretch=False, anchor=tk.CENTER)
+        self.tree.column("samples", width=88, minwidth=72, stretch=False, anchor=tk.CENTER)
         self.tree.bind("<<TreeviewSelect>>", self._on_voice_select)
         scroll = ttk.Scrollbar(tree_wrap, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscrollcommand=scroll.set)
@@ -224,21 +290,11 @@ class VoiceRegisterApp:
 
         right_wrap = tk.Frame(body, bg=C["canvas_soft"])
         right_wrap.grid(row=0, column=1, sticky="nsew")
-        right_card, right = self._card(right_wrap, "8음 샘플")
+        right_card, right = self._card(right_wrap, "")
         right_card.pack(fill=tk.BOTH, expand=True)
 
-        self.voice_title = tk.Label(
-            right,
-            text="voice를 선택하세요",
-            font=self._fonts["label"],
-            bg=C["canvas"],
-            fg=C["mute"],
-            anchor=tk.W,
-        )
-        self.voice_title.pack(fill=tk.X, pady=(0, 10))
-
-        label_card = tk.Frame(right, bg=C["canvas_soft"], padx=10, pady=8)
-        label_card.pack(fill=tk.X, pady=(0, 10))
+        label_card = tk.Frame(right, bg=C["canvas_soft"], padx=16, pady=12)
+        label_card.pack(fill=tk.X, pady=(0, 12))
         tk.Label(
             label_card,
             text="표시 이름 (screen)",
@@ -255,6 +311,21 @@ class VoiceRegisterApp:
         self.label_en_var = tk.StringVar(master=self.root)
         self._entry(label_row, textvariable=self.label_en_var, width=14).pack(side=tk.LEFT, ipady=2)
 
+        batch_row = tk.Frame(right, bg=C["canvas"])
+        batch_row.pack(fill=tk.X, pady=(0, 2))
+        self._pill_btn(
+            batch_row, "폴더에서 8개 한번에 선택", self._batch_assign, primary=True, small=True
+        ).pack(side=tk.LEFT)
+        tk.Label(
+            right,
+            text="선택한 파일을 C4~C5에 자동 배정 · 음이름/번호 인식, 없으면 이름순",
+            font=self._fonts["body"],
+            bg=C["canvas"],
+            fg=C["mute"],
+            anchor=tk.W,
+            justify=tk.LEFT,
+        ).pack(fill=tk.X, pady=(0, 10))
+
         slots = tk.Frame(right, bg=C["canvas"])
         slots.pack(fill=tk.BOTH, expand=True)
         for note_key, label_ko in NOTE_SLOTS:
@@ -263,15 +334,15 @@ class VoiceRegisterApp:
             row.pack(fill=tk.X)
             tk.Label(
                 row,
-                text=f"{label_ko} ({note_key})",
-                font=self._fonts["body"],
+                text=f"{label_ko}  {note_key}",
+                font=self._fonts["label"],
                 bg=C["canvas"],
-                fg=C["body"],
-                width=12,
+                fg=C["ink"],
+                width=10,
                 anchor=tk.W,
             ).pack(side=tk.LEFT)
             path_entry = self._entry(row, textvariable=self._slot_vars[note_key])
-            path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 4), ipady=2)
+            path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 8), ipady=2)
             self._pill_btn(
                 row,
                 "…",
@@ -292,8 +363,8 @@ class VoiceRegisterApp:
             ).pack(side=tk.LEFT, padx=(4, 0))
 
         action_row = tk.Frame(right, bg=C["canvas"])
-        action_row.pack(fill=tk.X, pady=(12, 0))
-        self._pill_btn(action_row, "저장", self._save_current, primary=True).pack(side=tk.LEFT)
+        action_row.pack(fill=tk.X, pady=(10, 0))
+        self._pill_btn(action_row, "저장", self._save_current, primary=True, small=True).pack(side=tk.LEFT)
         tk.Label(
             action_row,
             text="저장 시 sounds/{voice}/ 폴더로 복사됩니다",
@@ -306,7 +377,7 @@ class VoiceRegisterApp:
         log_card.pack(fill=tk.BOTH, expand=False, pady=(12, 0))
         self.log_text = tk.Text(
             log_inner,
-            height=5,
+            height=3,
             font=self._fonts["mono"],
             bg=C["canvas"],
             fg=C["body"],
@@ -368,10 +439,7 @@ class VoiceRegisterApp:
         profile = normalize_profile(catalog["voices"][voice])
         mapping = load_mapping()
         orbs = orb_count_for_voice(mapping, voice)
-        self.voice_title.configure(
-            text=f"{voice}  ·  orb {orbs}개  ·  sounds/{voice}/",
-            fg=C["ink"],
-        )
+        self.root.title(f"Voice Register  ·  {voice}  ·  orb {orbs}개")
         for note_key, var in self._slot_vars.items():
             stored = profile["notes"].get(note_key, "")
             var.set(stored)
@@ -388,6 +456,42 @@ class VoiceRegisterApp:
         )
         if path:
             self._slot_vars[note_key].set(path)
+
+    def _batch_assign(self) -> None:
+        """폴더에서 여러 파일을 한 번에 골라 8음(C4~C5) 슬롯에 채운다."""
+        if not self._active_voice:
+            messagebox.showinfo("Voice Register", "먼저 voice를 선택하세요.")
+            return
+        paths = filedialog.askopenfilenames(
+            title=f"{self._active_voice} · 8음 파일 한번에 선택 (C4~C5)",
+            filetypes=AUDIO_EXTS,
+        )
+        if not paths:
+            return
+        paths = list(paths)
+        if len(paths) > len(NOTE_KEYS):
+            messagebox.showwarning(
+                "Voice Register",
+                f"{len(paths)}개 선택됨 — 앞 8개만 사용합니다.",
+            )
+
+        mapping, how = order_files_to_slots(paths)
+        for note_key in NOTE_KEYS:
+            if note_key in mapping:
+                self._slot_vars[note_key].set(mapping[note_key])
+
+        lines = [
+            f"{label} ({nk}) ← {Path(mapping[nk]).name}"
+            for nk, label in NOTE_SLOTS
+            if nk in mapping
+        ]
+        assigned = len(mapping)
+        self.state.push_log("info", f"배치 배정 {assigned}/8 · {how}")
+        msg = f"{how}\n\n" + "\n".join(lines)
+        if assigned < len(NOTE_KEYS):
+            msg += f"\n\n※ {assigned}/8만 배정됨 — 나머지는 개별 지정하세요."
+        msg += "\n\n각 음의 ▶로 확인·개별 수정 후 [저장]을 누르세요."
+        messagebox.showinfo("Voice Register — 배치 배정", msg)
 
     def _preview(self, note_key: str) -> None:
         raw = self._slot_vars[note_key].get().strip()
