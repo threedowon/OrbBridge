@@ -48,6 +48,9 @@ unsigned long ledOffAt = 0;
 // 진단: master 가 살아서 폴링 중인지 + slave 응답을 몇 개 relay 했는지
 unsigned long lastDebugMs = 0;
 unsigned long relayCount = 0;
+// slave 가 "뭐라도" 보냈는지 (폴 에코가 아닌 바이트 수). sb>0 이면 slave 응답은 오는데
+// 깨져서 파싱 실패, sb=0 이면 slave 가 아예 무응답(폴 미도달/단방향 배선).
+unsigned long slaveBytes = 0;
 
 void pcSendLine(const String& line) {
   Serial.println(line);
@@ -128,6 +131,10 @@ void pollSlave(uint8_t id) {
     while (RS485.available()) {
       char c = (char)RS485.read();
       lastByte = millis();
+      // 폴 에코("\r\rP6\n")에 없는 바이트 = slave 가 실제로 보낸 것 → 진단 카운트
+      if (c != '\r' && c != '\n' && c != 'P' && !(c >= '0' && c <= '9')) {
+        slaveBytes++;
+      }
       if (c == '\n') {
         if (line.length() == 1 && line[0] == (char)0x04) {
           done = true;              // 터미네이터 → 이 slave 응답 완료
@@ -177,7 +184,9 @@ void loop() {
   // relay=0 이 계속이면 slave 응답을 하나도 못 받는다는 뜻(→ slave/RS485 문제).
   if (millis() - lastDebugMs >= 2000) {
     Serial.print("#master alive relay=");
-    Serial.println(relayCount);
+    Serial.print(relayCount);
+    Serial.print(" sb=");           // sb=slave가 보낸 바이트(에코 제외). sb=0=무응답, sb>0=응답이 깨짐
+    Serial.println(slaveBytes);
     lastDebugMs = millis();
   }
 }
