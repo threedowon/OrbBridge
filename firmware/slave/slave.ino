@@ -150,6 +150,10 @@ void sendHeartbeatLine() {
 
 // P<SLAVE_ID> 를 받았을 때: 큐를 비우고 heartbeat(주기적)와 터미네이터를 보낸다.
 void respondToPoll() {
+  // 워밍업 '\r' 2개: auto-direction 이 응답 첫 바이트('{')를 갉아먹어도 보존.
+  RS485.write('\r');
+  RS485.write('\r');
+
   for (int i = 0; i < queueCount; i++) {
     sendEventLine(evtQueue[i].isAdded, evtQueue[i].bus, evtQueue[i].addr);
   }
@@ -162,9 +166,10 @@ void respondToPoll() {
   }
 
   // 응답 끝 표시(터미네이터). '{' 로 시작하지 않는 줄이라 master 가 PC 로 relay 하지 않고
-  // "이 slave 응답 완료 + 생존" 판정에만 쓴다.
+  // "이 slave 응답 완료 + 생존" 판정에만 쓴다. 뒤 '\r' 는 끝바이트 클리핑 보호.
   RS485.write((uint8_t)0x04);
   RS485.write((uint8_t)'\n');
+  RS485.write('\r');
   RS485.flush();
 }
 
@@ -174,8 +179,10 @@ void serviceRS485() {
   while (RS485.available()) {
     char c = (char)RS485.read();
     if (c == '\n') {
-      if (!rxOverflow && rxLine.length() >= 2 && rxLine[0] == 'P') {
-        if (rxLine.substring(1).toInt() == SLAVE_ID) {
+      if (!rxOverflow) {
+        // 앞에 잡음(워밍업/에코)이 있어도 'P' 부터 찾아 파싱. JSON 응답엔 'P' 가 없어 오검출 없음.
+        int p = rxLine.indexOf('P');
+        if (p >= 0 && rxLine.substring(p + 1).toInt() == SLAVE_ID) {
           respondToPoll();
         }
       }

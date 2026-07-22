@@ -401,6 +401,9 @@ def serial_loop():
                 line = ser.readline().decode("utf-8", errors="ignore").strip()
                 if not line:
                     continue
+                if line.startswith("#"):
+                    print(f"[master] {line}")   # master 진단 출력 (폴링 생존/relay 카운트)
+                    continue
                 if not line.startswith("{"):
                     continue  # ESP 부트 로그, 디버그 println 등 — 무시
                 try:

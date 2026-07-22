@@ -45,6 +45,10 @@ bool playWasDown = false;
 // 논블로킹 LED (delay 로 폴링 주기를 늦추지 않도록)
 unsigned long ledOffAt = 0;
 
+// 진단: master 가 살아서 폴링 중인지 + slave 응답을 몇 개 relay 했는지
+unsigned long lastDebugMs = 0;
+unsigned long relayCount = 0;
+
 void pcSendLine(const String& line) {
   Serial.println(line);
 }
@@ -92,17 +96,23 @@ void pollButtons() {
 //   그 외        → 자기 폴 명령 에코("P6") 등 → 무시
 //   (터미네이터 0x04 는 pollSlave 에서 별도로 응답 종료 판정)
 void handleSlaveLine(const String& line) {
-  if (line.length() == 0) return;
-  if (line[0] == '{') {
-    pcSendLine(line);
-    if (line.indexOf("heartbeat") < 0) {
-      blinkYellow();   // 실제 orb 이벤트만 노란색 (heartbeat 는 조용히)
-    }
+  // 앞에 잡음(반이중 에코·워밍업 바이트)이 붙어도 '{' 부터 잘라서 relay
+  int b = line.indexOf('{');
+  if (b < 0) return;                 // '{' 없음(폴 에코 등) → 무시
+  String json = (b == 0) ? line : line.substring(b);
+  pcSendLine(json);
+  relayCount++;
+  if (json.indexOf("heartbeat") < 0) {
+    blinkYellow();   // 실제 orb 이벤트만 노란색 (heartbeat 는 조용히)
   }
 }
 
 // 한 slave 를 폴링하고 응답을 relay. 응답 완료(터미네이터) 또는 타임아웃까지.
 void pollSlave(uint8_t id) {
+  // 워밍업 '\r' 2개: auto-direction 이 전송 첫 바이트를 갉아먹어도 'P' 를 보존.
+  // '\r' 는 양쪽 파서가 무시하므로, 살아남아도 무해.
+  RS485.write('\r');
+  RS485.write('\r');
   RS485.print('P');
   RS485.print((int)id);   // 숫자로 출력 ("P6")
   RS485.print('\n');
@@ -162,4 +172,12 @@ void loop() {
   pollSlave(POLL_IDS[pollIdx]);
   pollIdx = (pollIdx + 1) % NUM_POLL;
   updateLed();
+
+  // 진단: 2초마다 PC 로 생존+relay 카운트 (main.py 가 "[master] ..." 로 로그).
+  // relay=0 이 계속이면 slave 응답을 하나도 못 받는다는 뜻(→ slave/RS485 문제).
+  if (millis() - lastDebugMs >= 2000) {
+    Serial.print("#master alive relay=");
+    Serial.println(relayCount);
+    lastDebugMs = millis();
+  }
 }
