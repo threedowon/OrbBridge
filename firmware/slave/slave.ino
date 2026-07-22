@@ -150,6 +150,11 @@ void sendHeartbeatLine() {
 
 // P<SLAVE_ID> 를 받았을 때: 큐를 비우고 heartbeat(주기적)와 터미네이터를 보낸다.
 void respondToPoll() {
+  // 폴을 받은 뒤 살짝 대기: master 의 auto-direction 모듈이 폴 전송 후 버스를
+  // 놓고 수신모드로 바뀔 시간을 준다. 안 그러면 master 가 아직 버스를 잡은 채
+  // slave 응답과 충돌(contention) → 응답 전체가 깨진다. (2ms; 폴링 지연엔 영향 미미)
+  delay(2);
+
   // 워밍업 '\r' 2개: auto-direction 이 응답 첫 바이트('{')를 갉아먹어도 보존.
   RS485.write('\r');
   RS485.write('\r');
