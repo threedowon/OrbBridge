@@ -7,101 +7,89 @@
 | **TX** (→ MAX485 DI) | GPIO **20** |
 | **RX** (← MAX485 RO) | GPIO **21** |
 | **RGB LED** | GPIO **48** |
-| **속도** | **38400** 8N1 (auto-direction 모듈 한계로 낮춤. 깨지면 19200→9600) |
+| **속도** | **9600** 8N1 |
 
-DE/RE 핀은 **사용 안 함** (자동 방향(auto-direction) 트랜시버 가정 — 반이중 에코는 펌웨어가 무시).
+DE/RE 핀 노출 안 됨 (auto-direction 모듈). **이 모듈은 양방향(master 송신)이 불안정**해서,
+master 는 **송신하지 않고 듣기만** 하는 단방향 구조로 간다(단방향은 9600에서 깨끗함).
 
 ```
 MAX485 RO ──► GPIO 21 (RX)
-MAX485 DI ◄── GPIO 20 (TX)
-A, B ──────── RS485 버스 (Master ↔ Slave, 양 끝 120Ω 종단)
+MAX485 DI ◄── GPIO 20 (TX, master 는 미사용)
+A, B ──────── RS485 버스 (Master ↔ Slave, 양 끝 종단 100~120Ω)
 GND 공통
 ```
 
-> **종단저항**: 115200에서는 버스 물리 양 끝에 **120Ω**씩 넣고 분기선(stub)은 짧게.
-
 ---
 
-## 통신 방식 — 폴링(Polling)
+## 통신 방식 — 이벤트 + Carrier-Sense (단방향)
 
-버스에 **한 번에 하나만** 말하도록 강제해 충돌을 원천 차단한다.
+**master 는 듣기만, slave 만 자율 전송.** master 가 RS485 로 송신하지 않으므로 방향 전환이
+없어 신호가 깨끗하다(양방향 폴링은 이 auto-direction 모듈이 못 버텨서 폐기).
 
-- **Master 가 slave 를 순번 호출**: `P<id>\n` (예: `P6\n`) 전송.
-- **호출받은 slave 만 응답**, 나머지는 침묵 → 동시 송신 불가.
-- Slave 는 오브 감지 시 즉시 보내지 않고 **큐에 적재**했다가, 자기 차례에 몰아서 보고.
-- 응답 끝은 **터미네이터 `0x04`** 로 표시. master 는 이걸로 "응답 완료 + 생존" 판정,
-  무응답 slave 는 `POLL_IDLE_MS`(≈6ms) 후 건너뜀.
-- **반이중 에코**(자기 전송이 되돌아옴)는 파서가 무시 — slave 는 `P` 로 시작하는 줄만,
-  master 는 `{` 로 시작하는 줄(=PC relay)과 `0x04`(=완료)만 처리.
+충돌 방지는 **slave 쪽에서**:
+- slave 는 전송 전에 **버스가 조용한지 듣고**(carrier-sense, `BUS_IDLE_MS`), 사용 중이면
+  **ID+랜덤 백오프** 후 재시도 → 동시 전송(충돌) 최소화.
+- 그래도 드물게 충돌해 이벤트가 유실되면, heartbeat 의 **state 마스크**로 PC 가
+  자가복구(reconcile) → 3~6초 안에 화면 동기화(안전망).
 
 | 방향 | 프레임 | 의미 |
 |---|---|---|
-| master → bus | `P<id>\n` | "slave `<id>`, 보고해" |
-| slave → bus | `{"type":"added"/"removed",...}\n` | 큐에 쌓인 이벤트들 |
-| slave → bus | `{"type":"heartbeat","slave":<id>,"state":<16bit>}\n` | 상태(주기적, 기본 1s) |
-| slave → bus | `0x04 \n` | 응답 끝(터미네이터) — master 가 소비, PC 로 relay 안 함 |
+| slave → bus | `{"type":"added"/"removed","slave":<id>,"cell":<n>,"id":"<uid>"}\n` | 오브 감지 즉시 |
+| slave → bus | `{"type":"heartbeat","slave":<id>,"state":<16bit>}\n` | 상태(기본 2s 주기) |
 
-**PC(main.py/debug.py)는 무변경** — master 가 slave 의 JSON 을 그대로 USB relay 하므로
-PC 가 보는 줄 포맷은 이전과 동일하다. heartbeat 의 `state` 비트마스크는 PC 가 유실
-이벤트를 자가복구(reconcile)하는 데 계속 사용된다.
+**PC(main.py/debug.py)는 무변경** — master 가 slave JSON 을 그대로 USB relay. heartbeat 의
+`state` 비트마스크(bit i = cell i+1 점유)가 자가복구의 핵심.
 
-### 지연(latency)
-
-지연 ≈ "내 차례 기다리기" = 최대 한 폴링 사이클. 6개 slave·57600에서 한 사이클
-대략 수십 ms → 체감상 즉각. slave 가 **OneWire 버스 하나 읽을 때마다 RS485 수신을
-확인(인터리브)** 하므로 응답 턴어라운드는 ~1ms. (충돌은 폴링으로 baud 와 무관하게 0)
+3중 방어: ① 단방향(신호 깨끗) → ② carrier-sense(충돌 감소) → ③ 자가복구(남은 유실 복구).
 
 ---
 
-## Master (`master/master.ino`)
+## Master (`master/master.ino`) — 듣기만
 
-- RS485로 `POLL_IDS` 를 순번 폴링 → slave 응답 JSON 을 PC USB `Serial`(115200)로 relay
-- **`POLL_IDS`** 를 실제 보드들의 `SLAVE_ID` 와 일치시킬 것 (기본 `{1,2,3,4,5,6}`)
-- 버튼: GPIO **41** listen, **42** play → `{"type":"game",...}` (폴 대기 중에도 반응)
-- LED: 부팅 후 **초록**, slave **이벤트** 수신 시 **노란** 깜빡(논블로킹). heartbeat 는 조용히.
+- RS485 를 듣기만 하며 slave JSON 을 PC USB `Serial`(115200)로 relay. **RS485 송신 안 함.**
+- 버튼: GPIO **41** listen, **42** play → `{"type":"game",...}`
+- LED: 부팅 후 **초록**, slave **이벤트** 수신 시 **노란** 깜빡. heartbeat 는 조용히.
+- 진단: 2초마다 `#master alive relay=<n>` 을 PC 로 (main.py 가 `[master] ...` 로 로그).
 
 ### PC 연결
-
 Master USB → `config.json` `serial.port` · `main.py` 실행 · `/screen` start
 
 ---
 
-## Slave (`slave/slave.ino`)
+## Slave (`slave/slave.ino`) — 자율 전송 + carrier-sense
 
-- 16× OneWire (GPIO 3–18 등, 기존과 동일)
-- 오브 감지 → **큐 적재**, `P<SLAVE_ID>` 폴 받으면 큐 flush + (주기적)heartbeat + 터미네이터
-- OneWire 스캔과 스캔 **사이에 RS485 수신 확인** → 폴 응답 즉시(턴어라운드 최소)
-- 온보드 RGB(GPIO 48): 오브 감지 시 **빨강** 깜빡 (논블로킹)
-- **NeoPixel 링**: GPIO **38** 한 선에 12 LED 링을 직렬 체인 (감지 즉시 점등 — 폴과 무관)
-  - DS2431 버스 1개 = 링 1개 (버스 `i` → LED `[i*12 … i*12+11]`)
-  - 핀 선택(S3): **38 / 39 / 40** 안전. **35~37은 Octal PSRAM(N16R8 등) 모듈이면 사용 불가**
-- `SLAVE_ID`: 보드마다 1, 2, 3… (master `POLL_IDS` 와 일치)
-- 큐가 넘쳐 이벤트가 드롭돼도, heartbeat 의 `state` 마스크로 PC 가 자가복구 → 안전망
+- 16× OneWire (GPIO 3–18 등)
+- 오브 감지 → 즉시 **carrier-sense 전송**(버스 듣고 조용하면 송신, 아니면 백오프)
+- heartbeat(+state) 를 **`HEARTBEAT_MS`(기본 2s)** 마다 전송, 보드마다 위상 어긋나게 초기화
+- 온보드 RGB(GPIO 48): 오브 감지 시 **빨강** 깜빡 (논블로킹, 전송과 무관하게 즉시)
+- **NeoPixel 링**: GPIO **38** 체인, 12 LED × 16. 감지 즉시 점등(전송과 무관)
+  - 핀 선택(S3): **38 / 39 / 40** 안전. **35~37은 Octal PSRAM 모듈이면 사용 불가**
+- **`SLAVE_ID`: 보드마다 1, 2, 3… 다르게** (같으면 두 보드가 같은 id 로 보고돼 혼란)
+- 충돌로 이벤트가 유실돼도 heartbeat `state` 마스크로 PC 가 자가복구
 
 Slave USB는 PC에 연결하지 않음 (디버그 시 `DEBUG_USB 1`).
+
+### Carrier-sense 튜닝
+- `BUS_IDLE_MS`(기본 4) — 이만큼 무신호면 버스 비었다고 판단
+- `CS_MAX_TRIES`(기본 20) — 버스 확보 재시도. 실패 시 이번 전송 포기(자가복구가 메꿈)
+- 충돌이 잦으면 백오프 폭을 늘리거나 `HEARTBEAT_MS` 를 키운다.
 
 ---
 
 ## 전체
 
 ```
-        ┌── P1 ─►[Slave1] ─(큐 응답)─┐
-        ├── P2 ─►[Slave2] ──────────┤
-[Master]┤   …  순번 폴링            ├─ RS485 115200 (한 번에 하나만 응답)
-        └── P6 ─►[Slave6] ──────────┘
-   │
-   └── USB 115200 ──► PC (main.py)
-   [41 listen][42 play]
+[Slave1] ─┐  (각자 감지 즉시 자율 전송,
+[Slave2] ─┤   전송 전 버스 듣고 양보 = carrier-sense)
+   …      ├─ RS485 9600 (단방향: slave → master) ─► [Master] ─ USB 115200 ─► PC
+[Slave6] ─┘                                          [41 listen][42 play] (듣기만)
 ```
 
-## baud 변경 시 주의
+## baud / 신호 트러블슈팅
 
-`RS485_BAUD` 는 master.ino·slave.ino **양쪽 모두 같은 값**이어야 한다(한 대라도 다르면
-그 보드만 통신 두절). PC↔master USB(115200)와는 별개다. 변경 시 **모든 보드 재플래시**.
+`RS485_BAUD` 는 master·slave **모두 같은 값**(한 대라도 다르면 그 보드만 두절).
+PC↔master USB(115200)와는 별개. 변경 시 **모든 보드 재플래시**.
 
-### 바이트 깨짐(신호 무결성) 트러블슈팅
-단일 메시지 안의 바이트가 깨지면(`"heartbeat"`→`"hea\`eat"` 등) baud 가 하드웨어에
-비해 빠른 것이다. 순서대로:
-1. **종단저항 120Ω** — 버스 물리 양 끝에. 무종단이면 반사로 고속에서 깨진다.
-2. **baud 낮추기** — `RS485_BAUD` 57600 → 38400 (폴링이라 충돌은 그대로 0, 지연만 소폭↑).
-3. 그래도면 저가형 auto-direction 모듈 문제 → MAX13487 등 **정품 방향제어 칩**으로 교체.
+- 단방향인데도 바이트가 깨지면 → **종단저항**(양 끝 100~120Ω)·**공통 GND**·A/B 배선 확인
+- 충돌(두 slave 겹침)이 잦으면 → carrier-sense 백오프↑ 또는 `HEARTBEAT_MS`↑
+- 무선처럼 완전 무충돌·고속이 필요하면 → **DE/RE 핀 나온 모듈**로 교체 후 폴링 복원 가능

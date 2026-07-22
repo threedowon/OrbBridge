@@ -1,14 +1,13 @@
 /*
- * OrbBridge — Slave ESP32-S3  (폴링 방식)
+ * OrbBridge — Slave ESP32-S3  (이벤트 방식 + Carrier-Sense)
  *
  * 16× OneWire → DS2431
- * RS485: master 가 P<id> 로 호출할 때만 응답 (충돌 원천 차단)
- *   - 오브 감지 시 즉시 전송하지 않고 큐에 적재
- *   - 자기 차례(P<SLAVE_ID>)에 큐를 비우고 heartbeat(+state) 전송
- *   - OneWire 버스 하나 읽을 때마다 RS485 수신을 확인해 응답 턴어라운드 최소화
+ * RS485: slave 가 자율 전송(단방향). master 는 듣기만 → 신호 깨끗(단방향은 9600에서 검증됨).
+ *   - 충돌 방지: 전송 전에 버스가 조용한지 듣고(carrier-sense), 사용 중이면 랜덤 백오프.
+ *   - 그래도 가끔 충돌해 유실돼도, heartbeat 의 state 마스크로 PC 가 자가복구.
  * NeoPixel 링 16개 (각 12 LED) → GPIO 38 체인, DS2431 1개당 링 1개
  *
- * RS485 핀·속도: TX=20, RX=21, 9600 8N1 (auto-direction 모듈 한계로 9600까지 낮춤)
+ * RS485 핀·속도: TX=20, RX=21, 9600 8N1
  */
 
 #include <OneWire.h>
@@ -19,31 +18,25 @@
 #define RX_PIN       21
 #define RGB_PIN      48
 #define LED_BRIGHTNESS 32   // 255의 1/8
-// 저가형 auto-direction 트랜시버가 송신 시작/끝 바이트를 갉아먹어 고속에서 깨진다.
-// 폴링이라 충돌은 baud 와 무관하게 0 → 깨끗해질 때까지 내려도 안전(지연만 소폭↑).
-// 순서: 38400 → 여전히 깨지면 19200 → 9600. (원래 9600에서 멀쩡히 돌던 시스템)
 #define RS485_BAUD   9600
-#define SLAVE_ID     6   // 보드마다 고유하게 (1,2,3…). master 의 POLL_IDS 와 일치해야 함
-#define HEARTBEAT_MS 1000   // 폴 응답에 heartbeat(+state)를 실어 보내는 최소 주기(ms)
+#define SLAVE_ID     6      // 보드마다 고유하게 (1,2,3…)
+#define HEARTBEAT_MS 2000   // 상태(state 포함) 전송 주기 — 자가복구·online 판정용
 
 // NeoPixel 링: DS2431 버스 1개당 12 LED 링 1개, GPIO 38 한 데이터선에 체인
 #define RING_PIN        38
-#define LEDS_PER_RING   12   // 링 1개 = 12 LED = DS2431 1개
+#define LEDS_PER_RING   12
 #define RING_BRIGHTNESS 32
 
 #define DEBUG_USB    0   // 1: USB Serial Monitor에도 상태 출력
+
+// ── Carrier-sense 파라미터 ───────────────────────────────
+#define BUS_IDLE_MS  4    // 이만큼 무신호면 버스 비었다고 판단
+#define CS_MAX_TRIES 20   // 버스 확보 재시도 횟수 (실패 시 이번 전송 포기 → 자가복구에 위임)
 
 Adafruit_NeoPixel led(1, RGB_PIN, NEO_GRB + NEO_KHZ800);
 HardwareSerial RS485(1);
 
 const int BUS_COUNT = 16;
-const int busPins[BUS_COUNT] = {
-  4, 5, 6, 7,
-  15, 16, 17, 18,
-  8, 3, 9, 10,
-  11, 12, 13, 14
-};
-
 OneWire buses[BUS_COUNT] = {
   OneWire(4), OneWire(5), OneWire(6), OneWire(7),
   OneWire(15), OneWire(16), OneWire(17), OneWire(18),
@@ -51,39 +44,55 @@ OneWire buses[BUS_COUNT] = {
   OneWire(11), OneWire(12), OneWire(13), OneWire(14)
 };
 
-// 버스 i → 링 i (LED [i*12 … i*12+11]). 전체 링은 GPIO 38 한 선에 직렬 연결.
 Adafruit_NeoPixel ring(BUS_COUNT * LEDS_PER_RING, RING_PIN, NEO_GRB + NEO_KHZ800);
 
 byte lastAddr[BUS_COUNT][8];
 bool hasLast[BUS_COUNT] = {false};
 unsigned long lastHeartbeatMs = 0;
 
-// ── 이벤트 큐 (감지 → 적재, 폴 응답 시 flush) ────────────
-// 오버플로 시 드롭되어도 heartbeat 의 state mask 로 PC 가 자가복구하므로 안전.
-struct PendingEvt { uint8_t isAdded; uint8_t bus; byte addr[8]; };
-const int MAX_QUEUE = 24;
-PendingEvt evtQueue[MAX_QUEUE];
-int queueCount = 0;
+// 버스 활동(carrier-sense): RS485 로 마지막으로 바이트를 본 시각
+unsigned long lastBusRxMs = 0;
 
-// ── 온보드 RGB 논블로킹 플래시 (delay 로 poll 반응을 막지 않도록) ──
+// 온보드 RGB 논블로킹 플래시
 unsigned long ledOffAt = 0;
 
-// ── RS485 수신 파서 상태 ─────────────────────────────────
-String rxLine;
-bool rxOverflow = false;
+// ── 버스 감지 / carrier-sense 전송 ───────────────────────
+// 들어오는 바이트를 비우며 버스 활동 시각을 갱신한다(수신 데이터는 master 만 쓰므로 버림).
+void drainBus() {
+  while (RS485.available()) {
+    RS485.read();
+    lastBusRxMs = millis();
+  }
+}
 
-void queueEvent(uint8_t isAdded, int bus, const byte addr[8]) {
-  if (queueCount >= MAX_QUEUE) return;   // 오버플로 → PC self-heal 에 위임
-  evtQueue[queueCount].isAdded = isAdded;
-  evtQueue[queueCount].bus = (uint8_t)bus;
-  memcpy(evtQueue[queueCount].addr, addr, 8);
-  queueCount++;
+// 버스가 조용할 때까지 기다렸다가 한 줄 전송(carrier-sense + 랜덤 백오프).
+// master 는 듣기만 하므로 버스의 다른 신호는 곧 다른 slave 의 전송이다.
+void csSend(const String& line) {
+  for (int t = 0; t < CS_MAX_TRIES; t++) {
+    drainBus();
+    if (millis() - lastBusRxMs >= BUS_IDLE_MS) {
+      // 동시 전송 회피: ID + 랜덤 만큼 더 듣고 한 번 더 확인
+      unsigned long backoff = 1 + (unsigned long)random(0, 8) + SLAVE_ID;
+      unsigned long t0 = millis();
+      while (millis() - t0 < backoff) drainBus();
+      if (millis() - lastBusRxMs >= BUS_IDLE_MS) {
+        RS485.println(line);
+        RS485.flush();
+        lastBusRxMs = millis();   // 내 전송도 버스 점유
+        return;
+      }
+      // 백오프 중 누가 말하기 시작 → 다시 대기
+    } else {
+      delay(1);   // 버스 사용 중 → 잠깐 대기
+    }
+  }
+  // 계속 바쁨 → 이번 전송 포기. heartbeat 의 state 마스크로 PC 가 복구.
 }
 
 void flashRed() {
   led.setPixelColor(0, led.Color(255, 0, 0));
   led.show();
-  ledOffAt = millis() + 80;   // 논블로킹: loop 에서 시간 지나면 끈다
+  ledOffAt = millis() + 80;
 }
 
 void updateLed() {
@@ -94,19 +103,14 @@ void updateLed() {
   }
 }
 
-// busIndex 번 링(LED 12개)을 color 로 채운다. color=0 이면 소등.
 void setRing(int busIndex, uint32_t color) {
   int base = busIndex * LEDS_PER_RING;
-  for (int j = 0; j < LEDS_PER_RING; j++) {
-    ring.setPixelColor(base + j, color);
-  }
+  for (int j = 0; j < LEDS_PER_RING; j++) ring.setPixelColor(base + j, color);
   ring.show();
 }
 
 bool sameAddr(const byte a[8], const byte b[8]) {
-  for (int i = 0; i < 8; i++) {
-    if (a[i] != b[i]) return false;
-  }
+  for (int i = 0; i < 8; i++) if (a[i] != b[i]) return false;
   return true;
 }
 
@@ -119,97 +123,37 @@ void appendAddr(String& out, const byte addr[8]) {
   }
 }
 
-void sendEventLine(uint8_t isAdded, int bus, const byte addr[8]) {
+void sendEvent(const char* type, int busIndex, const byte addr[8]) {
   String msg = "{\"type\":\"";
-  msg += (isAdded ? "added" : "removed");
+  msg += type;
   msg += "\",\"slave\":";
   msg += SLAVE_ID;
   msg += ",\"cell\":";
-  msg += bus + 1;
+  msg += busIndex + 1;
   msg += ",\"id\":\"";
   appendAddr(msg, addr);
   msg += "\"}";
-  RS485.println(msg);
+  csSend(msg);
 }
 
-// heartbeat: "state" = 16칸 점유 비트마스크(bit i = cell i+1). PC 가 이걸로 유실된
-// added/removed 를 자가복구(reconcile). 비트마스크는 UID 를 담지 않으므로 PC 는
-// "점유 여부"만 신뢰하고, 정체(voice)는 실제 added 이벤트로만 채운다.
-void sendHeartbeatLine() {
+// heartbeat: "state" = 16칸 점유 비트마스크(bit i = cell i+1). PC 가 유실 이벤트를 자가복구.
+void sendHeartbeat() {
   uint16_t state = 0;
-  for (int i = 0; i < BUS_COUNT; i++) {
-    if (hasLast[i]) state |= (uint16_t)(1u << i);
-  }
+  for (int i = 0; i < BUS_COUNT; i++) if (hasLast[i]) state |= (uint16_t)(1u << i);
   String msg = "{\"type\":\"heartbeat\",\"slave\":";
   msg += SLAVE_ID;
   msg += ",\"state\":";
   msg += state;
   msg += "}";
-  RS485.println(msg);
-}
-
-// P<SLAVE_ID> 를 받았을 때: 큐를 비우고 heartbeat(주기적)와 터미네이터를 보낸다.
-void respondToPoll() {
-  // 폴을 받은 뒤 살짝 대기: master 의 auto-direction 모듈이 폴 전송 후 버스를
-  // 놓고 수신모드로 바뀔 시간을 준다. 안 그러면 master 가 아직 버스를 잡은 채
-  // slave 응답과 충돌(contention) → 응답 전체가 깨진다. (2ms; 폴링 지연엔 영향 미미)
-  delay(2);
-
-  // 워밍업 '\r' 2개: auto-direction 이 응답 첫 바이트('{')를 갉아먹어도 보존.
-  RS485.write('\r');
-  RS485.write('\r');
-
-  for (int i = 0; i < queueCount; i++) {
-    sendEventLine(evtQueue[i].isAdded, evtQueue[i].bus, evtQueue[i].addr);
-  }
-  queueCount = 0;
-
-  // heartbeat 는 과하지 않게 주기적으로만 (USB 대역·로그 절약)
-  if (millis() - lastHeartbeatMs >= HEARTBEAT_MS) {
-    sendHeartbeatLine();
-    lastHeartbeatMs = millis();
-  }
-
-  // 응답 끝 표시(터미네이터). '{' 로 시작하지 않는 줄이라 master 가 PC 로 relay 하지 않고
-  // "이 slave 응답 완료 + 생존" 판정에만 쓴다. 뒤 '\r' 는 끝바이트 클리핑 보호.
-  RS485.write((uint8_t)0x04);
-  RS485.write((uint8_t)'\n');
-  RS485.write('\r');
-  RS485.flush();
-}
-
-// OneWire 스캔과 스캔 사이에 자주 호출 → 폴 명령을 즉시 처리(턴어라운드 최소).
-// 반이중 에코로 자기 응답이 되돌아와도 'P' 로 시작하지 않으면 무시되므로 안전.
-void serviceRS485() {
-  while (RS485.available()) {
-    char c = (char)RS485.read();
-    if (c == '\n') {
-      if (!rxOverflow) {
-        // 앞에 잡음(워밍업/에코)이 있어도 'P' 부터 찾아 파싱. JSON 응답엔 'P' 가 없어 오검출 없음.
-        int p = rxLine.indexOf('P');
-        if (p >= 0 && rxLine.substring(p + 1).toInt() == SLAVE_ID) {
-          respondToPoll();
-        }
-      }
-      rxLine = "";
-      rxOverflow = false;
-      continue;
-    }
-    if (c == '\r') continue;
-    if (rxLine.length() < 12) rxLine += c;   // 폴 명령은 짧다("P16")
-    else rxOverflow = true;                  // 에코된 JSON 등 긴 줄 → 이 줄 무시
-  }
+  csSend(msg);
 }
 
 bool readBus(int i, byte addr[8]) {
   buses[i].reset_search();
-  if (!buses[i].search(addr)) {
-    return false;
-  }
+  if (!buses[i].search(addr)) return false;
   if (OneWire::crc8(addr, 7) != addr[7]) {
 #if DEBUG_USB
-    Serial.print("CRC error cell ");
-    Serial.println(i + 1);
+    Serial.print("CRC error cell "); Serial.println(i + 1);
 #endif
     return false;
   }
@@ -217,14 +161,14 @@ bool readBus(int i, byte addr[8]) {
 }
 
 void onAdded(int i, const byte addr[8]) {
-  queueEvent(1, i, addr);
-  setRing(i, ring.Color(255, 147, 41));   // 감지 → 따뜻한 노란색 점등(즉시 시각 피드백)
+  setRing(i, ring.Color(255, 147, 41));   // 즉시 시각 피드백(로컬)
   flashRed();
+  sendEvent("added", i, addr);            // carrier-sense 전송
 }
 
 void onRemoved(int i, const byte addr[8]) {
-  queueEvent(0, i, addr);
-  setRing(i, 0);                           // 링 소등
+  setRing(i, 0);
+  sendEvent("removed", i, addr);
 }
 
 void scanBus(int i) {
@@ -266,16 +210,25 @@ void setup() {
   ring.show();
 
   RS485.begin(RS485_BAUD, SERIAL_8N1, RX_PIN, TX_PIN);
-  rxLine.reserve(16);
+
+  randomSeed(SLAVE_ID * 7919 + 13);                 // 보드마다 백오프 시퀀스 다르게
+  lastHeartbeatMs = millis() - (unsigned long)SLAVE_ID * 300;  // 초기 위상 어긋나게
 }
 
 void loop() {
+  drainBus();   // 항상 버스 활동 감지
+
   for (int i = 0; i < BUS_COUNT; i++) {
     scanBus(i);
-    serviceRS485();   // 버스 하나 읽을 때마다 폴 확인 → 턴어라운드 ~1ms
+    drainBus();
     updateLed();
   }
-  serviceRS485();
+
+  if (millis() - lastHeartbeatMs >= HEARTBEAT_MS) {
+    sendHeartbeat();
+    lastHeartbeatMs = millis();
+  }
+
   updateLed();
-  delay(1);           // CPU 여유 (poll 은 위 인터리브로 이미 자주 확인됨)
+  delay(1);
 }
