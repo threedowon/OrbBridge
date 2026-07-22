@@ -22,7 +22,7 @@
 // 저가형 auto-direction 트랜시버가 송신 시작/끝 바이트를 갉아먹어 고속에서 깨진다.
 // 폴링이라 충돌은 baud 와 무관하게 0 → 깨끗해질 때까지 내려도 안전(지연만 소폭↑).
 // 순서: 38400 → 여전히 깨지면 19200 → 9600. (원래 9600에서 멀쩡히 돌던 시스템)
-#define RS485_BAUD   38400
+#define RS485_BAUD   9600
 #define SLAVE_ID     6   // 보드마다 고유하게 (1,2,3…). master 의 POLL_IDS 와 일치해야 함
 #define HEARTBEAT_MS 1000   // 폴 응답에 heartbeat(+state)를 실어 보내는 최소 주기(ms)
 
