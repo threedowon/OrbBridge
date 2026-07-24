@@ -11,6 +11,7 @@ _SEED_FILES = (
     "orb_mapping.json",
     "stage_data.json",
     "voice_catalog.json",
+    "portmapping.json",
 )
 
 

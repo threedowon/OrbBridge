@@ -241,6 +241,29 @@ def start_http_server(
                 self._json(200, {"ok": True})
                 return
 
+            if self.path == "/api/midi/note":
+                try:
+                    from midi_out import LISTEN_VOICE, note_name_to_pitch, trigger as midi_trigger
+
+                    voice = str(data.get("voice") or LISTEN_VOICE)
+                    pitch = data.get("pitch")
+                    if pitch is None and data.get("note"):
+                        pitch = note_name_to_pitch(str(data["note"]))
+                    if pitch is None:
+                        pitch = 0
+                    duration_ms = float(data.get("duration_ms", 320))
+                    velocity = int(data.get("velocity", 127))
+                    result = midi_trigger(
+                        voice,
+                        int(pitch),
+                        velocity=velocity,
+                        duration_ms=duration_ms,
+                    )
+                    self._json(200 if result.get("ok") else 400, result)
+                except Exception as exc:
+                    self._json(500, {"ok": False, "error": str(exc)})
+                return
+
             self._send(404, b"Not found", "text/plain")
 
     def run():

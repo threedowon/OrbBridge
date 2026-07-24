@@ -110,6 +110,11 @@ def _slave_list_locked(now: float) -> list:
     return out
 
 
+def audio_output_mode() -> str:
+    mode = str(config.get("audio_output", "web")).lower().strip()
+    return mode if mode in ("midi", "web") else "web"
+
+
 def get_status() -> dict:
     now = time.time() * 1000
     with _state_lock:
@@ -120,6 +125,7 @@ def get_status() -> dict:
             "game_active": game_active,
             "current_stage": current_stage,
             "melody": melody_id,
+            "audio_output": audio_output_mode(),
             "orb_count": len(orb_mapping),
             "serial": serial,
             "cell_count": len(_cells),
@@ -300,6 +306,15 @@ def handle_event(event: dict):
         print(f"[added]   slave={slave} cell={cell} Q={q_actual} note={note} voice={voice} → {result}")
         osc.send_message("/orb/added", [slave, cell, voice, note, result, orb_key])
 
+        # MIDI mode: sound immediately (screen skips placeExternal tone to avoid double)
+        if audio_output_mode() == "midi":
+            try:
+                from midi_out import cell_to_pitch, trigger as midi_trigger
+
+                midi_trigger(voice, cell_to_pitch(int(cell)), duration_ms=320)
+            except Exception as exc:
+                print(f"[midi] trigger failed: {exc}")
+
     elif t == "removed":
         orb_key, orb = find_orb(orb_id, orb_mapping)
         voice    = orb.get("voice", "unknown") if orb else "unknown"
@@ -425,9 +440,22 @@ def run_main() -> None:
     print(f"[stage {current_stage}] 정답 시퀀스: {answer_sequence}")
     print(f"[melody] {melody_id}")
     print(f"[input] {input_mode} mode")
+    print(f"[audio] {audio_output_mode()}")
     print("screen에서 시작을 누르면 게임이 시작됩니다.")
     print(f"[http] http://127.0.0.1:{config.get('mock', {}).get('port', 8080)}/screen")
     print(f"[http] http://127.0.0.1:{config.get('mock', {}).get('port', 8080)}/table")
+
+    if audio_output_mode() == "midi":
+        try:
+            from midi_out import ensure_init
+
+            ok, err = ensure_init()
+            if ok:
+                print("[midi] ready (loopMIDI → Ableton)")
+            else:
+                print(f"[midi] WARN: {err}")
+        except Exception as exc:
+            print(f"[midi] WARN: init failed: {exc}")
 
     from mock_server import start_http_server
 

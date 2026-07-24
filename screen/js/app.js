@@ -1,5 +1,5 @@
 import { beatCount, setVoices } from './data.js';
-import { unlock, playSuccess, setAudioOwnerCheck } from './audio.js';
+import { unlock, playSuccess, setAudioOwnerCheck, setAudioOutputMode } from './audio.js';
 import { initStaff } from './staff.js';
 import { createEngine } from './engine.js';
 import { initConfetti, burst } from './confetti.js';
@@ -126,10 +126,23 @@ async function loadVoiceCatalog() {
   }
 }
 
+async function loadAudioOutputMode() {
+  try {
+    const res = await fetch('/api/status');
+    if (!res.ok) return;
+    const data = await res.json();
+    setAudioOutputMode(data.audio_output === 'midi' ? 'midi' : 'web');
+    console.info('[audio] output =', data.audio_output || 'web');
+  } catch {
+    setAudioOutputMode('web');
+  }
+}
+
 async function enterPlayView() {
   if (!currentMelody) return;
   unlock();
   claimAudio(true);   // 시작 누른 이 탭이 오디오 소유권을 확실히 가져온다
+  await loadAudioOutputMode();
   await loadVoiceCatalog();
   try { await apiPost('/api/game/end', { reason: 'load' }); } catch { /* server idle */ }
   setupPlaySession();
@@ -281,6 +294,7 @@ connectWs();
   pendingBegin = false;
 
   await loadVoiceCatalog();
+  await loadAudioOutputMode();
   try {
     const id = await fetchActiveMelodyId();
     await prepareMelody(id);

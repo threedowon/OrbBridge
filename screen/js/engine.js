@@ -9,7 +9,7 @@ import {
   rowCount,
   rowToNoteIn,
 } from './data.js';
-import { playTone, unlock, beginPreviewAudio, stopPreviewAudio } from './audio.js';
+import { playTone, unlock, beginPreviewAudio, stopPreviewAudio, isMidiMode } from './audio.js';
 import { draw, flash } from './staff.js';
 
 export function createEngine() {
@@ -318,7 +318,11 @@ export function createEngine() {
 
       syncLockedFromGrid();
       const note = rowToNoteIn(row, melody.scale);
-      playTone(note.freq, voiceId, noteDurationSec(col), 0, { noteName: note.name });
+      // MIDI: server already triggers on /orb/added — skip to avoid double note
+      playTone(note.freq, voiceId, noteDurationSec(col), 0, {
+        noteName: note.name,
+        silent: isMidiMode(),
+      });
       emit('gridChange');
       redraw();
     },

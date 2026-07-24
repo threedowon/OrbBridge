@@ -2,6 +2,7 @@
   "current_stage": 1,
   "melody": "dynamite",
   "input_mode": "table",
+  "audio_output": "midi",
   "mock": {
     "host": "127.0.0.1",
     "port": 8080

@@ -1,6 +1,12 @@
 import { NOTES, VOICES } from './data.js';
 
 const SAMPLE_BASE_VOL = 0.88;
+const NOTE_PITCH = {
+  C4: 0, D4: 1, E4: 2, F4: 3, G4: 4, A4: 5, B4: 6, C5: 7,
+};
+
+/** 'web' | 'midi' — from GET /api/status */
+let audioOutputMode = 'web';
 
 let ctx = null;
 let previewOut = null;
@@ -20,7 +26,16 @@ export function setAudioOwnerCheck(fn) {
   audioOwnerCheck = typeof fn === 'function' ? fn : () => true;
 }
 
+export function setAudioOutputMode(mode) {
+  audioOutputMode = mode === 'midi' ? 'midi' : 'web';
+}
+
+export function isMidiMode() {
+  return audioOutputMode === 'midi';
+}
+
 export function unlock() {
+  if (isMidiMode()) return null;
   if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
   if (ctx.state === 'suspended') ctx.resume();
   ensureMasterBus(ctx);
@@ -106,6 +121,10 @@ function stopPreviewOscillators() {
 }
 
 export function beginPreviewAudio() {
+  if (isMidiMode()) {
+    stopPreviewAudio();
+    return;
+  }
   stopPreviewAudio();
   stopOrbSamplePlayback();
   const c = unlock();
@@ -209,6 +228,32 @@ function playOscTone(freq, voiceId, dur, when, preview, volumeScale = 1) {
   if (preview) activePreviewOscs.push(osc);
 }
 
+function pitchFromNoteName(noteName, freq) {
+  if (noteName && NOTE_PITCH[noteName] != null) return NOTE_PITCH[noteName];
+  const inferred = noteNameFromFreq(freq);
+  return NOTE_PITCH[inferred] ?? 0;
+}
+
+function voiceNameFromId(voiceId) {
+  const v = VOICES[voiceId] ?? VOICES[0];
+  return v?.name || '_listen';
+}
+
+function postMidiNote({ voice, pitch, durationSec, preview = false }) {
+  const duration_ms = Math.max(40, Math.round((durationSec || 0.32) * 1000));
+  const body = {
+    voice: preview ? '_listen' : voice,
+    pitch: Math.max(0, Math.min(7, pitch | 0)),
+    duration_ms,
+  };
+  // fire-and-forget — timing stays in the engine
+  fetch('/api/midi/note', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).catch(err => console.warn('midi note failed', err));
+}
+
 export function playTone(freq, voiceId, dur = 0.32, when = 0, {
   preview = false,
   noteName = '',
@@ -216,8 +261,26 @@ export function playTone(freq, voiceId, dur = 0.32, when = 0, {
   polyphony = 1,
   /** Same pitch stacked (dispensa) — stronger per-voice duck. */
   coherent = false,
+  /** Skip sound (e.g. placeExternal when server already MIDI-triggered). */
+  silent = false,
 } = {}) {
-  if (!audioOwnerCheck()) return;
+  if (!audioOwnerCheck() || silent) return;
+
+  if (isMidiMode()) {
+    const delayMs = when > 0 && ctx
+      ? Math.max(0, (when - ctx.currentTime) * 1000)
+      : (when > 1 ? when : 0);
+    const send = () => postMidiNote({
+      voice: voiceNameFromId(voiceId),
+      pitch: pitchFromNoteName(noteName, freq),
+      durationSec: dur,
+      preview,
+    });
+    if (delayMs > 0) setTimeout(send, delayMs);
+    else send();
+    return;
+  }
+
   const vol = polyphony > 1
     ? mixVolume(polyphony, volume, { coherent })
     : Math.min(1, volume);
@@ -233,6 +296,7 @@ export function playTone(freq, voiceId, dur = 0.32, when = 0, {
 }
 
 export function playSuccess() {
+  if (isMidiMode()) return;
   const c = unlock();
   [523, 659, 784, 1047].forEach((f, i) => {
     const osc = c.createOscillator();
