@@ -305,6 +305,7 @@ cd server && python melody_editor_tool.py
 | `/game/play` | 배치된 orb 소리 재생 |
 | `/orb/added` | 오브 올림 |
 | `/orb/removed` | 오브 제거 |
+| `/orb/recovered` | 유실된 added 자가복구 추정 — **admin 전용(미상)**, screen 은 무시 |
 
 ## HTTP API
 

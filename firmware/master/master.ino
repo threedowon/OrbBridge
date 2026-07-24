@@ -1,11 +1,13 @@
 /*
- * OrbBridge — Master ESP32-S3
+ * OrbBridge — Master ESP32-S3  (이벤트 방식 — 듣기만)
  *
- * RS485 ← slave (added / removed JSON)
- * USB Serial → PC (main.py)
- * 버튼: 다시듣기 / 재생 (INPUT_PULLUP, 외부 저항 불필요)
+ * RS485: slave 들의 자율 전송을 듣기만 한다(송신 안 함). → 단방향이라 신호가 깨끗하다.
+ *   - 받은 JSON({...})은 PC USB Serial 로 그대로 relay (PC 포맷 무변경)
+ * USB Serial → PC (main.py), 115200
+ * 버튼: 다시듣기 / 재생 (INPUT_PULLUP)
  *
- * RS485 핀·속도: 실물 테스트와 동일 (TX=20, RX=21, 9600)
+ * RS485 핀·속도: TX=20, RX=21, 9600 8N1
+ *   (master 는 RS485 로 송신하지 않으므로 TX 는 사실상 미사용)
  */
 
 #include <Adafruit_NeoPixel.h>
@@ -14,7 +16,7 @@
 #define TX_PIN       20
 #define RX_PIN       21
 #define RGB_PIN      48
-#define LED_BRIGHTNESS 32   // 255의 1/8
+#define LED_BRIGHTNESS 32
 #define RS485_BAUD   9600
 
 #define PIN_BTN_LISTEN 41
@@ -30,8 +32,29 @@ unsigned long lastPlayMs = 0;
 bool listenWasDown = false;
 bool playWasDown = false;
 
+// 논블로킹 LED
+unsigned long ledOffAt = 0;
+
+// 진단: master 생존 + relay 카운트
+unsigned long lastDebugMs = 0;
+unsigned long relayCount = 0;
+
 void pcSendLine(const String& line) {
   Serial.println(line);
+}
+
+void blinkYellow() {
+  led.setPixelColor(0, led.Color(255, 255, 0));
+  led.show();
+  ledOffAt = millis() + 30;
+}
+
+void updateLed() {
+  if (ledOffAt != 0 && millis() >= ledOffAt) {
+    led.clear();
+    led.show();
+    ledOffAt = 0;
+  }
 }
 
 void sendGameAction(const char* action) {
@@ -47,23 +70,23 @@ void fireGameButton(const char* action, unsigned long& lastFire) {
 
 void pollButton(int pin, bool& wasDown, unsigned long& lastFire, const char* action) {
   const bool down = digitalRead(pin) == LOW;
-  if (down && !wasDown) {
-    fireGameButton(action, lastFire);
-  }
+  if (down && !wasDown) fireGameButton(action, lastFire);
   wasDown = down;
 }
 
-void forwardSlaveLine(const String& line) {
-  if (!line.startsWith("{")) return;
-  pcSendLine(line);
-  // 하트비트는 LED 깜빡 없이 조용히 relay (3초마다 깜빡이면 혼란)
-  if (line.indexOf("heartbeat") >= 0) return;
-  // slave JSON 수신 시 잠깐 노란색
-  led.setPixelColor(0, led.Color(255, 255, 0));
-  led.show();
-  delay(30);
-  led.clear();
-  led.show();
+void pollButtons() {
+  pollButton(PIN_BTN_LISTEN, listenWasDown, lastListenMs, "listen");
+  pollButton(PIN_BTN_PLAY, playWasDown, lastPlayMs, "play");
+}
+
+// slave 가 보낸 한 줄 → '{' 부터 잘라 PC 로 relay (앞 잡음 있어도 OK).
+void handleLine(const String& line) {
+  int b = line.indexOf('{');
+  if (b < 0) return;                 // JSON 아님 → 무시
+  String json = (b == 0) ? line : line.substring(b);
+  pcSendLine(json);
+  relayCount++;
+  if (json.indexOf("heartbeat") < 0) blinkYellow();  // 실제 이벤트만 노란색
 }
 
 void pollRs485() {
@@ -71,22 +94,12 @@ void pollRs485() {
     char c = (char)RS485.read();
     if (c == '\r') continue;
     if (c == '\n') {
-      rs485Line.trim();
-      if (rs485Line.length() > 0) {
-        forwardSlaveLine(rs485Line);
-      }
+      handleLine(rs485Line);
       rs485Line = "";
       continue;
     }
-    if (rs485Line.length() < 256) {
-      rs485Line += c;
-    }
+    if (rs485Line.length() < 300) rs485Line += c;
   }
-}
-
-void pollButtons() {
-  pollButton(PIN_BTN_LISTEN, listenWasDown, lastListenMs, "listen");
-  pollButton(PIN_BTN_PLAY, playWasDown, lastPlayMs, "play");
 }
 
 void setup() {
@@ -102,15 +115,23 @@ void setup() {
   pinMode(PIN_BTN_PLAY, INPUT_PULLUP);
 
   RS485.begin(RS485_BAUD, SERIAL_8N1, RX_PIN, TX_PIN);
-  rs485Line.reserve(256);
+  rs485Line.reserve(320);
 
   // 준비 완료: 초록
   led.setPixelColor(0, led.Color(0, 255, 0));
   led.show();
+  ledOffAt = 0;
 }
 
 void loop() {
   pollRs485();
   pollButtons();
-  delay(2);
+  updateLed();
+
+  if (millis() - lastDebugMs >= 2000) {
+    Serial.print("#master alive relay=");
+    Serial.println(relayCount);
+    lastDebugMs = millis();
+  }
+  delay(1);
 }

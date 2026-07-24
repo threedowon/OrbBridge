@@ -74,6 +74,9 @@ def start_http_server(
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Access-Control-Allow-Origin", "*")
+            # UI(HTML)·실시간 API(JSON)는 캐시 금지 — 코드 수정 후 새로고침이 바로 반영되게
+            if content_type.startswith("text/html") or content_type.startswith("application/json"):
+                self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
 

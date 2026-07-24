@@ -42,6 +42,17 @@ _event_log: list[dict] = []
 EVENT_LOG_LIMIT = 100
 _serial_status = {"connected": False, "port": "", "error": ""}
 
+# ── 슬레이브 생존 추적 (heartbeat 기반 online/offline) ──
+# slave.ino 가 3초(HEARTBEAT_MS)마다 heartbeat 를 보낸다. 이 시간(주기의 ~2.5배)
+# 안에 heartbeat 가 없으면 offline 으로 본다. 몇 개 놓쳐도 깜빡이지 않도록 여유.
+SLAVE_ONLINE_TIMEOUT_S = 8.0
+_slaves: dict[int, dict] = {}
+
+# 유효 slave ID 범위. 이 밖(예: 충돌로 깨진 slave:0)의 메시지는 폐기해
+# admin 에 '유령 슬레이브'가 잡히지 않게 한다. 보드가 늘면 MAX 만 올리면 됨.
+SLAVE_ID_MIN = 1
+SLAVE_ID_MAX = 99
+
 
 def _cell_key(slave: int, cell: int) -> str:
     return f"{slave}:{cell}"
@@ -55,9 +66,55 @@ def _record_event(entry: dict) -> None:
             del _event_log[: len(_event_log) - EVENT_LOG_LIMIT]
 
 
+def _touch_slave(slave_id: int, *, heartbeat: bool) -> None:
+    """슬레이브에서 온 메시지로 생존 상태 갱신. heartbeat 는 online 판정 기준."""
+    now = time.time() * 1000
+    with _state_lock:
+        s = _slaves.get(slave_id)
+        if s is None:
+            s = {
+                "slave": slave_id,
+                "first_seen": now,
+                "last_seen": now,
+                "last_heartbeat": 0.0,
+                "heartbeat_count": 0,
+                "msg_count": 0,
+                "prev_state_mask": None,  # 직전 heartbeat 의 점유 마스크 (debounce용)
+            }
+            _slaves[slave_id] = s
+        s["last_seen"] = now
+        if heartbeat:
+            s["last_heartbeat"] = now
+            s["heartbeat_count"] += 1
+        else:
+            s["msg_count"] += 1
+
+
+def _slave_list_locked(now: float) -> list:
+    """_state_lock 을 이미 잡은 상태에서 슬레이브 스냅샷을 만든다."""
+    out = []
+    for sid in sorted(_slaves):
+        s = _slaves[sid]
+        has_hb = s["last_heartbeat"] > 0
+        hb_age = (now - s["last_heartbeat"]) if has_hb else None
+        online = has_hb and hb_age <= SLAVE_ONLINE_TIMEOUT_S * 1000
+        out.append({
+            "slave": sid,
+            "online": online,
+            "has_heartbeat": has_hb,
+            "hb_age_ms": hb_age,
+            "last_seen_age_ms": now - s["last_seen"],
+            "heartbeat_count": s["heartbeat_count"],
+            "msg_count": s["msg_count"],
+        })
+    return out
+
+
 def get_status() -> dict:
+    now = time.time() * 1000
     with _state_lock:
         serial = dict(_serial_status)
+        slaves = _slave_list_locked(now)
         return {
             "input_mode": input_mode,
             "game_active": game_active,
@@ -66,6 +123,8 @@ def get_status() -> dict:
             "orb_count": len(orb_mapping),
             "serial": serial,
             "cell_count": len(_cells),
+            "slaves": slaves,
+            "slave_online_timeout_s": SLAVE_ONLINE_TIMEOUT_S,
         }
 
 
@@ -166,6 +225,22 @@ def request_dispensa() -> None:
 def handle_serial_message(event: dict) -> None:
     """USB/serial 한 줄 JSON — orb 이벤트 또는 game 버튼."""
     t = event.get("type")
+
+    # 슬레이브 생존 추적: slave 필드가 있는 모든 메시지로 last_seen 을 갱신하고,
+    # heartbeat 는 online/offline 판정 기준으로 별도 기록. (admin /api/status 로 노출)
+    # 유효 범위 밖 slave(예: 시리얼 손상으로 깨진 slave:0)는 메시지 자체를 폐기 →
+    # admin 에 '유령 슬레이브'가 잡히지 않는다.
+    sid = event.get("slave")
+    if sid is not None:
+        try:
+            sid = int(sid)
+        except (TypeError, ValueError):
+            return  # slave 필드가 손상된 메시지 → 폐기
+        if not (SLAVE_ID_MIN <= sid <= SLAVE_ID_MAX):
+            print(f"[WARN] 유효 범위 밖 slave id 무시: {sid} (손상 메시지 또는 오설정 보드)")
+            return
+        _touch_slave(sid, heartbeat=(t == "heartbeat"))
+
     if t == "game":
         action = str(event.get("action", "")).lower()
         if action == "listen":
@@ -176,7 +251,14 @@ def handle_serial_message(event: dict) -> None:
             print(f"[WARN] unknown game action: {action}")
         return
     if t == "heartbeat":
-        return  # 슬레이브 생존 신호 — 진단 도구용, 게임 로직과 무관하므로 무시
+        # 생존 기록은 위에서 완료. state 마스크가 있으면 유실 이벤트 자가복구.
+        # (sid 는 위에서 유효 범위 검증·int 변환 완료된 값)
+        if sid is not None and "state" in event:
+            try:
+                reconcile_slave_state(sid, int(event["state"]))
+            except (TypeError, ValueError):
+                pass  # 이상한 state 값은 reconcile 만 건너뜀
+        return
     handle_event(event)
 
 # ── 이벤트 처리 ────────────────────────────────────────
@@ -232,6 +314,67 @@ def handle_event(event: dict):
         print(f"[removed] slave={slave} cell={cell} Q={q_actual} note={note} voice={voice}")
         osc.send_message("/orb/removed", [slave, cell, voice, note, orb_key or orb_id or ""])
 
+# ── 자가복구 (heartbeat state mask 기반 reconcile) ────
+# slave heartbeat 의 16비트 점유 마스크로 유실된 added/removed 를 스스로 메꾼다.
+#  - mask=점유 / memory=빔  → added 유실. UID 를 모르므로 "미상"으로 admin 에만 표시
+#                             (/orb/recovered — screen 은 이 주소를 처리 안 함).
+#                             관람자가 스스로 다시 올리면 진짜 added 로 정확히 복구됨.
+#  - mask=빔  / memory=점유 → removed 유실. UID 불필요 → 정식 /orb/removed 로 화면도 정리.
+# 센서 순간 오검출(flicker) 방지: "직전 heartbeat 와 같은 마스크"일 때만 반영(연속 2회).
+
+def _synth_added_unknown(slave_id: int, cell: int) -> None:
+    """유실된 added 추정 — 정체 미상. admin 에만 표시하고 screen 에는 보내지 않는다."""
+    _q, note = parse_cell(cell)
+    with _state_lock:
+        _cells[_cell_key(slave_id, cell)] = {
+            "id": "", "voice": "미상", "note": note,
+            "result": "unknown", "synthetic": True,
+        }
+    _record_event({"type": "recovered", "slave": slave_id, "cell": cell,
+                   "note": note, "voice": "미상", "synthetic": True})
+    print(f"[recover] slave={slave_id} cell={cell} note={note} → added 유실 추정(미상, admin만)")
+    osc.send_message("/orb/recovered", [slave_id, cell, note])
+
+
+def _synth_removed(slave_id: int, cell: int) -> None:
+    """유실된 removed 추정 — 정식 removed 로 처리해 screen·admin 모두 칸을 비운다."""
+    with _state_lock:
+        cell_data = _cells.pop(_cell_key(slave_id, cell), None)
+    voice   = (cell_data or {}).get("voice", "unknown")
+    orb_key = (cell_data or {}).get("id", "") or ""
+    _q, note = parse_cell(cell)
+    _record_event({"type": "removed", "slave": slave_id, "cell": cell,
+                   "id": orb_key, "voice": voice, "note": note, "synthetic": True})
+    print(f"[recover] slave={slave_id} cell={cell} → removed 유실 복구(screen+admin)")
+    osc.send_message("/orb/removed", [slave_id, cell, voice, note, orb_key])
+
+
+def reconcile_slave_state(slave_id: int, state: int) -> None:
+    """heartbeat 점유 마스크(state)로 메모리와의 불일치를 자가복구. flicker debounce 포함."""
+    with _state_lock:
+        s = _slaves.get(slave_id)
+        prev = s.get("prev_state_mask") if s else None
+        if s is not None:
+            s["prev_state_mask"] = state
+        # 직전 heartbeat 와 마스크가 동일해야(=~3초 안정) 반영. 순간 오검출 1회는 무시.
+        stable = prev is not None and prev == state
+        occupied_mem = {
+            int(k.split(":", 1)[1])
+            for k in _cells
+            if k.startswith(f"{slave_id}:")
+        }
+
+    if not stable:
+        return
+
+    for cell in range(1, 17):
+        mask_occ = bool((state >> (cell - 1)) & 1)
+        mem_occ  = cell in occupied_mem
+        if mask_occ and not mem_occ:
+            _synth_added_unknown(slave_id, cell)
+        elif not mask_occ and mem_occ:
+            _synth_removed(slave_id, cell)
+
 # ── 시리얼 수신 루프 ───────────────────────────────────
 def serial_loop():
     port     = config["serial"]["port"]
@@ -257,6 +400,9 @@ def serial_loop():
             while True:
                 line = ser.readline().decode("utf-8", errors="ignore").strip()
                 if not line:
+                    continue
+                if line.startswith("#"):
+                    print(f"[master] {line}")   # master 진단 출력 (폴링 생존/relay 카운트)
                     continue
                 if not line.startswith("{"):
                     continue  # ESP 부트 로그, 디버그 println 등 — 무시

@@ -192,6 +192,8 @@
     .cell.wrong { background: rgba(248, 113, 113, 0.25); border-color: var(--err); }
     .cell.inactive { background: rgba(91, 141, 239, 0.2); border-color: var(--accent); }
     .cell.unknown { background: rgba(250, 204, 21, 0.2); border-color: var(--warn); }
+    /* 자가복구로 추정된 '미상' 칸 — 실제 미등록 오브와 구분되게 점선 테두리 */
+    .cell.synthetic { border-style: dashed; border-color: var(--warn); }
 
     .cell .note {
       font-size: 11px;
@@ -292,6 +294,40 @@
       margin-top: 2px;
     }
 
+    .slave-status {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .slave-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+
+    .slave-row .sid { font-weight: 600; }
+    .slave-row .state-txt { color: var(--muted); }
+    .slave-row.online .state-txt { color: var(--ok); }
+    .slave-row.offline .state-txt { color: var(--err); }
+    .slave-row .age {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 11px;
+      font-family: "Cascadia Code", "Consolas", monospace;
+    }
+
+    .slave-empty {
+      color: var(--muted);
+      font-size: 12px;
+      padding: 4px 2px;
+    }
+
     .toolbar {
       display: flex;
       gap: 8px;
@@ -382,6 +418,13 @@
       </div>
 
       <div>
+        <div class="section-title">슬레이브 상태</div>
+        <div class="slave-status" id="slave-status">
+          <div class="slave-empty">감지된 슬레이브 없음</div>
+        </div>
+      </div>
+
+      <div>
         <div class="section-title">게임 제어</div>
         <div class="toolbar">
           <button class="primary" id="btn-start">시작</button>
@@ -442,7 +485,8 @@
     function buildGrid() {
       const headers = document.getElementById('slave-headers');
       headers.innerHTML = '';
-      for (let s = 1; s <= 5; s++) {
+      // slave 1개 = 2열(Q1·Q2) → 헤더 개수는 열 수에서 자동 산출(하드코딩 5 금지)
+      for (let s = 1; s <= COLS / 2; s++) {
         const h = document.createElement('div');
         h.className = 'slave-header';
         h.textContent = `Slave ${s}`;
@@ -489,10 +533,11 @@
       el.querySelector('.note').textContent = '';
       el.querySelector('.voice').textContent = '';
 
-      if (!data || !data.id) return;
+      if (!data || (!data.id && !data.synthetic)) return;
 
       el.classList.add('filled');
       if (data.result) el.classList.add(data.result);
+      if (data.synthetic) el.classList.add('synthetic');
       el.querySelector('.note').textContent = data.note || '?';
       el.querySelector('.voice').textContent = data.voice || shortId(data.id);
       if (selectedKey === gridKey(col, row)) el.classList.add('selected');
@@ -507,7 +552,7 @@
 
     function applyCellState(slave, cell, data) {
       const key = cellKey(slave, cell);
-      if (data && data.id) {
+      if (data && (data.id || data.synthetic)) {
         cells.set(key, data);
       } else {
         cells.delete(key);
@@ -551,6 +596,39 @@
       el.className = 'dot ' + (state || '');
     }
 
+    function fmtAge(ms) {
+      if (ms == null) return '—';
+      const s = Math.round(ms / 1000);
+      if (s < 60) return `${s}초`;
+      const m = Math.floor(s / 60);
+      return `${m}분 ${s % 60}초`;
+    }
+
+    function renderSlaves(slaves) {
+      const box = document.getElementById('slave-status');
+      if (!slaves || slaves.length === 0) {
+        box.innerHTML = '<div class="slave-empty">감지된 슬레이브 없음</div>';
+        return;
+      }
+      box.innerHTML = '';
+      for (const sv of slaves) {
+        // online=초록, 하트비트 있었지만 끊김=빨강(offline), 하트비트 자체가 없음=노랑
+        const dotState = sv.online ? 'ok' : (sv.has_heartbeat ? 'err' : 'warn');
+        const rowState = sv.online ? 'online' : (sv.has_heartbeat ? 'offline' : '');
+        const stateTxt = sv.online
+          ? '온라인'
+          : (sv.has_heartbeat ? `오프라인 (${fmtAge(sv.hb_age_ms)} 무신호)` : '하트비트 없음');
+        const row = document.createElement('div');
+        row.className = 'slave-row ' + rowState;
+        row.innerHTML =
+          `<span class="dot ${dotState}"></span>` +
+          `<span class="sid">Slave ${sv.slave}</span>` +
+          `<span class="state-txt">${stateTxt}</span>` +
+          `<span class="age" title="마지막 메시지">최근 ${fmtAge(sv.last_seen_age_ms)} 전</span>`;
+        box.appendChild(row);
+      }
+    }
+
     async function fetchStatus() {
       try {
         const res = await fetch('/api/status');
@@ -572,6 +650,8 @@
         document.getElementById('stat-stage').textContent = s.current_stage;
         document.getElementById('stat-mode').textContent = s.input_mode;
         document.getElementById('stat-orbs').textContent = s.orb_count ?? '—';
+
+        renderSlaves(s.slaves);
       } catch { /* server may be starting */ }
     }
 
@@ -613,6 +693,11 @@
         const [slave, cell, voice, note, orb_id] = args;
         applyCellState(slave, cell, null);
         addLog('removed', `S${slave} C${cell} ${voice} ${note}`, 'log-removed');
+      } else if (address === '/orb/recovered' && args.length >= 3) {
+        // 유실 추정: admin 에만 '미상'으로 표시(screen 엔 안 뜸 → 관람자가 다시 올림)
+        const [slave, cell, note] = args;
+        applyCellState(slave, cell, { id: '', voice: '미상', note, result: 'unknown', synthetic: true });
+        addLog('복구', `S${slave} C${cell} ${note} → 유실 추정(미상, 화면 미표시)`, 'log-warn');
       } else if (address === '/game/ready') {
         addLog('ready', args[0] ? 'READY' : '대기', 'log-info');
       } else if (address === '/game/start') {
