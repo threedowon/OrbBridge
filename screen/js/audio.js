@@ -239,19 +239,43 @@ function voiceNameFromId(voiceId) {
   return v?.name || '_listen';
 }
 
+/** Same-tick playTone calls coalesce into one /api/midi/notes POST. */
+let _midiBatch = [];
+let _midiFlushScheduled = false;
+
+function _flushMidiBatch() {
+  _midiFlushScheduled = false;
+  const batch = _midiBatch;
+  _midiBatch = [];
+  if (!batch.length) return;
+
+  if (batch.length === 1) {
+    fetch('/api/midi/note', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(batch[0]),
+    }).catch(err => console.warn('midi note failed', err));
+    return;
+  }
+
+  fetch('/api/midi/notes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notes: batch }),
+  }).catch(err => console.warn('midi notes failed', err));
+}
+
 function postMidiNote({ voice, pitch, durationSec, preview = false }) {
   const duration_ms = Math.max(40, Math.round((durationSec || 0.32) * 1000));
-  const body = {
+  _midiBatch.push({
     voice: preview ? '_listen' : voice,
     pitch: Math.max(0, Math.min(7, pitch | 0)),
     duration_ms,
-  };
-  // fire-and-forget — timing stays in the engine
-  fetch('/api/midi/note', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }).catch(err => console.warn('midi note failed', err));
+  });
+  if (!_midiFlushScheduled) {
+    _midiFlushScheduled = true;
+    queueMicrotask(_flushMidiBatch);
+  }
 }
 
 export function playTone(freq, voiceId, dur = 0.32, when = 0, {

@@ -264,6 +264,21 @@ def start_http_server(
                     self._json(500, {"ok": False, "error": str(exc)})
                 return
 
+            if self.path == "/api/midi/notes":
+                try:
+                    from midi_out import trigger_many
+
+                    raw = data.get("notes")
+                    if not isinstance(raw, list) or not raw:
+                        self._json(400, {"ok": False, "error": "notes[] required"})
+                        return
+                    results = trigger_many(raw)
+                    ok = all(r.get("ok") for r in results)
+                    self._json(200 if ok else 207, {"ok": ok, "results": results})
+                except Exception as exc:
+                    self._json(500, {"ok": False, "error": str(exc)})
+                return
+
             self._send(404, b"Not found", "text/plain")
 
     def run():

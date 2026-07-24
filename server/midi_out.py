@@ -19,7 +19,8 @@ PORTMAPPING_PATH = HERE / "portmapping.json"
 NOTE_BASE = 36  # C1
 LISTEN_VOICE = "_listen"
 
-_lock = threading.Lock()
+_lock = threading.Lock()          # init / port map
+_send_lock = threading.Lock()     # all port.send (rtmidi is not thread-safe)
 _ports: dict[str, object] = {}
 _map: dict = {}
 _ready = False
@@ -202,6 +203,23 @@ def cell_to_pitch(cell: int) -> int:
     return max(0, min(7, row - 1))
 
 
+def _send_note_off(port, note: int, channel: int) -> None:
+    import mido
+
+    with _send_lock:
+        try:
+            port.send(mido.Message("note_off", note=note, velocity=0, channel=channel))
+        except Exception:
+            pass
+
+
+def _schedule_note_off(port, note: int, channel: int, duration_ms: float) -> None:
+    threading.Timer(
+        max(30.0, float(duration_ms)) / 1000.0,
+        lambda: _send_note_off(port, note, channel),
+    ).start()
+
+
 def trigger(
     voice: str,
     pitch: int = 0,
@@ -210,47 +228,99 @@ def trigger(
     duration_ms: float = 320,
 ) -> dict:
     """note_on then scheduled note_off."""
-    import mido
+    results = trigger_many(
+        [
+            {
+                "voice": voice,
+                "pitch": pitch,
+                "velocity": velocity,
+                "duration_ms": duration_ms,
+            }
+        ]
+    )
+    if not results:
+        return {"ok": False, "error": "empty"}
+    return results[0]
 
+
+def trigger_many(notes: list[dict]) -> list[dict]:
+    """
+    Send many note_ons in one locked burst (dispensa / polyphony),
+    then schedule note_offs. Each item: voice, pitch, velocity?, duration_ms?, note?
+    """
     ok, err = ensure_init()
     if not ok and not _ports:
-        return {"ok": False, "error": err or "midi not ready"}
+        return [{"ok": False, "error": err or "midi not ready"} for _ in notes]
 
-    route = resolve_route(voice)
-    if route is None:
-        return {"ok": False, "error": f"unknown voice route: {voice}"}
+    prepared: list[tuple[dict, object, str, int, int, int, float]] = []
+    # (meta_out_partial, port, port_name, channel, note, vel, dur)
 
-    port_name, channel = route
-    port = _ports.get(port_name)
-    if port is None:
-        return {"ok": False, "error": f"port not open: {port_name}"}
+    for item in notes:
+        voice = str(item.get("voice") or LISTEN_VOICE)
+        pitch = item.get("pitch")
+        if pitch is None and item.get("note"):
+            pitch = note_name_to_pitch(str(item["note"]))
+        if pitch is None:
+            pitch = 0
+        velocity = int(item.get("velocity", 127))
+        duration_ms = float(item.get("duration_ms", 320))
 
-    note = pitch_to_note(pitch)
-    vel = max(1, min(127, int(velocity)))
-    dur = max(30.0, float(duration_ms))
-    ch = channel  # mido uses 0-15
+        route = resolve_route(voice)
+        if route is None:
+            prepared.append(
+                ({"ok": False, "error": f"unknown voice route: {voice}", "voice": voice},
+                 None, "", 0, 0, 0, 0.0)
+            )
+            continue
+        port_name, channel = route
+        port = _ports.get(port_name)
+        if port is None:
+            prepared.append(
+                ({"ok": False, "error": f"port not open: {port_name}", "voice": voice},
+                 None, port_name, channel, 0, 0, 0.0)
+            )
+            continue
+        note = pitch_to_note(int(pitch))
+        vel = max(1, min(127, velocity))
+        dur = max(30.0, duration_ms)
+        prepared.append(
+            (
+                {
+                    "ok": True,
+                    "voice": voice,
+                    "port": port_name,
+                    "channel": channel + 1,
+                    "note": note,
+                    "pitch": int(pitch),
+                    "duration_ms": dur,
+                },
+                port,
+                port_name,
+                channel,
+                note,
+                vel,
+                dur,
+            )
+        )
 
-    try:
-        port.send(mido.Message("note_on", note=note, velocity=vel, channel=ch))
-    except Exception as exc:
-        return {"ok": False, "error": str(exc)}
+    # Burst note_ons under one lock so concurrent HTTP threads don't interleave
+    import mido
 
-    def _off():
-        try:
-            port.send(mido.Message("note_off", note=note, velocity=0, channel=ch))
-        except Exception:
-            pass
+    with _send_lock:
+        for meta, port, _pn, channel, note, vel, _dur in prepared:
+            if not meta.get("ok") or port is None:
+                continue
+            try:
+                port.send(mido.Message("note_on", note=note, velocity=vel, channel=channel))
+            except Exception as exc:
+                meta["ok"] = False
+                meta["error"] = str(exc)
 
-    threading.Timer(dur / 1000.0, _off).start()
-    return {
-        "ok": True,
-        "voice": voice,
-        "port": port_name,
-        "channel": channel + 1,
-        "note": note,
-        "pitch": pitch,
-        "duration_ms": dur,
-    }
+    for meta, port, _pn, channel, note, _vel, dur in prepared:
+        if meta.get("ok") and port is not None:
+            _schedule_note_off(port, note, channel, dur)
+
+    return [meta for meta, *_rest in prepared]
 
 
 def test_all_notes(delay: float = 0.12, duration_ms: float = 100) -> None:
