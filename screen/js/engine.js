@@ -168,20 +168,27 @@ export function createEngine() {
     const balls = placedInCol(col);
 
     if (unisonMode) {
-      // 디페스타: 테이블 위 모든 오브 목소리로 정답 멜로디 재생
+      // 디페스타: 같은 음을 N목소리가 동시 재생 → coherent duck + bus limiter
       if (isPitchNote(entry) && dispensaVoices.length) {
         const targetRow = noteAt(entry);
         if (targetRow >= 0) {
           const note = rowToNoteIn(targetRow, melody.scale);
+          const n = dispensaVoices.length;
           for (const v of dispensaVoices) {
-            playTone(note.freq, v, toneDur, 0, { noteName: note.name });
+            playTone(note.freq, v, toneDur, 0, {
+              noteName: note.name,
+              polyphony: n,
+              coherent: true,
+              volume: 0.72,
+            });
           }
         }
       }
     } else {
+      const n = Math.max(1, balls.length);
       for (const { row, voice: v } of balls) {
         const note = rowToNoteIn(row, melody.scale);
-        playTone(note.freq, v, toneDur, 0, { noteName: note.name });
+        playTone(note.freq, v, toneDur, 0, { noteName: note.name, polyphony: n });
       }
     }
 

@@ -52,10 +52,11 @@ function ownsAudio() {
   }
 }
 
-function claimAudio() {
+function claimAudio(force = false) {
   try {
     const owner = localStorage.getItem(AUDIO_OWNER_KEY);
-    if (!owner || owner === tabId) {
+    // force: 이 탭에서 '시작'을 누른 경우 — stale/다른 탭 소유권을 빼앗아 온다
+    if (force || !owner || owner === tabId) {
       localStorage.setItem(AUDIO_OWNER_KEY, tabId);
       return true;
     }
@@ -128,7 +129,7 @@ async function loadVoiceCatalog() {
 async function enterPlayView() {
   if (!currentMelody) return;
   unlock();
-  claimAudio();
+  claimAudio(true);   // 시작 누른 이 탭이 오디오 소유권을 확실히 가져온다
   await loadVoiceCatalog();
   try { await apiPost('/api/game/end', { reason: 'load' }); } catch { /* server idle */ }
   setupPlaySession();

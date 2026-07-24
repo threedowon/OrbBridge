@@ -1,7 +1,13 @@
 import { NOTES, VOICES } from './data.js';
 
+const SAMPLE_BASE_VOL = 0.88;
+
 let ctx = null;
 let previewOut = null;
+/** Shared bus: samples → gain → compressor → limiter → speakers. */
+let masterGain = null;
+let masterComp = null;
+let masterLimiter = null;
 /** @type {OscillatorNode[]} */
 const activePreviewOscs = [];
 /** @type {Set<HTMLAudioElement>} */
@@ -17,7 +23,51 @@ export function setAudioOwnerCheck(fn) {
 export function unlock() {
   if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
   if (ctx.state === 'suspended') ctx.resume();
+  ensureMasterBus(ctx);
   return ctx;
+}
+
+/**
+ * Per-voice gain when N sounds play together.
+ * - incoherent (different pitches): 1/√N keeps perceived loudness roughly flat
+ * - coherent (same pitch, e.g. dispensa): closer to 1/N — same note stacks add up
+ */
+export function mixVolume(polyphony, base = SAMPLE_BASE_VOL, { coherent = false } = {}) {
+  const n = Math.max(1, polyphony | 0);
+  if (n <= 1) return Math.min(1, base);
+  const denom = coherent ? Math.pow(n, 0.92) : Math.sqrt(n);
+  return Math.min(1, Math.max(0.08, base / denom));
+}
+
+function ensureMasterBus(c) {
+  if (masterLimiter) return;
+  masterGain = c.createGain();
+  masterGain.gain.value = 1;
+
+  masterComp = c.createDynamicsCompressor();
+  // Duck stacked voices before they clip
+  masterComp.threshold.value = -26;
+  masterComp.knee.value = 18;
+  masterComp.ratio.value = 10;
+  masterComp.attack.value = 0.003;
+  masterComp.release.value = 0.22;
+
+  // Hard-ish ceiling (high ratio / low threshold) as a simple limiter
+  masterLimiter = c.createDynamicsCompressor();
+  masterLimiter.threshold.value = -8;
+  masterLimiter.knee.value = 2;
+  masterLimiter.ratio.value = 20;
+  masterLimiter.attack.value = 0.001;
+  masterLimiter.release.value = 0.08;
+
+  masterGain.connect(masterComp);
+  masterComp.connect(masterLimiter);
+  masterLimiter.connect(c.destination);
+}
+
+function sampleBus() {
+  const c = unlock();
+  return masterGain;
 }
 
 function stopSampleSet(pool) {
@@ -100,16 +150,26 @@ function sampleForVoice(voiceId, noteName, freq) {
   return sampleUrl(stored);
 }
 
-function playSample(url, when = 0, { orb = false } = {}) {
+function playSample(url, when = 0, { orb = false, volume = SAMPLE_BASE_VOL } = {}) {
   const c = unlock();
   const delayMs = when > 0 ? Math.max(0, (when - c.currentTime) * 1000) : 0;
   const pool = orb ? orbSamples : activeSamples;
+  const vol = Math.max(0, Math.min(1, volume));
 
   const start = () => {
     const audio = new Audio(url);
-    audio.volume = 0.88;
+    // Route through compressor bus so stacked voices auto-limit
+    const src = c.createMediaElementSource(audio);
+    const g = c.createGain();
+    g.gain.value = vol;
+    src.connect(g);
+    g.connect(sampleBus());
     pool.add(audio);
-    const cleanup = () => pool.delete(audio);
+    const cleanup = () => {
+      pool.delete(audio);
+      try { src.disconnect(); } catch { /* ignore */ }
+      try { g.disconnect(); } catch { /* ignore */ }
+    };
     audio.addEventListener('ended', cleanup, { once: true });
     audio.addEventListener('error', cleanup, { once: true });
     audio.play().catch(err => {
@@ -122,7 +182,7 @@ function playSample(url, when = 0, { orb = false } = {}) {
   else start();
 }
 
-function playOscTone(freq, voiceId, dur, when, preview) {
+function playOscTone(freq, voiceId, dur, when, preview, volumeScale = 1) {
   const c = unlock();
   const v = VOICES[voiceId] ?? VOICES[0];
   const t = when > 0 ? when : c.currentTime;
@@ -136,30 +196,40 @@ function playOscTone(freq, voiceId, dur, when, preview) {
   filt.type = 'lowpass';
   filt.frequency.setValueAtTime(v.filter, t);
 
-  const peak = v.gain ?? 0.2;
+  const peak = (v.gain ?? 0.2) * Math.max(0, Math.min(1, volumeScale));
   gain.gain.setValueAtTime(0, t);
   gain.gain.linearRampToValueAtTime(peak, t + 0.015);
   gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
 
   osc.connect(filt);
   filt.connect(gain);
-  gain.connect(preview && previewOut ? previewOut : c.destination);
+  gain.connect(preview && previewOut ? previewOut : sampleBus());
   osc.start(t);
   osc.stop(t + dur + 0.04);
   if (preview) activePreviewOscs.push(osc);
 }
 
-export function playTone(freq, voiceId, dur = 0.32, when = 0, { preview = false, noteName = '' } = {}) {
+export function playTone(freq, voiceId, dur = 0.32, when = 0, {
+  preview = false,
+  noteName = '',
+  volume = SAMPLE_BASE_VOL,
+  polyphony = 1,
+  /** Same pitch stacked (dispensa) — stronger per-voice duck. */
+  coherent = false,
+} = {}) {
   if (!audioOwnerCheck()) return;
+  const vol = polyphony > 1
+    ? mixVolume(polyphony, volume, { coherent })
+    : Math.min(1, volume);
   // 다시듣기/미리듣기 — Web Audio (박자 길이에 맞춤). 오브 재생만 목소리 샘플.
   if (!preview) {
     const url = sampleForVoice(voiceId, noteName, freq);
     if (url) {
-      playSample(url, when, { orb: true });
+      playSample(url, when, { orb: true, volume: vol });
       return;
     }
   }
-  playOscTone(freq, voiceId, dur, when, preview);
+  playOscTone(freq, voiceId, dur, when, preview, vol / SAMPLE_BASE_VOL);
 }
 
 export function playSuccess() {
