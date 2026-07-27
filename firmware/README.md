@@ -26,21 +26,25 @@ GND 공통
 **master 는 듣기만, slave 만 자율 전송.** master 가 RS485 로 송신하지 않으므로 방향 전환이
 없어 신호가 깨끗하다(양방향 폴링은 이 auto-direction 모듈이 못 버텨서 폐기).
 
+RS485 구간은 **13바이트 바이너리 프레임(+CRC8)** — JSON(~60B)보다 ~5배 짧아 충돌·깨짐이
+줄고, CRC 로 깨진 프레임을 검출해 버린다. master 가 CRC 검증 후 **JSON 으로 변환**해 PC 로
+relay 하므로 **PC(main.py/debug.py)는 무변경**.
+
+**프레임(13B):** `[STX=0x02][TYPE][SLAVE][CELL][UID 8B][CRC8]`
+- `TYPE` 1=added, 2=removed, 3=heartbeat
+- heartbeat 는 CELL=0, UID 자리 첫 2바이트에 `state`(16비트 점유 마스크) 저장
+- `CRC8 = crc8(frame[1..11])` (Dallas/Maxim, OneWire 와 동일 다항식)
+- master 는 STX 로 동기, CRC 불일치 시 버리고 다음 STX 로 resync
+
 충돌 방지는 **slave 쪽에서**:
-- slave 는 전송 전에 **버스가 조용한지 듣고**(carrier-sense, `BUS_IDLE_MS`), 사용 중이면
+- 전송 전에 **버스가 조용한지 듣고**(carrier-sense, `BUS_IDLE_MS`), 사용 중이면
   **ID+랜덤 백오프** 후 재시도 → 동시 전송(충돌) 최소화.
-- 그래도 드물게 충돌해 이벤트가 유실되면, heartbeat 의 **state 마스크**로 PC 가
-  자가복구(reconcile) → 3~6초 안에 화면 동기화(안전망).
+- 그래도 드물게 유실되면 heartbeat 의 `state` 마스크로 PC 가 자가복구(reconcile).
 
-| 방향 | 프레임 | 의미 |
-|---|---|---|
-| slave → bus | `{"type":"added"/"removed","slave":<id>,"cell":<n>,"id":"<uid>"}\n` | 오브 감지 즉시 |
-| slave → bus | `{"type":"heartbeat","slave":<id>,"state":<16bit>}\n` | 상태(기본 2s 주기) |
+**4중 방어:** ① 단방향(신호 깨끗) → ② 바이너리+CRC(짧고, 깨진 건 검출·폐기) →
+③ carrier-sense(충돌 감소) → ④ 자가복구(남은 유실 복구).
 
-**PC(main.py/debug.py)는 무변경** — master 가 slave JSON 을 그대로 USB relay. heartbeat 의
-`state` 비트마스크(bit i = cell i+1 점유)가 자가복구의 핵심.
-
-3중 방어: ① 단방향(신호 깨끗) → ② carrier-sense(충돌 감소) → ③ 자가복구(남은 유실 복구).
+> master 진단: `#master alive relay=<유효> bad=<CRC실패>` — `bad` 증가 속도가 신호 품질 지표.
 
 ---
 
