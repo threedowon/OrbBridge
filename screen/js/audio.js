@@ -249,15 +249,6 @@ function _flushMidiBatch() {
   _midiBatch = [];
   if (!batch.length) return;
 
-  if (batch.length === 1) {
-    fetch('/api/midi/note', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(batch[0]),
-    }).catch(err => console.warn('midi note failed', err));
-    return;
-  }
-
   fetch('/api/midi/notes', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -265,16 +256,13 @@ function _flushMidiBatch() {
   }).catch(err => console.warn('midi notes failed', err));
 }
 
-function postMidiNote({ voice, pitch, durationSec, preview = false, dispensa = false }) {
+function postMidiNote({ voice, pitch, durationSec, preview = false }) {
   const duration_ms = Math.max(40, Math.round((durationSec || 0.32) * 1000));
-  const item = {
+  _midiBatch.push({
     voice: preview ? '_listen' : voice,
     pitch: Math.max(0, Math.min(7, pitch | 0)),
     duration_ms,
-  };
-  // 디페스타: 각 오브 voice 유지 + dfesta 포트로만 송신
-  if (dispensa && !preview) item.bus = 'dispensa';
-  _midiBatch.push(item);
+  });
   if (!_midiFlushScheduled) {
     _midiFlushScheduled = true;
     queueMicrotask(_flushMidiBatch);
@@ -288,8 +276,6 @@ export function playTone(freq, voiceId, dur = 0.32, when = 0, {
   polyphony = 1,
   /** Same pitch stacked (dispensa) — stronger per-voice duck. */
   coherent = false,
-  /** MIDI: keep voice choir, but send all on dfesta port. */
-  dispensa = false,
   /** Skip sound (e.g. placeExternal when server already MIDI-triggered). */
   silent = false,
 } = {}) {
@@ -304,7 +290,6 @@ export function playTone(freq, voiceId, dur = 0.32, when = 0, {
       pitch: pitchFromNoteName(noteName, freq),
       durationSec: dur,
       preview,
-      dispensa,
     });
     if (delayMs > 0) setTimeout(send, delayMs);
     else send();

@@ -1,8 +1,8 @@
 """MIDI out via loopMIDI for Ableton.
 
-Uses mido + python-rtmidi (pygame optional legacy).
-Resolves Orb voice keys (aespa_1) → portmapping group/member channels
-using voice_catalog labels. Pitch index 0..7 → MIDI note 36..43 (C1..G1).
+Uses mido + python-rtmidi.
+Resolves Orb voice keys (aespa_1) to portmapping group/member channels.
+Pitch index 0..7 maps to MIDI note 36..43 (C1..G1).
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ def ensure_init(path: Path | None = None) -> tuple[bool, str]:
         try:
             import mido  # noqa: F401
         except ImportError:
-            _init_error = "mido 없음 — pip install mido python-rtmidi"
+            _init_error = "mido not installed - run: pip install mido python-rtmidi"
             return False, _init_error
 
         try:
@@ -91,13 +91,13 @@ def ensure_init(path: Path | None = None) -> tuple[bool, str]:
 
             if not _ports:
                 _init_error = (
-                    f"열린 MIDI 포트 없음. 필요={sorted(needed)} 사용가능={available}"
+                    f"No MIDI ports opened. needed={sorted(needed)} available={available}"
                 )
                 return False, _init_error
 
             _ready = True
             if missing:
-                _init_error = f"일부 포트 없음: {missing} (사용가능={available})"
+                _init_error = f"Some ports missing: {missing} (available={available})"
                 print(f"[midi] WARN: {_init_error}")
             else:
                 _init_error = None
@@ -128,7 +128,7 @@ def voice_group_and_index(voice: str) -> tuple[str, int] | None:
 
 
 def resolve_route(voice: str) -> tuple[str, int] | None:
-    """voice key → (port_name, channel_0_based)."""
+    """voice key -> (port_name, channel_0_based)."""
     voice = (voice or "").strip()
     if not voice:
         return None
@@ -146,11 +146,6 @@ def resolve_route(voice: str) -> tuple[str, int] | None:
     if voice in ("listen", LISTEN_VOICE):
         if LISTEN_VOICE in _map:
             return resolve_route(LISTEN_VOICE)
-        return None
-
-    if voice in ("dispensa", "_dispensa", "dfesta"):
-        if "_dispensa" in _map:
-            return resolve_route("_dispensa")
         return None
 
     gi = voice_group_and_index(voice)
@@ -186,23 +181,6 @@ def resolve_route(voice: str) -> tuple[str, int] | None:
         return port, max(0, min(15, int(by_ch[idx][1]) - 1))
 
     return port, max(0, min(15, member_num - 1))
-
-
-def resolve_dispensa_route(voice: str) -> tuple[str, int] | None:
-    """
-    Dispensa choir: keep each orb's MIDI channel (member), but force port → dfesta.
-    Ableton listens on one input and routes by channel / voice racks.
-    """
-    if not _map:
-        ensure_init()
-    base = resolve_route(voice)
-    if base is None:
-        return None
-    _orig_port, channel = base
-    disp = _map.get("_dispensa")
-    if isinstance(disp, dict) and disp.get("port"):
-        return str(disp["port"]), channel
-    return "dfesta", channel
 
 
 def pitch_to_note(pitch_index: int) -> int:
@@ -266,10 +244,7 @@ def trigger(
 
 
 def trigger_many(notes: list[dict]) -> list[dict]:
-    """
-    Send many note_ons in one locked burst (dispensa / polyphony),
-    then schedule note_offs. Each item: voice, pitch, velocity?, duration_ms?, note?
-    """
+    """Send many note_ons in one locked burst, then schedule note_offs."""
     ok, err = ensure_init()
     if not ok and not _ports:
         return [{"ok": False, "error": err or "midi not ready"} for _ in notes]
@@ -286,12 +261,7 @@ def trigger_many(notes: list[dict]) -> list[dict]:
             pitch = 0
         velocity = int(item.get("velocity", 127))
         duration_ms = float(item.get("duration_ms", 320))
-        bus = str(item.get("bus") or "").lower()
-
-        if bus == "dispensa":
-            route = resolve_dispensa_route(voice)
-        else:
-            route = resolve_route(voice)
+        route = resolve_route(voice)
         if route is None:
             prepared.append(
                 ({"ok": False, "error": f"unknown voice route: {voice}", "voice": voice},
@@ -319,7 +289,6 @@ def trigger_many(notes: list[dict]) -> list[dict]:
                     "note": note,
                     "pitch": int(pitch),
                     "duration_ms": dur,
-                    "bus": bus or None,
                 },
                 port,
                 port_name,
@@ -366,7 +335,7 @@ def test_all_notes(delay: float = 0.12, duration_ms: float = 100) -> None:
         if route[0] not in _ports:
             print(f"  skip {voice} (port '{route[0]}' not open)")
             continue
-        print(f"=== {voice} → {route[0]} ch{route[1] + 1} ===")
+        print(f"=== {voice} -> {route[0]} ch{route[1] + 1} ===")
         for pitch in range(8):
             r = trigger(voice, pitch, duration_ms=duration_ms)
             print(f"  pitch {pitch}: {r}")
@@ -374,9 +343,9 @@ def test_all_notes(delay: float = 0.12, duration_ms: float = 100) -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="OrbBridge MIDI → loopMIDI test")
+    ap = argparse.ArgumentParser(description="OrbBridge MIDI -> loopMIDI test")
     ap.add_argument("--list", action="store_true", help="List MIDI output devices")
-    ap.add_argument("--test", action="store_true", help="Trigger all voices × 8 pitches")
+    ap.add_argument("--test", action="store_true", help="Trigger all voices x 8 pitches")
     ap.add_argument("--voice", default="", help="Trigger one voice")
     ap.add_argument("--pitch", type=int, default=0)
     ap.add_argument("--duration-ms", type=float, default=400)
@@ -409,3 +378,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

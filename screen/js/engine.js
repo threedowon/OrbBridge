@@ -169,7 +169,7 @@ export function createEngine() {
 
     if (unisonMode) {
       // 디페스타: 테이블 위 오브 목소리로 정답 멜로디 합창
-      // MIDI → 전부 dfesta 포트 (목소리는 채널로 구분) / Web → 샘플 합창
+      // MIDI → 각 voice의 그룹 포트/채널 (멤버 구분) + 배치 전송
       if (isPitchNote(entry) && dispensaVoices.length) {
         const targetRow = noteAt(entry);
         if (targetRow >= 0) {
@@ -181,7 +181,6 @@ export function createEngine() {
               polyphony: n,
               coherent: true,
               volume: 0.72,
-              dispensa: isMidiMode(),
             });
           }
         }
