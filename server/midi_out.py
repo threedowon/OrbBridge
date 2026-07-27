@@ -148,6 +148,11 @@ def resolve_route(voice: str) -> tuple[str, int] | None:
             return resolve_route(LISTEN_VOICE)
         return None
 
+    if voice in ("dispensa", "_dispensa", "dfesta"):
+        if "_dispensa" in _map:
+            return resolve_route("_dispensa")
+        return None
+
     gi = voice_group_and_index(voice)
     if not gi:
         return None
@@ -181,6 +186,23 @@ def resolve_route(voice: str) -> tuple[str, int] | None:
         return port, max(0, min(15, int(by_ch[idx][1]) - 1))
 
     return port, max(0, min(15, member_num - 1))
+
+
+def resolve_dispensa_route(voice: str) -> tuple[str, int] | None:
+    """
+    Dispensa choir: keep each orb's MIDI channel (member), but force port → dfesta.
+    Ableton listens on one input and routes by channel / voice racks.
+    """
+    if not _map:
+        ensure_init()
+    base = resolve_route(voice)
+    if base is None:
+        return None
+    _orig_port, channel = base
+    disp = _map.get("_dispensa")
+    if isinstance(disp, dict) and disp.get("port"):
+        return str(disp["port"]), channel
+    return "dfesta", channel
 
 
 def pitch_to_note(pitch_index: int) -> int:
@@ -264,8 +286,12 @@ def trigger_many(notes: list[dict]) -> list[dict]:
             pitch = 0
         velocity = int(item.get("velocity", 127))
         duration_ms = float(item.get("duration_ms", 320))
+        bus = str(item.get("bus") or "").lower()
 
-        route = resolve_route(voice)
+        if bus == "dispensa":
+            route = resolve_dispensa_route(voice)
+        else:
+            route = resolve_route(voice)
         if route is None:
             prepared.append(
                 ({"ok": False, "error": f"unknown voice route: {voice}", "voice": voice},
@@ -293,6 +319,7 @@ def trigger_many(notes: list[dict]) -> list[dict]:
                     "note": note,
                     "pitch": int(pitch),
                     "duration_ms": dur,
+                    "bus": bus or None,
                 },
                 port,
                 port_name,

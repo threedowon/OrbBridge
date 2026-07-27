@@ -265,13 +265,16 @@ function _flushMidiBatch() {
   }).catch(err => console.warn('midi notes failed', err));
 }
 
-function postMidiNote({ voice, pitch, durationSec, preview = false }) {
+function postMidiNote({ voice, pitch, durationSec, preview = false, dispensa = false }) {
   const duration_ms = Math.max(40, Math.round((durationSec || 0.32) * 1000));
-  _midiBatch.push({
+  const item = {
     voice: preview ? '_listen' : voice,
     pitch: Math.max(0, Math.min(7, pitch | 0)),
     duration_ms,
-  });
+  };
+  // 디페스타: 각 오브 voice 유지 + dfesta 포트로만 송신
+  if (dispensa && !preview) item.bus = 'dispensa';
+  _midiBatch.push(item);
   if (!_midiFlushScheduled) {
     _midiFlushScheduled = true;
     queueMicrotask(_flushMidiBatch);
@@ -285,6 +288,8 @@ export function playTone(freq, voiceId, dur = 0.32, when = 0, {
   polyphony = 1,
   /** Same pitch stacked (dispensa) — stronger per-voice duck. */
   coherent = false,
+  /** MIDI: keep voice choir, but send all on dfesta port. */
+  dispensa = false,
   /** Skip sound (e.g. placeExternal when server already MIDI-triggered). */
   silent = false,
 } = {}) {
@@ -299,6 +304,7 @@ export function playTone(freq, voiceId, dur = 0.32, when = 0, {
       pitch: pitchFromNoteName(noteName, freq),
       durationSec: dur,
       preview,
+      dispensa,
     });
     if (delayMs > 0) setTimeout(send, delayMs);
     else send();

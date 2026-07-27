@@ -90,5 +90,9 @@
   "_listen": {
     "port": "listen",
     "channel": 1
+  },
+  "_dispensa": {
+    "port": "dfesta",
+    "channel": 1
   }
 }

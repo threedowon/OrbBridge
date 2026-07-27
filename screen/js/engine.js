@@ -168,7 +168,8 @@ export function createEngine() {
     const balls = placedInCol(col);
 
     if (unisonMode) {
-      // 디페스타: 같은 음을 N목소리가 동시 재생 → coherent duck + bus limiter
+      // 디페스타: 테이블 위 오브 목소리로 정답 멜로디 합창
+      // MIDI → 전부 dfesta 포트 (목소리는 채널로 구분) / Web → 샘플 합창
       if (isPitchNote(entry) && dispensaVoices.length) {
         const targetRow = noteAt(entry);
         if (targetRow >= 0) {
@@ -180,6 +181,7 @@ export function createEngine() {
               polyphony: n,
               coherent: true,
               volume: 0.72,
+              dispensa: isMidiMode(),
             });
           }
         }
