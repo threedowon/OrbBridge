@@ -91,7 +91,8 @@ void csSendBytes(const uint8_t* buf, int len) {
   for (int t = 0; t < CS_MAX_TRIES; t++) {
     drainBus();
     if (millis() - lastBusRxMs >= BUS_IDLE_MS) {
-      unsigned long backoff = 1 + (unsigned long)random(0, 8) + SLAVE_ID;
+      // 백오프는 순수 랜덤(ID 편향 X → 공정). de-sync 는 보드별 randomSeed 로 이미 확보.
+      unsigned long backoff = 1 + (unsigned long)random(0, 12);
       unsigned long t0 = millis();
       while (millis() - t0 < backoff) drainBus();
       if (millis() - lastBusRxMs >= BUS_IDLE_MS) {
