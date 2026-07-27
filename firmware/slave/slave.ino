@@ -25,7 +25,9 @@
 // NeoPixel 링: DS2431 버스 1개당 12 LED 링 1개, GPIO 38 한 데이터선에 체인
 #define RING_PIN        38
 #define LEDS_PER_RING   12
-#define RING_BRIGHTNESS 32
+// 임시 stopgap: 밝기를 낮춰 전류 감소(브라운아웃 완화). 외부 5V 전원 달면 32로 올려도 됨.
+// 192 LED 를 ESP 5V 핀에서 끌면 ~2A 필요 → ESP 공급(~0.5A) 초과 → 보드 전압붕괴.
+#define RING_BRIGHTNESS 8
 
 #define DEBUG_USB    0   // 1: USB Serial Monitor에도 상태 출력
 
