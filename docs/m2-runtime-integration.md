@@ -26,6 +26,9 @@ HTTP ───┴─→ GameRuntime Queue → GameEngine
 - `start_auto_complete`가 없거나 `true`이면 STARTING을 즉시 완료한다.
 - 추후 시작 연출이 필요하면 `start_auto_complete: false`로 두고
   `POST /api/game/start-complete`를 호출한다.
+- 정답 완료는 `FINISHED / complete`를 화면에 알린 직후 Python이 자동으로
+  reset을 요청한다. 오브가 남아 있으므로 곧바로 `RESETTING`에 진입한다.
+- 수동 종료와 timeout은 `FINISHED`를 유지하며 운영자 reset을 기다린다.
 - `POST /api/game/reset` 후 오브가 남아 있으면 `RESETTING`이다.
 - 실제 또는 웹 table에서 모든 오브를 제거해야 `READY`로 복귀한다.
 - 웹 table은 RESETTING 동안 새 배치와 이동은 막고 제거만 허용한다.

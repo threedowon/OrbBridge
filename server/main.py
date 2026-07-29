@@ -265,8 +265,23 @@ def reload_stage_data() -> None:
 
 
 def _publish_transition(result: RuntimeResult) -> dict:
-    get_game_runtime().publish_phase_change(result)
-    return result.snapshot
+    runtime = get_game_runtime()
+    runtime.publish_phase_change(result)
+    snapshot = result.snapshot
+
+    # A solved game must immediately release the table for orb recovery.
+    # Keep FINISHED as an observable transition so screen success effects run,
+    # then let the Python source of truth enter RESETTING without a browser call.
+    if (
+        result.phase_changed
+        and result.phase == GamePhase.FINISHED.value
+        and snapshot.get("finish_reason") == FinishReason.COMPLETE.value
+    ):
+        reset_result = runtime.reset_game()
+        runtime.publish_phase_change(reset_result)
+        snapshot = reset_result.snapshot
+
+    return snapshot
 
 
 def start_game() -> dict:
@@ -442,12 +457,12 @@ def handle_event(event: dict) -> dict:
             _record_event({"type": "added", "slave": slave, "cell": cell,
                            "id": orb_id, "voice": "unknown", "note": note, "result": result})
             _osc_send("/orb/added", [slave, cell, "unknown", note, result, orb_id])
-            _publish_transition(runtime_result)
+            snapshot = _publish_transition(runtime_result)
             return {
                 "ok": True,
                 "changed": True,
                 "result": result,
-                "game": runtime_result.snapshot,
+                "game": snapshot,
             }
 
         voice = orb["voice"]
@@ -476,12 +491,12 @@ def handle_event(event: dict) -> dict:
                 midi_trigger(voice, cell_to_pitch(int(cell)), duration_ms=320)
             except Exception as exc:
                 print(f"[midi] trigger failed: {exc}")
-        _publish_transition(runtime_result)
+        snapshot = _publish_transition(runtime_result)
         return {
             "ok": True,
             "changed": True,
             "result": result,
-            "game": runtime_result.snapshot,
+            "game": snapshot,
         }
 
     voice = orb.get("voice", "unknown") if orb else "unknown"
@@ -502,11 +517,11 @@ def handle_event(event: dict) -> dict:
 
     print(f"[removed] slave={slave} cell={cell} Q={q_actual} note={note} voice={voice}")
     _osc_send("/orb/removed", [slave, cell, voice, note, orb_key or orb_id])
-    _publish_transition(runtime_result)
+    snapshot = _publish_transition(runtime_result)
     return {
         "ok": True,
         "changed": True,
-        "game": runtime_result.snapshot,
+        "game": snapshot,
     }
 
 # ── 자가복구 (heartbeat state mask 기반 reconcile) ────

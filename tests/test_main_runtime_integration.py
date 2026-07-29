@@ -103,8 +103,9 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
                 {"type": "added", "slave": slave, "cell": cell, "id": orb_id}
             )
 
-        assert completed["game"]["phase"] == "FINISHED"
+        assert completed["game"]["phase"] == "RESETTING"
         assert completed["game"]["finish_reason"] == "complete"
+        assert main.get_game_state()["phase"] == "RESETTING"
         assert len(midi_calls) == 8
 
         addresses = [address for address, _args in main.osc.messages]
@@ -114,10 +115,10 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
         game_end_index = max(
             i for i, value in enumerate(addresses) if value == "/game/end"
         )
-        assert final_added_index < game_end_index
-
-        resetting = main.reset_game()
-        assert resetting["game"]["phase"] == "RESETTING"
+        game_reset_index = max(
+            i for i, value in enumerate(addresses) if value == "/game/reset"
+        )
+        assert final_added_index < game_end_index < game_reset_index
 
         for orb_id, slave, cell, _voice in placements:
             removed = main.handle_event(
@@ -138,4 +139,29 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
         for name in ("main", "serial", "pythonosc", "pythonosc.udp_client", "midi_out"):
+            sys.modules.pop(name, None)
+
+
+def test_manual_finish_stays_finished_until_reset_is_requested():
+    FakeOscClient.instances.clear()
+    main = _load_main_module()
+
+    try:
+        main.start_game()
+
+        finished = main.end_game("manual")
+        assert finished["game"]["phase"] == "FINISHED"
+        assert finished["game"]["finish_reason"] == "manual"
+
+        addresses = [address for address, _args in main.osc.messages]
+        assert "/game/end" in addresses
+        assert "/game/reset" not in addresses
+
+        reset = main.reset_game()
+        assert reset["game"]["phase"] == "READY"
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
+        for name in ("main", "serial", "pythonosc", "pythonosc.udp_client"):
             sys.modules.pop(name, None)
