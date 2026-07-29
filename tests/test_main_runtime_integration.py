@@ -10,6 +10,8 @@ SERVER = ROOT / "server"
 
 
 class FakeOscClient:
+    """Record OSC output without opening UDP during integration tests."""
+
     instances = []
 
     def __init__(self, host, port):
@@ -20,6 +22,42 @@ class FakeOscClient:
 
     def send_message(self, address, args):
         self.messages.append((address, list(args)))
+
+
+class FakeScheduler:
+    """Expose the production Scheduler contract without starting worker threads."""
+
+    def __init__(self):
+        self.starts = []
+        self.cancel_count = 0
+        self.closed = False
+
+    def start(self, mode, melody, cells=None):
+        mode_value = getattr(mode, "value", str(mode))
+        call = {
+            "mode": mode_value,
+            "bpm": melody.bpm,
+            "cells": dict(cells or {}),
+        }
+        self.starts.append(call)
+        return {
+            "run_id": len(self.starts),
+            "mode": mode_value,
+            "step_count": len(melody.steps),
+        }
+
+    def snapshot(self):
+        return {
+            "active": bool(self.starts) and not self.closed,
+            "run_id": len(self.starts),
+            "mode": self.starts[-1]["mode"] if self.starts else None,
+        }
+
+    def cancel(self):
+        self.cancel_count += 1
+
+    def close(self, timeout=2.0):
+        self.closed = True
 
 
 def _load_main_module():
@@ -40,7 +78,9 @@ def _load_main_module():
 
     previous_cwd = Path.cwd()
     try:
-        return importlib.import_module("main")
+        module = importlib.import_module("main")
+        module._playback_scheduler = FakeScheduler()
+        return module
     finally:
         os.chdir(previous_cwd)
 
@@ -75,6 +115,7 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
     try:
         started = main.start_game()
         assert started["game"]["phase"] == "RUNNING"
+        assert main._playback_scheduler.starts[0]["mode"] == "listen"
 
         orb_id, slave, cell, voice = placements[0]
         placed = main.handle_event(
@@ -159,6 +200,75 @@ def test_manual_finish_stays_finished_until_reset_is_requested():
 
         reset = main.reset_game()
         assert reset["game"]["phase"] == "READY"
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
+        for name in ("main", "serial", "pythonosc", "pythonosc.udp_client"):
+            sys.modules.pop(name, None)
+
+
+
+def test_listen_play_and_dispensa_use_python_scheduler():
+    FakeOscClient.instances.clear()
+    main = _load_main_module()
+
+    try:
+        main.start_game()
+        play = main.request_play()
+        dispensa = main.request_dispensa()
+        listen = main.request_listen()
+
+        assert play["ok"] is True
+        assert dispensa["ok"] is True
+        assert listen["ok"] is True
+        assert [
+            call["mode"] for call in main._playback_scheduler.starts
+        ] == ["listen", "play", "dispensa", "listen"]
+
+        addresses = [address for address, _args in main.osc.messages]
+        assert "/game/listen" in addresses
+        assert "/game/play" in addresses
+        assert "/game/dispensa" in addresses
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
+        for name in ("main", "serial", "pythonosc", "pythonosc.udp_client"):
+            sys.modules.pop(name, None)
+
+
+def test_playback_requests_are_ignored_outside_active_game_phases():
+    FakeOscClient.instances.clear()
+    main = _load_main_module()
+
+    try:
+        assert main.get_game_state()["phase"] == "READY"
+
+        assert main.request_listen()["ignored"] is True
+        assert main.request_play()["ignored"] is True
+        assert main.request_dispensa()["ignored"] is True
+        assert main._playback_scheduler.starts == []
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
+        for name in ("main", "serial", "pythonosc", "pythonosc.udp_client"):
+            sys.modules.pop(name, None)
+
+
+def test_finish_phase_cancels_active_scheduler_without_blocking_runtime():
+    FakeOscClient.instances.clear()
+    main = _load_main_module()
+
+    try:
+        main.start_game()
+        before = main._playback_scheduler.cancel_count
+
+        finished = main.end_game("manual")
+
+        assert finished["game"]["phase"] == "FINISHED"
+        assert main._playback_scheduler.cancel_count == before + 1
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()

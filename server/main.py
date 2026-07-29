@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 import serial
 import threading
 import time
@@ -13,9 +14,10 @@ from game_engine import (
     PlacementResult,
 )
 from game_runtime import GameRuntime, RuntimeResult
+from scheduler import PlaybackMode, PlaybackScheduler, load_melody
 from mapping_store import find_orb, load_mapping
 
-from app_paths import data_dir, ensure_data_files
+from app_paths import data_dir, ensure_data_files, melodies_dir, repo_root
 
 ensure_data_files()
 SERVER_DIR = data_dir()
@@ -50,6 +52,11 @@ _serial_status = {"connected": False, "port": "", "error": ""}
 # ── M2 게임 런타임 (Serial/HTTP 입력의 단일 writer) ───
 _runtime_lock = threading.Lock()
 _game_runtime: GameRuntime | None = None
+
+# ── M3 재생 Scheduler (Listen·Play·Dispensa의 단일 clock) ──
+# GameRuntime은 게임 상태를, PlaybackScheduler는 박자와 MIDI 출력을 소유한다.
+_scheduler_lock = threading.Lock()
+_playback_scheduler: PlaybackScheduler | None = None
 
 # ── 슬레이브 생존 추적 (heartbeat 기반 online/offline) ──
 # slave.ino 가 3초(HEARTBEAT_MS)마다 heartbeat 를 보낸다. 이 시간(주기의 ~2.5배)
@@ -120,8 +127,102 @@ def _slave_list_locked(now: float) -> list:
 
 
 def audio_output_mode() -> str:
+    """Return the validated output backend selected in config.json."""
     mode = str(config.get("audio_output", "web")).lower().strip()
     return mode if mode in ("midi", "web") else "web"
+
+
+def _scheduler_send_notes(notes: list[dict]) -> list[dict]:
+    """Send one due Scheduler beat as a single locked MIDI burst.
+
+    Web mode receives the same notes through the playback beat OSC payload, so
+    Python intentionally does not open MIDI ports in that development fallback.
+    """
+    if audio_output_mode() != "midi" or not notes:
+        return []
+
+    from midi_out import trigger_many
+
+    results = trigger_many(notes)
+    failures = [result for result in results if not result.get("ok")]
+    if failures:
+        print(f"[scheduler] MIDI WARN: {failures}")
+    return results
+
+
+def _scheduler_publish_event(event: dict) -> None:
+    """Translate Scheduler callbacks to the OSC/bridge/WebSocket protocol."""
+    event_type = event["type"]
+    run_id = int(event["run_id"])
+    mode = str(event["mode"])
+
+    if event_type == "start":
+        _osc_send(
+            "/game/playback/start",
+            [run_id, mode, int(event["step_count"])],
+        )
+    elif event_type == "beat":
+        # OSC transports the optional web-audio note batch as compact JSON.
+        # MIDI mode ignores this field and uses Python's trigger_many directly.
+        encoded_notes = json.dumps(
+            event.get("notes") or [],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        _osc_send(
+            "/game/playback/beat",
+            [
+                run_id,
+                mode,
+                int(event["step"]),
+                int(event["duration_ms"]),
+                encoded_notes,
+            ],
+        )
+    elif event_type == "end":
+        _osc_send(
+            "/game/playback/end",
+            [run_id, mode, 1 if event.get("cancelled") else 0],
+        )
+
+
+def get_playback_scheduler() -> PlaybackScheduler:
+    """Create the process-wide Scheduler lazily for tests and CLI tools."""
+    global _playback_scheduler
+    with _scheduler_lock:
+        if _playback_scheduler is None:
+            _playback_scheduler = PlaybackScheduler(
+                send_notes=_scheduler_send_notes,
+                publish_event=_scheduler_publish_event,
+            )
+        return _playback_scheduler
+
+
+def _cancel_playback() -> None:
+    """Cancel without joining so GameRuntime phase callbacks never block."""
+    with _scheduler_lock:
+        scheduler = _playback_scheduler
+    if scheduler is not None:
+        scheduler.cancel()
+
+
+def _melody_path() -> Path:
+    """Resolve editable user data first, then the bundled screen fallback."""
+    filename = f"{melody_id}.json"
+    user_path = melodies_dir() / filename
+    if user_path.is_file():
+        return user_path
+    bundled_path = repo_root() / "screen" / "melodies" / filename
+    if bundled_path.is_file():
+        return bundled_path
+    raise FileNotFoundError(f"melody not found: {filename}")
+
+
+def _start_playback(mode: PlaybackMode) -> dict:
+    """Snapshot melody and cells before handing an immutable plan to M3."""
+    melody = load_melody(_melody_path())
+    cells = get_game_state().get("cells") or {}
+    return get_playback_scheduler().start(mode, melody, cells)
 
 
 def _osc_send(address: str, args) -> None:
@@ -154,7 +255,9 @@ def _phase_payload(snapshot: dict) -> list:
 
 
 def _on_phase_change(previous: str, current: str, snapshot: dict) -> None:
-    """Translate Python phase transitions to the existing OSC/WS protocol."""
+    """Translate Python phase transitions to OSC and stop invalid playback."""
+    if current not in (GamePhase.STARTING.value, GamePhase.RUNNING.value):
+        _cancel_playback()
     set_ready(current == GamePhase.RUNNING.value)
 
     if current == GamePhase.FINISHED.value:
@@ -200,6 +303,7 @@ def get_status() -> dict:
             "current_stage": current_stage,
             "melody": melody_id,
             "audio_output": audio_output_mode(),
+            "playback": get_playback_scheduler().snapshot(),
             "orb_count": len(orb_mapping),
             "serial": serial,
             "cell_count": game["cell_count"],
@@ -286,6 +390,7 @@ def _publish_transition(result: RuntimeResult) -> dict:
 
 def start_game() -> dict:
     runtime = get_game_runtime()
+    _cancel_playback()
     reload_stage_data()
 
     current = runtime.snapshot()
@@ -302,7 +407,7 @@ def start_game() -> dict:
 
     print(f"[game] 시작 — stage {current_stage}, melody={melody_id}")
     _osc_send("/game/start", [current_stage, 0])
-    _osc_send("/game/listen", [])
+    request_listen()
 
     if bool(config.get("start_auto_complete", True)):
         snapshot = complete_game_start()["game"]
@@ -346,28 +451,44 @@ def reset_game() -> dict:
     return {"ok": True, "game": snapshot}
 
 
-def request_listen() -> None:
-    phase = get_game_state()["phase"]
+def request_listen() -> dict:
+    """Start Python-owned target-melody preview from STARTING or RUNNING."""
+    snapshot = get_game_state()
+    phase = snapshot["phase"]
     if phase not in (GamePhase.STARTING.value, GamePhase.RUNNING.value):
         print(f"[game] 다시 듣기 무시 — {phase}")
-        return
+        return {"ok": False, "ignored": True, "game": snapshot}
+
     print("[game] 다시 듣기")
     _osc_send("/game/listen", [])
+    playback = _start_playback(PlaybackMode.LISTEN)
+    return {"ok": True, "playback": playback, "game": snapshot}
 
-def request_play() -> None:
-    if get_game_state()["phase"] != GamePhase.RUNNING.value:
+
+def request_play() -> dict:
+    """Play each placed orb at its current column and physical pitch."""
+    snapshot = get_game_state()
+    if snapshot["phase"] != GamePhase.RUNNING.value:
         print("[game] 재생 무시 — RUNNING 아님")
-        return
+        return {"ok": False, "ignored": True, "game": snapshot}
+
     print("[game] 재생")
     _osc_send("/game/play", [])
+    playback = _start_playback(PlaybackMode.PLAY)
+    return {"ok": True, "playback": playback, "game": snapshot}
 
 
-def request_dispensa() -> None:
-    if get_game_state()["phase"] != GamePhase.RUNNING.value:
+def request_dispensa() -> dict:
+    """Play the answer melody with every unique voice currently on the table."""
+    snapshot = get_game_state()
+    if snapshot["phase"] != GamePhase.RUNNING.value:
         print("[game] 디페스타 무시 — RUNNING 아님")
-        return
+        return {"ok": False, "ignored": True, "game": snapshot}
+
     print("[game] 디페스타")
     _osc_send("/game/dispensa", [])
+    playback = _start_playback(PlaybackMode.DISPENSA)
+    return {"ok": True, "playback": playback, "game": snapshot}
 
 def handle_serial_message(event: dict) -> None:
     """USB/serial 한 줄 JSON — orb 이벤트 또는 game 버튼."""
@@ -694,6 +815,10 @@ def run_main() -> None:
         print("종료")
     finally:
         runtime.close()
+        with _scheduler_lock:
+            scheduler = _playback_scheduler
+        if scheduler is not None:
+            scheduler.close()
 
 
 if __name__ == "__main__":

@@ -52,6 +52,6 @@ HTTP ───┴─→ GameRuntime Queue → GameEngine
 
 ## M2 제외 범위
 
-- Listen·Play·Dispensa Python Scheduler 이관: M3
+- Listen·Play·Dispensa Python Scheduler 이관: M3에서 완료
 - Python 직접 WebSocket broadcast와 OSC/bridge 제거: M4
 - melody 데이터 단일 원본 통합: M5

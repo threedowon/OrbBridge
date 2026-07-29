@@ -14,6 +14,7 @@ OrbBridge/
 │   ├── main.py            Serial/HTTP 어댑터, OSC·MIDI 출력 (+ bridge 내장)
 │   ├── game_engine.py     상태·판정·완료·timeout 순수 로직
 │   ├── game_runtime.py    입력 Queue·단일 writer·tick·snapshot
+│   ├── scheduler.py       Listen·Play·Dispensa 절대시각 Scheduler
 │   ├── bridge_service.py  OSC → WebSocket (main.py / exe에서 사용)
 │   ├── mock_server.py     HTTP API + table/screen/admin 정적 파일 서빙
 │   ├── launcher.py        PyInstaller 단일 exe 진입점
@@ -72,9 +73,10 @@ table [오브 배치]
                                    ├─ MIDI 단음
                                    └─ OSC /orb/added ──► bridge ──► screen
 
-table [다시듣기 / 재생]
-    └─ POST /api/game/listen|play ──► server
-                                          └─ OSC /game/listen|play ──► screen
+table [다시듣기 / 재생 / 디페스타]
+    └─ POST /api/game/listen|play|dispensa ──► server
+          └─ Python Scheduler ─┬─► MIDI note batch
+                               └─► OSC playback beat ──► screen 표시
 
 GameEngine [멜로디 완성 또는 timeout]
     └─ FINISHED ──► OSC /game/end ──► screen/table

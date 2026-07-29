@@ -1,5 +1,12 @@
-import { beatCount, setVoices } from './data.js';
-import { unlock, playSuccess, setAudioOwnerCheck, setAudioOutputMode } from './audio.js';
+import { NOTES, beatCount, setVoices } from './data.js';
+import {
+  isMidiMode,
+  playSuccess,
+  playTone,
+  setAudioOwnerCheck,
+  setAudioOutputMode,
+  unlock,
+} from './audio.js';
 import { initStaff } from './staff.js';
 import { createEngine } from './engine.js';
 import { initConfetti, burst } from './confetti.js';
@@ -17,9 +24,9 @@ let staffApi = null;
 let currentMelody = null;
 let ws = null;
 let gameRunning = false;
-let pendingBegin = false;
 let gamePhase = 'READY';
 let lastFinishRevision = -1;
+let playbackRunId = 0;
 
 const views = {
   start: document.getElementById('view-start'),
@@ -27,7 +34,7 @@ const views = {
 };
 
 function show(name) {
-  Object.values(views).forEach(v => v.classList.remove('active'));
+  Object.values(views).forEach(view => view.classList.remove('active'));
   views[name].classList.add('active');
 }
 
@@ -39,13 +46,13 @@ const connEl = document.getElementById('conn-dot');
 
 function setConn(on) {
   const label = on ? 'Connected' : 'Disconnected';
-  if (connEl) {
-    connEl.className = 'conn-dot' + (on ? ' on' : '');
-    connEl.title = label;
-    connEl.setAttribute('aria-label', label);
-  }
+  if (!connEl) return;
+  connEl.className = 'conn-dot' + (on ? ' on' : '');
+  connEl.title = label;
+  connEl.setAttribute('aria-label', label);
 }
 
+/** Only one open screen tab may produce browser fallback audio. */
 function ownsAudio() {
   try {
     return localStorage.getItem(AUDIO_OWNER_KEY) === tabId;
@@ -57,7 +64,7 @@ function ownsAudio() {
 function claimAudio(force = false) {
   try {
     const owner = localStorage.getItem(AUDIO_OWNER_KEY);
-    // force: 이 탭에서 '시작'을 누른 경우 — stale/다른 탭 소유권을 빼앗아 온다
+    // A direct start click is explicit ownership transfer from a stale tab.
     if (force || !owner || owner === tabId) {
       localStorage.setItem(AUDIO_OWNER_KEY, tabId);
       return true;
@@ -74,28 +81,31 @@ async function prepareMelody(melodyId) {
 
 async function fetchActiveMelodyId() {
   try {
-    const res = await fetch('/screen/melodies/config.json');
-    if (res.ok) {
-      const cfg = await res.json();
-      return cfg.active ?? 'biplane';
+    const response = await fetch('/screen/melodies/config.json');
+    if (response.ok) {
+      const config = await response.json();
+      return config.active ?? 'biplane';
     }
-  } catch { /* fallback */ }
+  } catch {
+    // Bundled default keeps the screen usable while the server starts.
+  }
   return 'biplane';
 }
 
 async function apiPost(path, body) {
-  const res = await fetch(path, {
+  const response = await fetch(path, {
     method: 'POST',
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
 }
 
+/** Prepare visual state only; Python now owns all playback scheduling. */
 function setupPlaySession() {
   gameRunning = false;
-  pendingBegin = false;
+  playbackRunId = 0;
   engine.load(currentMelody, 0, { autoStart: false });
   staffApi?.setHint(false);
 
@@ -113,27 +123,26 @@ async function startGame() {
   const result = await apiPost('/api/game/start');
   if (result.game) applyGameSnapshot(result.game, false);
   gameRunning = gamePhase === 'RUNNING';
-  pendingBegin = true;
 }
 
 async function loadVoiceCatalog() {
   try {
-    const res = await fetch('/api/voices');
-    if (!res.ok) return;
-    const data = await res.json();
+    const response = await fetch('/api/voices');
+    if (!response.ok) return;
+    const data = await response.json();
     if (data.voices?.length) setVoices(data.voices);
     if (data.voices) setVoiceLabels(data.voices);
     if (data.index) setVoiceIndex(data.index);
-  } catch (e) {
-    console.warn('voice catalog unavailable, using defaults', e);
+  } catch (error) {
+    console.warn('voice catalog unavailable, using defaults', error);
   }
 }
 
 async function loadAudioOutputMode() {
   try {
-    const res = await fetch('/api/status');
-    if (!res.ok) return;
-    const data = await res.json();
+    const response = await fetch('/api/status');
+    if (!response.ok) return;
+    const data = await response.json();
     setAudioOutputMode(data.audio_output === 'midi' ? 'midi' : 'web');
     console.info('[audio] output =', data.audio_output || 'web');
   } catch {
@@ -144,67 +153,51 @@ async function loadAudioOutputMode() {
 async function enterPlayView() {
   if (!currentMelody) return;
   unlock();
-  claimAudio(true);   // 시작 누른 이 탭이 오디오 소유권을 확실히 가져온다
+  claimAudio(true);
   await loadAudioOutputMode();
   await loadVoiceCatalog();
-  try { await apiPost('/api/game/reset'); } catch { /* server idle */ }
+  try {
+    await apiPost('/api/game/reset');
+  } catch {
+    // A server that is still starting will be retried by the start request.
+  }
   setupPlaySession();
   show('play');
   try {
     await startGame();
-  } catch (e) {
-    console.error('시작 실패:', e.message);
+  } catch (error) {
+    console.error('시작 실패:', error.message);
     show('start');
   }
 }
 
-function playListen() {
-  if (!claimAudio()) return;
-  unlock();
-  engine.listen();
-}
-
-function playBeatLoop() {
-  if (!gameRunning || !currentMelody) return;
-  if (!ownsAudio()) return;
-  unlock();
-  engine.playLoop();
-}
-
-function playDispensa() {
-  if (!gameRunning || !currentMelody) return;
-  if (!ownsAudio()) return;
-  unlock();
-  engine.playDispensa();
-}
-
 async function handleOrbAdded(slave, cell, voice, orbId) {
   if (!currentMelody || !gameRunning || !ownsAudio()) return;
-  const voiceIdx = voiceToIndex(voice);
-  if (voiceIdx < 0) {
+  const voiceIndex = voiceToIndex(voice);
+  if (voiceIndex < 0) {
     showOrbPlaced(voice || 'unknown');
     return;
   }
   try {
     const { col, row } = tableToStaff(slave, cell, currentMelody.scale);
     if (col >= getBeats()) return;
-    engine.placeExternal(col, row, voiceIdx, orbId ?? null);
+    engine.placeExternal(col, row, voiceIndex, orbId ?? null);
     await loadVoiceCatalog();
     engine.redraw();
     showOrbPlaced(voice);
-  } catch (err) {
-    console.warn('orb map failed', err);
+  } catch (error) {
+    console.warn('orb map failed', error);
   }
 }
 
 function handleOrbRemoved(slave, cell, orbId) {
-  if (!currentMelody || !gameRunning || !ownsAudio()) return;
+  if (!currentMelody || !ownsAudio()) return;
   try {
     const { col, row } = tableToStaff(slave, cell, currentMelody.scale);
     if (col >= getBeats()) return;
     engine.removeExternal(col, row, orbId ?? null);
-  } catch (err) {
-    console.warn('orb remove map failed', err);
+  } catch (error) {
+    console.warn('orb remove map failed', error);
   }
 }
 
@@ -224,7 +217,6 @@ function applyGameState(phase, reason = null, revision = null, announce = true) 
   gameRunning = gamePhase === 'RUNNING';
 
   if (!gameRunning && wasRunning) engine.stop();
-  if (gamePhase !== 'STARTING') pendingBegin = false;
 
   if (
     announce
@@ -241,17 +233,71 @@ function applyGameState(phase, reason = null, revision = null, announce = true) 
 
 async function syncGameState() {
   try {
-    const res = await fetch('/api/game/state');
-    if (!res.ok) return;
-    applyGameSnapshot(await res.json(), false);
-  } catch { /* server may still be starting */ }
+    const response = await fetch('/api/game/state');
+    if (!response.ok) return;
+    applyGameSnapshot(await response.json(), false);
+  } catch {
+    // WebSocket reconnect will retry after the server becomes available.
+  }
 }
 
-function handleWsMessage(msg) {
-  const { address, args } = msg;
+/** Ignore delayed UDP/WS events that belong to an older Python playback run. */
+function beginPlayback(runId, mode) {
+  const parsedRunId = Number(runId) || 0;
+  if (parsedRunId < playbackRunId) return;
+  playbackRunId = parsedRunId;
+  engine.beginPlayback(mode);
+}
+
+/**
+ * Web mode remains a development fallback. Timing still comes from Python:
+ * this function plays notes immediately when their server beat arrives.
+ */
+function playWebBeat(mode, durationMs, encodedNotes) {
+  if (isMidiMode() || !ownsAudio()) return;
+  let notes;
+  try {
+    notes = JSON.parse(encodedNotes || '[]');
+  } catch {
+    return;
+  }
+  if (!Array.isArray(notes) || !notes.length) return;
+
+  const coherent = mode === 'dispensa';
+  for (const item of notes) {
+    const pitch = Math.max(0, Math.min(7, Number(item.pitch) || 0));
+    const note = NOTES[pitch];
+    const voiceIndex = mode === 'listen' ? 0 : voiceToIndex(item.voice);
+    if (!note || voiceIndex < 0) continue;
+    playTone(note.freq, voiceIndex, Math.max(0.04, durationMs / 1000), 0, {
+      preview: mode === 'listen',
+      noteName: note.name,
+      polyphony: notes.length,
+      coherent,
+      volume: coherent ? 0.72 : 0.88,
+    });
+  }
+}
+
+function showPlaybackBeat(runId, mode, step, durationMs, encodedNotes) {
+  const parsedRunId = Number(runId) || 0;
+  if (parsedRunId < playbackRunId) return;
+  if (parsedRunId > playbackRunId) beginPlayback(parsedRunId, mode);
+  engine.showPlaybackBeat(mode, Number(step));
+  playWebBeat(mode, Number(durationMs) || 40, encodedNotes);
+}
+
+function endPlayback(runId, mode) {
+  if ((Number(runId) || 0) !== playbackRunId) return;
+  engine.endPlayback(mode);
+}
+
+function handleWsMessage(message) {
+  const { address, args } = message;
   switch (address) {
     case '/orb/added':
-      handleOrbAdded(args[0], args[1], args[2], args[5]).catch(err => console.warn(err));
+      handleOrbAdded(args[0], args[1], args[2], args[5])
+        .catch(error => console.warn(error));
       break;
     case '/orb/removed':
       handleOrbRemoved(args[0], args[1], args[4]);
@@ -268,14 +314,20 @@ function handleWsMessage(msg) {
     case '/game/state':
       applyGameState(args[0], args[1] || null, args[2] ?? null);
       break;
+    case '/game/playback/start':
+      beginPlayback(args[0], args[1]);
+      break;
+    case '/game/playback/beat':
+      showPlaybackBeat(args[0], args[1], args[2], args[3], args[4]);
+      break;
+    case '/game/playback/end':
+      endPlayback(args[0], args[1]);
+      break;
+    // Legacy command messages remain visible to OSC consumers, but the screen
+    // intentionally does not start its own timers for them after M3.
     case '/game/listen':
-      playListen();
-      break;
     case '/game/play':
-      playBeatLoop();
-      break;
     case '/game/dispensa':
-      playDispensa();
       break;
   }
 }
@@ -286,23 +338,19 @@ function connectWs() {
     setConn(true);
     void syncGameState();
   };
-  ws.onclose = () => { setConn(false); setTimeout(connectWs, 2000); };
+  ws.onclose = () => {
+    setConn(false);
+    setTimeout(connectWs, 2000);
+  };
   ws.onerror = () => setConn(false);
-  ws.onmessage = (e) => {
-    try { handleWsMessage(JSON.parse(e.data)); } catch { /* ignore */ }
+  ws.onmessage = event => {
+    try {
+      handleWsMessage(JSON.parse(event.data));
+    } catch {
+      // Ignore malformed bridge messages; the next state snapshot self-heals.
+    }
   };
 }
-
-engine.on('previewEnd', () => {
-  if (pendingBegin) pendingBegin = false;
-});
-
-engine.on('complete', async () => {
-  gameRunning = false;
-  try { await apiPost('/api/game/end', { reason: 'complete' }); } catch (e) { console.error(e); }
-  burst();
-  playSuccess();
-});
 
 document.getElementById('btn-enter').addEventListener('click', () => enterPlayView());
 
@@ -311,15 +359,18 @@ document.body.addEventListener('click', () => {
   claimAudio();
 }, { once: true });
 
-window.addEventListener('storage', (e) => {
-  if (e.key === AUDIO_OWNER_KEY && e.newValue !== tabId) {
+window.addEventListener('storage', event => {
+  if (event.key === AUDIO_OWNER_KEY && event.newValue !== tabId) {
     engine.stop();
   }
 });
 
 window.addEventListener('beforeunload', () => {
-  if (ownsAudio()) {
-    try { localStorage.removeItem(AUDIO_OWNER_KEY); } catch { /* ignore */ }
+  if (!ownsAudio()) return;
+  try {
+    localStorage.removeItem(AUDIO_OWNER_KEY);
+  } catch {
+    // Storage can be unavailable in private browsing mode.
   }
 });
 
@@ -328,29 +379,31 @@ window.addEventListener('pagehide', () => {
     const body = JSON.stringify({ reason: 'screen_reload' });
     const blob = new Blob([body], { type: 'application/json' });
     if (navigator.sendBeacon) navigator.sendBeacon('/api/game/end', blob);
-  } catch { /* ignore */ }
+  } catch {
+    // Page shutdown must never block navigation.
+  }
 });
 
 setAudioOwnerCheck(() => ownsAudio());
 claimAudio();
-
 initConfetti();
 connectWs();
 
 (async () => {
   try {
     await apiPost('/api/game/reset');
-  } catch { /* server idle */ }
+  } catch {
+    // Initial state sync below will recover when the server is ready.
+  }
   gameRunning = false;
-  pendingBegin = false;
 
   await loadVoiceCatalog();
   await loadAudioOutputMode();
   try {
-    const id = await fetchActiveMelodyId();
-    await prepareMelody(id);
-  } catch (err) {
-    console.error(err);
+    const melodyId = await fetchActiveMelodyId();
+    await prepareMelody(melodyId);
+  } catch (error) {
+    console.error(error);
     document.getElementById('btn-enter').disabled = true;
   }
   show('start');

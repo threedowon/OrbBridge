@@ -23,6 +23,12 @@ ALLOWED_ADDRESSES = (
     "/game/listen",
     "/game/play",
     "/game/dispensa",
+    "/game/playback/start",
+    "/game/playback/beat",
+    "/game/playback/end",
+    "/game/reset",
+    "/game/reset_complete",
+    "/game/state",
     "/orb/added",
     "/orb/removed",
 )
