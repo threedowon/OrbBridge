@@ -434,6 +434,9 @@
     let phase = 'READY';
     let ready = false;
     let resetting = false;
+    let phaseSynced = false;
+    let phaseSyncInFlight = false;
+    let lastGameRevision = null;
     let ws = null;
     let dragPayload = null;
     let dropTarget = null;
@@ -697,17 +700,36 @@
     }
 
     async function syncPhaseFromServer() {
+      if (phaseSyncInFlight) return;
+      phaseSyncInFlight = true;
       try {
-        const status = await fetch(`${API}/api/status`).then(r => r.json());
-        await setPhase(status.game?.phase || (status.game_active ? 'RUNNING' : 'READY'));
-      } catch {
-        await setPhase('READY');
+        const res = await fetch(`${API}/api/game/state`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const snapshot = await res.json();
+        const nextPhase = String(snapshot.phase || 'READY').toUpperCase();
+        const revision = Number.isFinite(Number(snapshot.revision))
+          ? Number(snapshot.revision)
+          : null;
+        const revisionChanged = revision !== null && revision !== lastGameRevision;
+
+        if (!phaseSynced || nextPhase !== phase) {
+          await setPhase(nextPhase);
+        } else if (revisionChanged && (ready || resetting)) {
+          await syncPlacedFromCells();
+        }
+
+        if (revision !== null) lastGameRevision = revision;
+      } catch (e) {
+        console.warn('game state sync failed', e);
+      } finally {
+        phaseSyncInFlight = false;
       }
     }
 
     async function setPhase(nextPhase) {
       const previous = phase;
       phase = String(nextPhase || 'READY').toUpperCase();
+      phaseSynced = true;
       ready = phase === 'RUNNING';
       resetting = phase === 'RESETTING';
 
@@ -1258,6 +1280,9 @@
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') void syncPhaseFromServer();
     });
+    setInterval(() => {
+      if (document.visibilityState === 'visible') void syncPhaseFromServer();
+    }, 500);
     void syncPhaseFromServer();
     connectWs();
     loadOrbs().catch(() => setWsStatus(false));
