@@ -27,6 +27,9 @@ ALLOWED_ADDRESSES = (
     "/game/dispensa",
     "/orb/added",
     "/orb/removed",
+    "/game/reset",
+    "/game/reset_complete",
+    "/game/state",
 )
 
 clients: set = set()
