@@ -429,6 +429,7 @@
         <div class="toolbar">
           <button class="primary" id="btn-start">시작</button>
           <button id="btn-end">종료</button>
+          <button id="btn-reset">리셋</button>
           <button id="btn-clear">그리드 초기화</button>
         </div>
       </div>
@@ -642,10 +643,10 @@
           ? 'Table (web)'
           : (serialOk ? `Serial ${s.serial.port}` : `Serial ${s.serial?.error || '끊김'}`);
 
-        setDot('dot-game', s.game_active ? 'ok' : '');
-        document.getElementById('lbl-game').textContent = s.game_active
-          ? `Game ON (stage ${s.current_stage})`
-          : 'Game OFF';
+        const gamePhase = s.game?.phase || (s.game_active ? 'RUNNING' : 'READY');
+        setDot('dot-game', gamePhase === 'RUNNING' ? 'ok' : (gamePhase === 'RESETTING' ? 'warn' : ''));
+        document.getElementById('lbl-game').textContent =
+          `${gamePhase} (stage ${s.current_stage})`;
 
         document.getElementById('stat-stage').textContent = s.current_stage;
         document.getElementById('stat-mode').textContent = s.input_mode;
@@ -706,6 +707,9 @@
       } else if (address === '/game/end') {
         addLog('game', `종료 ${args[0] || ''}`, 'log-info');
         fetchStatus();
+      } else if (address === '/game/state') {
+        addLog('state', `${args[0]} ${args[1] || ''}`.trim(), 'log-info');
+        fetchStatus();
       }
     }
 
@@ -740,6 +744,7 @@
 
     document.getElementById('btn-start').addEventListener('click', () => postGame('/api/game/start'));
     document.getElementById('btn-end').addEventListener('click', () => postGame('/api/game/end', { reason: 'admin' }));
+    document.getElementById('btn-reset').addEventListener('click', () => postGame('/api/game/reset'));
     document.getElementById('btn-clear').addEventListener('click', () => {
       cells.clear();
       gridEl.querySelectorAll('.cell').forEach(el => {

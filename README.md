@@ -11,7 +11,9 @@ OrbBridge/
 │   └── bridge.py          OSC(UDP) → WebSocket 중계 (독립 실행용)
 │
 ├── server/                Python 서버 + 설정·데이터
-│   ├── main.py            게임 로직, 시리얼/mock 입력, OSC 송신 (+ bridge 내장)
+│   ├── main.py            Serial/HTTP 어댑터, OSC·MIDI 출력 (+ bridge 내장)
+│   ├── game_engine.py     상태·판정·완료·timeout 순수 로직
+│   ├── game_runtime.py    입력 Queue·단일 writer·tick·snapshot
 │   ├── bridge_service.py  OSC → WebSocket (main.py / exe에서 사용)
 │   ├── mock_server.py     HTTP API + table/screen/admin 정적 파일 서빙
 │   ├── launcher.py        PyInstaller 단일 exe 진입점
@@ -44,10 +46,10 @@ OrbBridge/
 
 | 구성요소 | 경로 | 역할 |
 |---------|------|------|
-| **table** | `table/` | 오브 올리기/내리기 (READY일 때만 동작) |
+| **table** | `table/` | RUNNING 중 배치·제거, RESETTING 중 제거 |
 | **screen** | `screen/` | 멜로디 게임 — **start**로 게임 시작 |
 | **admin** | `admin/` | 셀 상태·이벤트 로그·시리얼 상태 모니터 |
-| **server** | `server/` | orb 이벤트 처리, OSC 출력, HTTP API |
+| **server** | `server/` | 게임 상태의 기준, orb 이벤트 처리, OSC·MIDI 출력, HTTP API |
 | **bridge** | `bridge/` | OSC → WebSocket 중계 (**웹 UI 전용 어댑터**) |
 
 ### bridge가 왜 따로 있나?
@@ -66,15 +68,20 @@ screen [start]
 
 table [오브 배치]
     └─ POST /api/event ──► server
-                              └─ OSC /orb/added ──► bridge ──► screen (악보 반영)
+                              └─ GameRuntime Queue → GameEngine
+                                   ├─ MIDI 단음
+                                   └─ OSC /orb/added ──► bridge ──► screen
 
 table [다시듣기 / 재생]
     └─ POST /api/game/listen|play ──► server
                                           └─ OSC /game/listen|play ──► screen
 
-screen [멜로디 완성]
-    └─ POST /api/game/end ──► server
-                                  └─ OSC /game/ready [0] ──► table (대기)
+GameEngine [멜로디 완성 또는 timeout]
+    └─ FINISHED ──► OSC /game/end ──► screen/table
+
+screen/table [reset]
+    └─ POST /api/game/reset ──► RESETTING
+                                  └─ 오브를 모두 제거하면 READY
 ```
 
 웹 UI는 **양방향**입니다.
@@ -154,10 +161,10 @@ Mac 개발( Python 있음 ): 프로젝트 루트 `start.command` 더블클릭.
 
 ### 플레이 순서
 
-1. `/screen`에서 **start** 클릭 → table에 `READY` 표시
+1. `/screen`에서 **start** 클릭 → Python 상태가 `RUNNING`으로 전환
 2. `/table`에서 오브를 드래그해 그리드에 배치
-3. `/screen` 악보에 오브 반영, 정답 판정·재생
-4. 멜로디 완성 → table이 다시 대기 상태로 복귀
+3. Python `GameEngine`이 정답·완료·timeout 판정, `/screen`은 악보와 재생 표시
+4. 멜로디 완성 → reset 후 오브를 모두 제거하면 `READY` 복귀
 
 ### 포트 충돌 (`Port already in use: OSC UDP 9000, WebSocket 8765`)
 
@@ -301,6 +308,9 @@ cd server && python melody_editor_tool.py
 | `/game/start` | 게임 시작 |
 | `/game/ready` | `1` = 테이블 READY, `0` = 대기 |
 | `/game/end` | 게임 종료 |
+| `/game/reset` | 오브 제거 대기 시작 |
+| `/game/reset_complete` | 모든 오브 제거 완료 |
+| `/game/state` | phase·종료 이유·revision·남은 시간 |
 | `/game/listen` | 목표 멜로디 다시 듣기 |
 | `/game/play` | 배치된 orb 소리 재생 |
 | `/orb/added` | 오브 올림 |
@@ -313,7 +323,10 @@ cd server && python melody_editor_tool.py
 |--------|------|------|
 | POST | `/api/event` | table → 오브 added/removed |
 | POST | `/api/game/start` | screen → 게임 시작 |
+| POST | `/api/game/start-complete` | 수동 STARTING → RUNNING |
 | POST | `/api/game/end` | 게임 종료 |
+| POST | `/api/game/reset` | 리셋·오브 제거 대기 |
 | POST | `/api/game/listen` | 다시 듣기 |
 | POST | `/api/game/play` | 재생 |
+| GET | `/api/game/state` | Python 게임 snapshot |
 | GET | `/api/orbs` | 등록된 오브 목록 |

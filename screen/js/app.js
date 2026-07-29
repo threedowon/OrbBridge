@@ -18,6 +18,8 @@ let currentMelody = null;
 let ws = null;
 let gameRunning = false;
 let pendingBegin = false;
+let gamePhase = 'READY';
+let lastFinishRevision = -1;
 
 const views = {
   start: document.getElementById('view-start'),
@@ -108,8 +110,9 @@ function setupPlaySession() {
 async function startGame() {
   if (gameRunning) return;
   unlock();
-  await apiPost('/api/game/start');
-  gameRunning = true;
+  const result = await apiPost('/api/game/start');
+  if (result.game) applyGameSnapshot(result.game, false);
+  gameRunning = gamePhase === 'RUNNING';
   pendingBegin = true;
 }
 
@@ -144,7 +147,7 @@ async function enterPlayView() {
   claimAudio(true);   // 시작 누른 이 탭이 오디오 소유권을 확실히 가져온다
   await loadAudioOutputMode();
   await loadVoiceCatalog();
-  try { await apiPost('/api/game/end', { reason: 'load' }); } catch { /* server idle */ }
+  try { await apiPost('/api/game/reset'); } catch { /* server idle */ }
   setupPlaySession();
   show('play');
   try {
@@ -205,6 +208,45 @@ function handleOrbRemoved(slave, cell, orbId) {
   }
 }
 
+function applyGameSnapshot(snapshot, announce = true) {
+  if (!snapshot) return;
+  applyGameState(
+    snapshot.phase,
+    snapshot.finish_reason,
+    snapshot.revision,
+    announce,
+  );
+}
+
+function applyGameState(phase, reason = null, revision = null, announce = true) {
+  const wasRunning = gameRunning;
+  gamePhase = phase || gamePhase;
+  gameRunning = gamePhase === 'RUNNING';
+
+  if (!gameRunning && wasRunning) engine.stop();
+  if (gamePhase !== 'STARTING') pendingBegin = false;
+
+  if (
+    announce
+    && gamePhase === 'FINISHED'
+    && reason === 'complete'
+    && revision !== lastFinishRevision
+    && wasRunning
+  ) {
+    lastFinishRevision = revision;
+    burst();
+    playSuccess();
+  }
+}
+
+async function syncGameState() {
+  try {
+    const res = await fetch('/api/game/state');
+    if (!res.ok) return;
+    applyGameSnapshot(await res.json(), false);
+  } catch { /* server may still be starting */ }
+}
+
 function handleWsMessage(msg) {
   const { address, args } = msg;
   switch (address) {
@@ -215,10 +257,16 @@ function handleWsMessage(msg) {
       handleOrbRemoved(args[0], args[1], args[4]);
       break;
     case '/game/end':
-      if (gameRunning) {
-        gameRunning = false;
-        engine.stop();
-      }
+      applyGameState('FINISHED', args[0] || 'manual');
+      break;
+    case '/game/reset':
+      applyGameState('RESETTING');
+      break;
+    case '/game/reset_complete':
+      applyGameState('READY');
+      break;
+    case '/game/state':
+      applyGameState(args[0], args[1] || null, args[2] ?? null);
       break;
     case '/game/listen':
       playListen();
@@ -234,7 +282,10 @@ function handleWsMessage(msg) {
 
 function connectWs() {
   ws = new WebSocket(WS_URL);
-  ws.onopen = () => setConn(true);
+  ws.onopen = () => {
+    setConn(true);
+    void syncGameState();
+  };
   ws.onclose = () => { setConn(false); setTimeout(connectWs, 2000); };
   ws.onerror = () => setConn(false);
   ws.onmessage = (e) => {
@@ -288,7 +339,7 @@ connectWs();
 
 (async () => {
   try {
-    await apiPost('/api/game/end', { reason: 'screen_reload' });
+    await apiPost('/api/game/reset');
   } catch { /* server idle */ }
   gameRunning = false;
   pendingBegin = false;

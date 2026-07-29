@@ -3,9 +3,16 @@ import os
 import serial
 import threading
 import time
-from pathlib import Path
 from pythonosc import udp_client
 
+from game_engine import (
+    FinishReason,
+    GameEngine,
+    GamePhase,
+    InvalidTransition,
+    PlacementResult,
+)
+from game_runtime import GameRuntime, RuntimeResult
 from mapping_store import find_orb, load_mapping
 
 from app_paths import data_dir, ensure_data_files
@@ -23,24 +30,26 @@ current_stage   = config["current_stage"]
 stage           = next(s for s in stage_data["stages"] if s["stage"] == current_stage)
 answer_sequence = stage["sequence"]
 time_limit      = stage["time_limit"]
+idle_time_limit = stage.get("idle_time_limit")
 melody_id       = config.get("melody", "biplane")
 _raw_input_mode = config.get("input_mode", "table")
 # legacy: "mock" → "table" (웹 /table UI 입력)
 input_mode      = "table" if _raw_input_mode == "mock" else _raw_input_mode
 
 osc = udp_client.SimpleUDPClient(config["osc"]["host"], config["osc"]["port"])
-
-game_active  = False
-timer_thread = None
+_osc_lock = threading.Lock()
 
 NOTE_MAP = {1: "C", 2: "D", 3: "E", 4: "F", 5: "G", 6: "A", 7: "B", 8: "C"}
 
 # ── Admin 상태 (셀 점유, 이벤트 로그, 시리얼) ────────
 _state_lock = threading.Lock()
-_cells: dict[str, dict] = {}
 _event_log: list[dict] = []
 EVENT_LOG_LIMIT = 100
 _serial_status = {"connected": False, "port": "", "error": ""}
+
+# ── M2 게임 런타임 (Serial/HTTP 입력의 단일 writer) ───
+_runtime_lock = threading.Lock()
+_game_runtime: GameRuntime | None = None
 
 # ── 슬레이브 생존 추적 (heartbeat 기반 online/offline) ──
 # slave.ino 가 3초(HEARTBEAT_MS)마다 heartbeat 를 보낸다. 이 시간(주기의 ~2.5배)
@@ -115,33 +124,104 @@ def audio_output_mode() -> str:
     return mode if mode in ("midi", "web") else "web"
 
 
+def _osc_send(address: str, args) -> None:
+    """Serialize UDP writes made by HTTP, serial, and runtime threads."""
+    with _osc_lock:
+        osc.send_message(address, args)
+
+
+def _new_game_engine() -> GameEngine:
+    return GameEngine(
+        answer_sequence,
+        total_timeout_s=time_limit,
+        idle_timeout_s=idle_time_limit,
+    )
+
+
+def _phase_payload(snapshot: dict) -> list:
+    timers = snapshot.get("timers") or {}
+    return [
+        snapshot["phase"],
+        snapshot.get("finish_reason") or "",
+        snapshot.get("revision", 0),
+        timers.get("remaining_total_s")
+        if timers.get("remaining_total_s") is not None
+        else -1,
+        timers.get("remaining_idle_s")
+        if timers.get("remaining_idle_s") is not None
+        else -1,
+    ]
+
+
+def _on_phase_change(previous: str, current: str, snapshot: dict) -> None:
+    """Translate Python phase transitions to the existing OSC/WS protocol."""
+    set_ready(current == GamePhase.RUNNING.value)
+
+    if current == GamePhase.FINISHED.value:
+        _osc_send("/game/end", [snapshot.get("finish_reason") or "manual"])
+    elif current == GamePhase.RESETTING.value:
+        _osc_send("/game/reset", [])
+    elif (
+        current == GamePhase.READY.value
+        and previous == GamePhase.RESETTING.value
+    ):
+        _osc_send("/game/reset_complete", [])
+
+    _osc_send("/game/state", _phase_payload(snapshot))
+
+
+def get_game_runtime() -> GameRuntime:
+    global _game_runtime
+    with _runtime_lock:
+        if _game_runtime is None:
+            _game_runtime = GameRuntime(
+                _new_game_engine(),
+                tick_interval_s=0.05,
+                on_phase_change=_on_phase_change,
+            )
+            _game_runtime.start()
+        return _game_runtime
+
+
+def get_game_state() -> dict:
+    return get_game_runtime().snapshot()
+
+
 def get_status() -> dict:
+    game = get_game_state()
     now = time.time() * 1000
     with _state_lock:
         serial = dict(_serial_status)
         slaves = _slave_list_locked(now)
         return {
             "input_mode": input_mode,
-            "game_active": game_active,
+            "game_active": game["phase"] == GamePhase.RUNNING.value,
+            "game": game,
             "current_stage": current_stage,
             "melody": melody_id,
             "audio_output": audio_output_mode(),
             "orb_count": len(orb_mapping),
             "serial": serial,
-            "cell_count": len(_cells),
+            "cell_count": game["cell_count"],
             "slaves": slaves,
             "slave_online_timeout_s": SLAVE_ONLINE_TIMEOUT_S,
         }
 
 
-def clear_cells() -> None:
-    with _state_lock:
-        _cells.clear()
-
-
 def get_cells() -> dict:
-    with _state_lock:
-        return dict(_cells)
+    cells = {}
+    for key, data in get_game_state()["cells"].items():
+        orb_id = data["orb_id"]
+        synthetic = orb_id.startswith("__recovered__:")
+        cells[key] = {
+            "id": "" if synthetic else orb_id,
+            "voice": data["voice"] or ("미상" if synthetic else "unknown"),
+            "note": data["note"],
+            "result": data["result"],
+        }
+        if synthetic:
+            cells[key]["synthetic"] = True
+    return cells
 
 
 def get_events() -> list:
@@ -159,74 +239,120 @@ def parse_cell(cell: int):
     note = NOTE_MAP.get(row, "invalid")
     return q, note
 
-# ── 정답 판별 ──────────────────────────────────────────
-def judge(slave: int, cell: int) -> str:
-    q, note   = parse_cell(cell)
-    q_actual  = q + (slave - 1) * 2
-    answer    = answer_sequence.get(str(q_actual))
-    if answer is None:
-        return "invalid"
-    return "correct" if note == answer else "wrong"
-
 # ── ready / game lifecycle ─────────────────────────────
 def set_ready(ready: bool) -> None:
-    osc.send_message("/game/ready", [1 if ready else 0])
+    _osc_send("/game/ready", [1 if ready else 0])
     print(f"[ready] {ready}")
+
 
 def reload_stage_data() -> None:
     """Pick up Melody Editor saves (stage_data.json, config melody) without restarting."""
-    global stage_data, stage, answer_sequence, time_limit, melody_id, config
+    global stage_data, stage, answer_sequence, time_limit, idle_time_limit
+    global melody_id, config, current_stage, input_mode
     with open(SERVER_DIR / "config.json", encoding="utf-8") as f:
         config = json.load(f)
+    current_stage = config["current_stage"]
     melody_id = config.get("melody", "biplane")
+    raw_mode = config.get("input_mode", "table")
+    input_mode = "table" if raw_mode == "mock" else raw_mode
     with open(SERVER_DIR / "stage_data.json", encoding="utf-8") as f:
         stage_data = json.load(f)
     stage = next(s for s in stage_data["stages"] if s["stage"] == current_stage)
     answer_sequence = stage["sequence"]
     time_limit = stage["time_limit"]
+    idle_time_limit = stage.get("idle_time_limit")
     print(f"[stage] 재로드 — melody={melody_id}, 정답 시퀀스: {answer_sequence}")
 
 
-def start_game() -> bool:
-    global game_active, timer_thread
-    if game_active:
-        print("[game] 이전 게임 정리 후 재시작")
-        end_game("restart")
-    reload_stage_data()
-    clear_cells()
-    game_active = True
-    print(f"[game] 시작 — stage {current_stage}, melody={melody_id}")
-    set_ready(True)
-    osc.send_message("/game/start", [current_stage, 0])
-    osc.send_message("/game/listen", [])
-    return True
+def _publish_transition(result: RuntimeResult) -> dict:
+    get_game_runtime().publish_phase_change(result)
+    return result.snapshot
 
-def end_game(reason: str = "complete") -> None:
-    global game_active
-    game_active = False
-    clear_cells()
-    set_ready(False)
-    print(f"[game] 종료 — {reason}")
-    osc.send_message("/game/end", [reason])
+
+def start_game() -> dict:
+    runtime = get_game_runtime()
+    reload_stage_data()
+
+    current = runtime.snapshot()
+    if current["phase"] != GamePhase.READY.value:
+        raise InvalidTransition(
+            f"START is invalid from {current['phase']}; RESET must finish first"
+        )
+    if current["cell_count"]:
+        raise InvalidTransition("START requires an empty table")
+
+    runtime.replace_engine(_new_game_engine())
+    started = runtime.start_game()
+    _publish_transition(started)
+
+    print(f"[game] 시작 — stage {current_stage}, melody={melody_id}")
+    _osc_send("/game/start", [current_stage, 0])
+    _osc_send("/game/listen", [])
+
+    if bool(config.get("start_auto_complete", True)):
+        snapshot = complete_game_start()["game"]
+    else:
+        snapshot = started.snapshot
+    return {"ok": True, "game": snapshot}
+
+
+def complete_game_start() -> dict:
+    result = get_game_runtime().complete_start()
+    snapshot = _publish_transition(result)
+    print("[game] STARTING → RUNNING")
+    return {"ok": True, "game": snapshot}
+
+
+def end_game(reason: str = "complete") -> dict:
+    runtime = get_game_runtime()
+    snapshot = runtime.snapshot()
+    phase = snapshot["phase"]
+
+    if phase == GamePhase.RUNNING.value:
+        finish_reason = (
+            FinishReason.COMPLETE
+            if str(reason).lower() == FinishReason.COMPLETE.value
+            else FinishReason.MANUAL
+        )
+        result = runtime.finish_game(finish_reason)
+        snapshot = _publish_transition(result)
+    elif phase == GamePhase.STARTING.value:
+        result = runtime.reset_game()
+        snapshot = _publish_transition(result)
+
+    print(f"[game] 종료 요청 — {reason} ({snapshot['phase']})")
+    return {"ok": True, "game": snapshot}
+
+
+def reset_game() -> dict:
+    result = get_game_runtime().reset_game()
+    snapshot = _publish_transition(result)
+    print(f"[game] 리셋 — {snapshot['phase']}")
+    return {"ok": True, "game": snapshot}
+
 
 def request_listen() -> None:
+    phase = get_game_state()["phase"]
+    if phase not in (GamePhase.STARTING.value, GamePhase.RUNNING.value):
+        print(f"[game] 다시 듣기 무시 — {phase}")
+        return
     print("[game] 다시 듣기")
-    osc.send_message("/game/listen", [])
+    _osc_send("/game/listen", [])
 
 def request_play() -> None:
-    if not game_active:
-        print("[game] 재생 무시 — 게임 비활성")
+    if get_game_state()["phase"] != GamePhase.RUNNING.value:
+        print("[game] 재생 무시 — RUNNING 아님")
         return
     print("[game] 재생")
-    osc.send_message("/game/play", [])
+    _osc_send("/game/play", [])
 
 
 def request_dispensa() -> None:
-    if not game_active:
-        print("[game] 디페스타 무시 — 게임 비활성")
+    if get_game_state()["phase"] != GamePhase.RUNNING.value:
+        print("[game] 디페스타 무시 — RUNNING 아님")
         return
     print("[game] 디페스타")
-    osc.send_message("/game/dispensa", [])
+    _osc_send("/game/dispensa", [])
 
 def handle_serial_message(event: dict) -> None:
     """USB/serial 한 줄 JSON — orb 이벤트 또는 game 버튼."""
@@ -249,12 +375,25 @@ def handle_serial_message(event: dict) -> None:
 
     if t == "game":
         action = str(event.get("action", "")).lower()
-        if action == "listen":
-            request_listen()
-        elif action == "play":
-            request_play()
-        else:
-            print(f"[WARN] unknown game action: {action}")
+        try:
+            if action == "start":
+                start_game()
+            elif action in ("start_complete", "start-complete"):
+                complete_game_start()
+            elif action == "listen":
+                request_listen()
+            elif action == "play":
+                request_play()
+            elif action == "dispensa":
+                request_dispensa()
+            elif action == "end":
+                end_game(str(event.get("reason", "manual")))
+            elif action == "reset":
+                reset_game()
+            else:
+                print(f"[WARN] unknown game action: {action}")
+        except (InvalidTransition, ValueError, RuntimeError) as exc:
+            print(f"[WARN] game action {action} rejected: {exc}")
         return
     if t == "heartbeat":
         # 생존 기록은 위에서 완료. state 마스크가 있으면 유실 이벤트 자가복구.
@@ -268,66 +407,107 @@ def handle_serial_message(event: dict) -> None:
     handle_event(event)
 
 # ── 이벤트 처리 ────────────────────────────────────────
-def handle_event(event: dict):
+def handle_event(event: dict) -> dict:
     global orb_mapping
     orb_mapping = load_mapping()
 
-    t      = event.get("type")
-    slave  = event.get("slave")
-    cell   = event.get("cell")
-    orb_id = event.get("id")
+    t = str(event.get("type", "")).lower()
+    if t not in ("added", "removed"):
+        raise ValueError("type must be added or removed")
+    try:
+        slave = int(event.get("slave"))
+        cell = int(event.get("cell"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("slave and cell must be integers") from exc
+    orb_id = str(event.get("id") or "").strip()
+    if not orb_id:
+        raise ValueError("id must not be empty")
+
+    runtime = get_game_runtime()
+    orb_key, orb = find_orb(orb_id, orb_mapping)
+    q, note = parse_cell(cell)
+    q_actual = q + (slave - 1) * 2
 
     if t == "added":
-        orb_key, orb = find_orb(orb_id, orb_mapping)
         if orb is None:
             print(f"[WARN] 알 수 없는 ID: {orb_id}")
-            q, note = parse_cell(cell)
-            with _state_lock:
-                _cells[_cell_key(slave, cell)] = {
-                    "id": orb_id, "voice": "unknown", "note": note, "result": "unknown",
-                }
+            runtime_result = runtime.add_orb(
+                orb_id=orb_id,
+                slave=slave,
+                cell=cell,
+                voice="unknown",
+                known=False,
+            )
+            result = runtime_result.value.value
             _record_event({"type": "added", "slave": slave, "cell": cell,
-                           "id": orb_id, "voice": "unknown", "note": note, "result": "unknown"})
-            osc.send_message("/orb/added", [slave, cell, "unknown", "invalid", "wrong", orb_id or ""])
-            return
-
-        voice      = orb["voice"]
-        q, note    = parse_cell(cell)
-        q_actual   = q + (slave - 1) * 2
-        result     = judge(slave, cell) if game_active else "inactive"
-
-        with _state_lock:
-            _cells[_cell_key(slave, cell)] = {
-                "id": orb_key, "voice": voice, "note": note, "result": result,
+                           "id": orb_id, "voice": "unknown", "note": note, "result": result})
+            _osc_send("/orb/added", [slave, cell, "unknown", note, result, orb_id])
+            _publish_transition(runtime_result)
+            return {
+                "ok": True,
+                "changed": True,
+                "result": result,
+                "game": runtime_result.snapshot,
             }
+
+        voice = orb["voice"]
+        runtime_result = runtime.add_orb(
+            orb_id=orb_key,
+            slave=slave,
+            cell=cell,
+            voice=voice,
+            known=True,
+        )
+        result = runtime_result.value.value
         _record_event({"type": "added", "slave": slave, "cell": cell,
                        "id": orb_key, "voice": voice, "note": note, "result": result})
 
         print(f"[added]   slave={slave} cell={cell} Q={q_actual} note={note} voice={voice} → {result}")
-        osc.send_message("/orb/added", [slave, cell, voice, note, result, orb_key])
+        _osc_send("/orb/added", [slave, cell, voice, note, result, orb_key])
 
         # MIDI mode: sound immediately (screen skips placeExternal tone to avoid double)
-        if audio_output_mode() == "midi":
+        if (
+            audio_output_mode() == "midi"
+            and runtime_result.value is not PlacementResult.INACTIVE
+        ):
             try:
                 from midi_out import cell_to_pitch, trigger as midi_trigger
 
                 midi_trigger(voice, cell_to_pitch(int(cell)), duration_ms=320)
             except Exception as exc:
                 print(f"[midi] trigger failed: {exc}")
+        _publish_transition(runtime_result)
+        return {
+            "ok": True,
+            "changed": True,
+            "result": result,
+            "game": runtime_result.snapshot,
+        }
 
-    elif t == "removed":
-        orb_key, orb = find_orb(orb_id, orb_mapping)
-        voice    = orb.get("voice", "unknown") if orb else "unknown"
-        q, note  = parse_cell(cell)
-        q_actual = q + (slave - 1) * 2
+    voice = orb.get("voice", "unknown") if orb else "unknown"
+    runtime_result = runtime.remove_orb(
+        slave=slave,
+        cell=cell,
+        orb_id=orb_key or orb_id,
+    )
+    if not runtime_result.value:
+        return {
+            "ok": True,
+            "changed": False,
+            "game": runtime_result.snapshot,
+        }
 
-        with _state_lock:
-            _cells.pop(_cell_key(slave, cell), None)
-        _record_event({"type": "removed", "slave": slave, "cell": cell,
-                       "id": orb_key or orb_id, "voice": voice, "note": note})
+    _record_event({"type": "removed", "slave": slave, "cell": cell,
+                   "id": orb_key or orb_id, "voice": voice, "note": note})
 
-        print(f"[removed] slave={slave} cell={cell} Q={q_actual} note={note} voice={voice}")
-        osc.send_message("/orb/removed", [slave, cell, voice, note, orb_key or orb_id or ""])
+    print(f"[removed] slave={slave} cell={cell} Q={q_actual} note={note} voice={voice}")
+    _osc_send("/orb/removed", [slave, cell, voice, note, orb_key or orb_id])
+    _publish_transition(runtime_result)
+    return {
+        "ok": True,
+        "changed": True,
+        "game": runtime_result.snapshot,
+    }
 
 # ── 자가복구 (heartbeat state mask 기반 reconcile) ────
 # slave heartbeat 의 16비트 점유 마스크로 유실된 added/removed 를 스스로 메꾼다.
@@ -340,28 +520,37 @@ def handle_event(event: dict):
 def _synth_added_unknown(slave_id: int, cell: int) -> None:
     """유실된 added 추정 — 정체 미상. admin 에만 표시하고 screen 에는 보내지 않는다."""
     _q, note = parse_cell(cell)
-    with _state_lock:
-        _cells[_cell_key(slave_id, cell)] = {
-            "id": "", "voice": "미상", "note": note,
-            "result": "unknown", "synthetic": True,
-        }
+    runtime_result = get_game_runtime().add_orb(
+        orb_id=f"__recovered__:{slave_id}:{cell}",
+        slave=slave_id,
+        cell=cell,
+        voice="미상",
+        known=False,
+    )
     _record_event({"type": "recovered", "slave": slave_id, "cell": cell,
                    "note": note, "voice": "미상", "synthetic": True})
     print(f"[recover] slave={slave_id} cell={cell} note={note} → added 유실 추정(미상, admin만)")
-    osc.send_message("/orb/recovered", [slave_id, cell, note])
+    _osc_send("/orb/recovered", [slave_id, cell, note])
+    _publish_transition(runtime_result)
 
 
 def _synth_removed(slave_id: int, cell: int) -> None:
     """유실된 removed 추정 — 정식 removed 로 처리해 screen·admin 모두 칸을 비운다."""
-    with _state_lock:
-        cell_data = _cells.pop(_cell_key(slave_id, cell), None)
+    cell_data = get_cells().get(_cell_key(slave_id, cell))
+    runtime_result = get_game_runtime().remove_orb(
+        slave=slave_id,
+        cell=cell,
+    )
+    if not runtime_result.value:
+        return
     voice   = (cell_data or {}).get("voice", "unknown")
     orb_key = (cell_data or {}).get("id", "") or ""
     _q, note = parse_cell(cell)
     _record_event({"type": "removed", "slave": slave_id, "cell": cell,
                    "id": orb_key, "voice": voice, "note": note, "synthetic": True})
     print(f"[recover] slave={slave_id} cell={cell} → removed 유실 복구(screen+admin)")
-    osc.send_message("/orb/removed", [slave_id, cell, voice, note, orb_key])
+    _osc_send("/orb/removed", [slave_id, cell, voice, note, orb_key])
+    _publish_transition(runtime_result)
 
 
 def reconcile_slave_state(slave_id: int, state: int) -> None:
@@ -375,7 +564,7 @@ def reconcile_slave_state(slave_id: int, state: int) -> None:
         stable = prev is not None and prev == state
         occupied_mem = {
             int(k.split(":", 1)[1])
-            for k in _cells
+            for k in get_cells()
             if k.startswith(f"{slave_id}:")
         }
 
@@ -426,6 +615,8 @@ def serial_loop():
                     handle_serial_message(event)
                 except json.JSONDecodeError:
                     print(f"[WARN] JSON 파싱 실패: {line[:120]}")
+                except (ValueError, RuntimeError) as exc:
+                    print(f"[WARN] 이벤트 처리 실패: {exc}")
         except serial.SerialException as e:
             err = str(e)
             print(f"[serial] 연결 끊김 ({port}): {e}")
@@ -437,6 +628,7 @@ def serial_loop():
 
 # ── 진입점 ─────────────────────────────────────────────
 def run_main() -> None:
+    runtime = get_game_runtime()
     print(f"[stage {current_stage}] 정답 시퀀스: {answer_sequence}")
     print(f"[melody] {melody_id}")
     print(f"[input] {input_mode} mode")
@@ -465,10 +657,13 @@ def run_main() -> None:
         handle_event,
         orb_mapping,
         get_status=get_status,
+        get_game_state=get_game_state,
         get_cells=get_cells,
         get_events=get_events,
         on_game_start=start_game,
+        on_game_start_complete=complete_game_start,
         on_game_end=end_game,
+        on_game_reset=reset_game,
         on_game_listen=request_listen,
         on_game_play=request_play,
         on_game_dispensa=request_dispensa,
@@ -482,6 +677,8 @@ def run_main() -> None:
             time.sleep(1)
     except KeyboardInterrupt:
         print("종료")
+    finally:
+        runtime.close()
 
 
 if __name__ == "__main__":

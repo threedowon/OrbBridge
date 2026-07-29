@@ -54,10 +54,13 @@ def start_http_server(
     orb_mapping: dict,
     *,
     get_status: Callable[[], dict] | None = None,
+    get_game_state: Callable[[], dict] | None = None,
     get_cells: Callable[[], dict] | None = None,
     get_events: Callable[[], list] | None = None,
     on_game_start=None,
+    on_game_start_complete=None,
     on_game_end=None,
+    on_game_reset=None,
     on_game_listen=None,
     on_game_play=None,
     on_game_dispensa=None,
@@ -82,6 +85,21 @@ def start_http_server(
 
         def _json(self, code: int, data) -> None:
             self._send(code, json.dumps(data, ensure_ascii=False).encode(), "application/json; charset=utf-8")
+
+        def _run_callback(self, callback, *args) -> None:
+            if callback is None:
+                self._json(501, {"ok": False, "error": "action unavailable"})
+                return
+            try:
+                result = callback(*args)
+            except (ValueError, RuntimeError) as exc:
+                self._json(409, {"ok": False, "error": str(exc)})
+                return
+            except Exception as exc:
+                traceback.print_exc()
+                self._json(500, {"ok": False, "error": str(exc)})
+                return
+            self._json(200, result if isinstance(result, dict) else {"ok": True})
 
         def _serve_file(self, path: Path) -> None:
             if not path.is_file():
@@ -148,6 +166,10 @@ def start_http_server(
                 self._json(200, get_status())
                 return
 
+            if path == "/api/game/state" and get_game_state:
+                self._json(200, get_game_state())
+                return
+
             if path == "/api/cells" and get_cells:
                 self._json(200, get_cells())
                 return
@@ -206,39 +228,45 @@ def start_http_server(
                 if data["type"] not in ("added", "removed"):
                     self._json(400, {"error": "type must be added or removed"})
                     return
-                on_event(data)
-                self._json(200, {"ok": True})
+                try:
+                    result = on_event(data)
+                except ValueError as exc:
+                    self._json(400, {"ok": False, "error": str(exc)})
+                    return
+                except Exception as exc:
+                    traceback.print_exc()
+                    self._json(500, {"ok": False, "error": str(exc)})
+                    return
+                self._json(200, result if isinstance(result, dict) else {"ok": True})
                 return
 
             if self.path == "/api/game/start":
-                if on_game_start:
-                    on_game_start()
-                self._json(200, {"ok": True})
+                self._run_callback(on_game_start)
+                return
+
+            if self.path == "/api/game/start-complete":
+                self._run_callback(on_game_start_complete)
                 return
 
             if self.path == "/api/game/end":
                 reason = data.get("reason", "complete")
-                if on_game_end:
-                    on_game_end(reason)
-                self._json(200, {"ok": True})
+                self._run_callback(on_game_end, reason)
+                return
+
+            if self.path == "/api/game/reset":
+                self._run_callback(on_game_reset)
                 return
 
             if self.path == "/api/game/listen":
-                if on_game_listen:
-                    on_game_listen()
-                self._json(200, {"ok": True})
+                self._run_callback(on_game_listen)
                 return
 
             if self.path == "/api/game/play":
-                if on_game_play:
-                    on_game_play()
-                self._json(200, {"ok": True})
+                self._run_callback(on_game_play)
                 return
 
             if self.path == "/api/game/dispensa":
-                if on_game_dispensa:
-                    on_game_dispensa()
-                self._json(200, {"ok": True})
+                self._run_callback(on_game_dispensa)
                 return
 
             if self.path == "/api/midi/note":

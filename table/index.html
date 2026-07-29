@@ -431,7 +431,9 @@
     let lampRefresh = 0;
     let allOrbs = [];
     let orbs = [];
+    let phase = 'READY';
     let ready = false;
+    let resetting = false;
     let ws = null;
     let dragPayload = null;
     let dropTarget = null;
@@ -587,6 +589,10 @@
       return ready && btnDispensa.classList.contains('all-correct');
     }
 
+    function canRemoveOrbs() {
+      return ready || resetting;
+    }
+
     function refreshDispensaState() {
       updateBeatLamps();
       if (lampRefresh) cancelAnimationFrame(lampRefresh);
@@ -636,7 +642,7 @@
 
     function applyOrbAt(slave, cell, orbId, voice) {
       const pos = slaveCellToColRow(slave, cell);
-      if (!pos || !ready) return;
+      if (!pos || (!ready && !resetting)) return;
       const { col, row } = pos;
       const prev = findCellWithOrbId(orbId);
       if (prev && (prev.col !== col || prev.row !== row)) {
@@ -661,7 +667,7 @@
 
     function applyOrbRemoved(slave, cell) {
       const pos = slaveCellToColRow(slave, cell);
-      if (!pos || !ready) return;
+      if (!pos || (!ready && !resetting)) return;
       const { col, row } = pos;
       const k = key(col, row);
       if (!placed.has(k)) return;
@@ -672,7 +678,6 @@
     }
 
     async function syncPlacedFromCells() {
-      if (!ready) return;
       try {
         const cells = await fetch(`${API}/api/cells`).then(r => r.json());
         placed.clear();
@@ -691,28 +696,39 @@
       }
     }
 
-    async function syncReadyFromServer() {
+    async function syncPhaseFromServer() {
       try {
         const status = await fetch(`${API}/api/status`).then(r => r.json());
-        await setReady(!!status.game_active);
+        await setPhase(status.game?.phase || (status.game_active ? 'RUNNING' : 'READY'));
       } catch {
-        await setReady(false);
+        await setPhase('READY');
       }
     }
 
-    async function setReady(on) {
-      ready = on;
-      document.body.classList.toggle('not-ready', !on);
-      statusDot.className = 'dot-status ' + (on ? 'ok' : 'wait');
-      statusDot.title = on ? 'READY' : '대기 중';
-      btnPlay.disabled = !on;
-      btnListen.disabled = !on;
-      if (!on) btnDispensa.disabled = true;
-      if (on) {
+    async function setPhase(nextPhase) {
+      const previous = phase;
+      phase = String(nextPhase || 'READY').toUpperCase();
+      ready = phase === 'RUNNING';
+      resetting = phase === 'RESETTING';
+
+      document.body.classList.toggle('not-ready', !ready && !resetting);
+      document.body.classList.toggle('resetting', resetting);
+      statusDot.className = 'dot-status ' + (ready ? 'ok' : 'wait');
+      statusDot.title = ready
+        ? 'RUNNING'
+        : (resetting ? 'RESETTING — 오브를 모두 제거하세요' : phase);
+      btnPlay.disabled = !ready;
+      btnListen.disabled = !ready;
+      if (!ready) btnDispensa.disabled = true;
+
+      if (ready && previous !== 'RUNNING') {
         clearAllOrbs();
         if (allOrbs.length) pickTrayOrbs();
         await loadAnswerMap();
-      } else {
+        await syncPlacedFromCells();
+      } else if (resetting) {
+        await syncPlacedFromCells();
+      } else if (phase === 'READY') {
         clearAllOrbs();
         orbs = [];
         buildOrbTray();
@@ -722,16 +738,23 @@
         btnDispensa.classList.remove('all-correct');
         refreshDispensaState();
       }
+
       gridEl.querySelectorAll('.cell').forEach(el => {
-        el.classList.toggle('disabled', !on);
-        if (on) {
-          const col = Number(el.dataset.col);
-          const row = Number(el.dataset.row);
-          el.draggable = placed.has(key(col, row));
-        } else {
-          el.draggable = false;
-        }
+        const col = Number(el.dataset.col);
+        const row = Number(el.dataset.row);
+        const filled = placed.has(key(col, row));
+        const removable = resetting && filled;
+        el.classList.toggle('disabled', !ready && !removable);
+        el.draggable = filled && canRemoveOrbs();
       });
+    }
+
+    async function setReady(on) {
+      if (on) {
+        await setPhase('RUNNING');
+      } else if (phase === 'RUNNING') {
+        await setPhase('FINISHED');
+      }
     }
 
     function setWsStatus(ok) {
@@ -884,7 +907,7 @@
 
     function setupOrbTrayDragDrop() {
       orbPaletteEl.addEventListener('dragover', (e) => {
-        if (!ready || dragPayload?.src !== 'cell') return;
+        if (!canRemoveOrbs() || dragPayload?.src !== 'cell') return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         orbPaletteEl.classList.add('drop-target');
@@ -939,7 +962,7 @@
     function setupGridDragDrop() {
       gridEl.addEventListener('dragstart', (e) => {
         const cell = e.target.closest('.cell.filled');
-        if (!cell || !ready) {
+        if (!cell || !canRemoveOrbs()) {
           e.preventDefault();
           return;
         }
@@ -1150,7 +1173,7 @@
       ws = new WebSocket(WS_URL);
       ws.onopen = () => {
         setWsStatus(true);
-        void syncReadyFromServer();
+        void syncPhaseFromServer();
       };
       ws.onclose = () => {
         setWsStatus(false);
@@ -1163,11 +1186,19 @@
           if (msg.address === '/game/ready') void setReady(!!msg.args[0]);
           if (msg.address === '/game/start') {
             clearAllOrbs();
-            if (ready && allOrbs.length) pickTrayOrbs();
+            void setPhase('STARTING');
           }
           if (msg.address === '/game/end') {
-            clearAllOrbs();
-            void setReady(false);
+            void setPhase('FINISHED');
+          }
+          if (msg.address === '/game/reset') {
+            void setPhase('RESETTING');
+          }
+          if (msg.address === '/game/reset_complete') {
+            void setPhase('READY');
+          }
+          if (msg.address === '/game/state') {
+            void setPhase(msg.args[0]);
           }
           if (msg.address === '/orb/added') {
             const [slave, cell, voice, , , orbId] = msg.args;
@@ -1225,9 +1256,9 @@
     new ResizeObserver(fitGrid).observe(playfieldEl);
     window.addEventListener('resize', fitGrid);
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') void syncReadyFromServer();
+      if (document.visibilityState === 'visible') void syncPhaseFromServer();
     });
-    void syncReadyFromServer();
+    void syncPhaseFromServer();
     connectWs();
     loadOrbs().catch(() => setWsStatus(false));
   </script>
