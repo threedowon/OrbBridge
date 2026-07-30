@@ -81,8 +81,7 @@ def ensure_data_files() -> None:
                 target.write_text(
                     '{"current_stage":1,"melody":"biplane","input_mode":"table",'
                     '"mock":{"host":"127.0.0.1","port":8080},'
-                    '"serial":{"port":"COM13","baudrate":115200},'
-                    '"osc":{"host":"127.0.0.1","port":9000}}\n',
+                    '"serial":{"port":"COM13","baudrate":115200}}\n',
                     encoding="utf-8",
                 )
 

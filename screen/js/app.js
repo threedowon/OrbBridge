@@ -346,15 +346,6 @@ async function handleWsMessage(message) {
     case '/orb/removed':
       handleOrbRemoved(args[0], args[1], args[4]);
       break;
-    case '/game/end':
-      applyGameState('FINISHED', args[0] || 'manual');
-      break;
-    case '/game/reset':
-      applyGameState('RESETTING');
-      break;
-    case '/game/reset_complete':
-      applyGameState('READY');
-      break;
     case '/game/state':
       applyGameState(args[0], args[1] || null, args[2] ?? null);
       break;
@@ -367,12 +358,6 @@ async function handleWsMessage(message) {
     case '/game/playback/end':
       endPlayback(args[0], args[1]);
       break;
-    // Legacy command messages remain visible to OSC consumers, but the screen
-    // intentionally does not start its own timers for them after M3.
-    case '/game/listen':
-    case '/game/play':
-    case '/game/dispensa':
-      break;
   }
 }
 
@@ -381,8 +366,8 @@ function connectWs() {
   wsSnapshotReceived = false;
   ws.onopen = () => {
     setConn(true);
-    // M4 servers send a complete snapshot immediately. Keep one delayed HTTP
-    // fallback so this screen can still connect to an older bridge process.
+    // The server sends a complete snapshot immediately. Keep one delayed HTTP
+    // fallback for startup races or an older server build.
     setTimeout(() => {
       if (!wsSnapshotReceived && ws?.readyState === WebSocket.OPEN) {
         void syncGameState();

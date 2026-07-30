@@ -373,7 +373,7 @@
         <span class="dot" id="dot-serial"></span>
         <span id="lbl-serial">Serial —</span>
       </div>
-      <div class="status-item" title="WebSocket (bridge.py)">
+      <div class="status-item" title="Python WebSocket">
         <span class="dot" id="dot-ws"></span>
         <span id="lbl-ws">WS —</span>
       </div>
@@ -429,9 +429,9 @@
       <div>
         <div class="section-title">게임 제어</div>
         <div class="toolbar">
-          <button class="primary" id="btn-start">시작</button>
-          <button id="btn-end">종료</button>
-          <button id="btn-reset">리셋</button>
+          <button class="primary" data-game-action="start">start</button>
+          <button data-game-action="end">end</button>
+          <button data-game-action="reset">reset</button>
           <button id="btn-clear">그리드 초기화</button>
         </div>
       </div>
@@ -477,11 +477,12 @@
       return d.toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
     }
 
-    function addLog(type, text, cls = '') {
+    function addLog(type, text, cls = '', ts = null, prepend = true) {
       const entry = document.createElement('div');
       entry.className = 'log-entry';
-      entry.innerHTML = `<span class="log-time">${fmtTime()}</span><span class="${cls}">[${type}]</span> ${text}`;
-      logEl.prepend(entry);
+      entry.innerHTML = `<span class="log-time">${fmtTime(ts)}</span><span class="${cls}">[${type}]</span> ${text}`;
+      if (prepend) logEl.prepend(entry);
+      else logEl.appendChild(entry);
       while (logEl.children.length > LOG_LIMIT) logEl.lastChild.remove();
     }
 
@@ -691,11 +692,25 @@
     function renderEventSnapshot(events) {
       logEl.innerHTML = '';
       for (const ev of (events || []).slice().reverse()) {
+        if (ev.type === 'game_state') {
+          const reason = ev.finish_reason ? ` (${ev.finish_reason})` : '';
+          addLog(
+            'state',
+            `${ev.previous_phase || '—'} → ${ev.phase}${reason}`,
+            'log-info',
+            ev.ts,
+            false,
+          );
+          continue;
+        }
         const cls = ev.type === 'added' ? 'log-added' : ev.type === 'removed' ? 'log-removed' : 'log-info';
-        const entry = document.createElement('div');
-        entry.className = 'log-entry';
-        entry.innerHTML = `<span class="log-time">${fmtTime(ev.ts)}</span><span class="${cls}">[${ev.type}]</span> S${ev.slave} C${ev.cell} ${ev.voice || ''} ${ev.id ? shortId(ev.id) : ''}`;
-        logEl.appendChild(entry);
+        addLog(
+          ev.type,
+          `S${ev.slave} C${ev.cell} ${ev.voice || ''} ${ev.id ? shortId(ev.id) : ''}`,
+          cls,
+          ev.ts,
+          false,
+        );
       }
     }
 
@@ -737,16 +752,16 @@
         const [slave, cell, note] = args;
         applyCellState(slave, cell, { id: '', voice: '미상', note, result: 'unknown', synthetic: true });
         addLog('복구', `S${slave} C${cell} ${note} → 유실 추정(미상, 화면 미표시)`, 'log-warn');
-      } else if (address === '/game/ready') {
-        addLog('ready', args[0] ? 'READY' : '대기', 'log-info');
-      } else if (address === '/game/start') {
-        addLog('game', `시작 stage ${args[0]}`, 'log-info');
-        fetchStatus();
-      } else if (address === '/game/end') {
-        addLog('game', `종료 ${args[0] || ''}`, 'log-info');
-        fetchStatus();
       } else if (address === '/game/state') {
-        addLog('state', `${args[0]} ${args[1] || ''}`.trim(), 'log-info');
+        const [phase, reason, , , , previousPhase] = args;
+        const transition = previousPhase
+          ? `${previousPhase} → ${phase}`
+          : String(phase || 'UNKNOWN');
+        addLog(
+          'state',
+          `${transition}${reason ? ` (${reason})` : ''}`,
+          'log-info',
+        );
         fetchStatus();
       }
     }
@@ -780,9 +795,15 @@
       if (!res.ok) addLog('error', await res.text(), 'log-warn');
     }
 
-    document.getElementById('btn-start').addEventListener('click', () => postGame('/api/game/start'));
-    document.getElementById('btn-end').addEventListener('click', () => postGame('/api/game/end', { reason: 'admin' }));
-    document.getElementById('btn-reset').addEventListener('click', () => postGame('/api/game/reset'));
+    // UI labels, HTTP suffixes, and Serial JSON actions use the same literal
+    // strings: start, end, reset.
+    document.querySelectorAll('[data-game-action]').forEach(button => {
+      button.addEventListener('click', () => {
+        const action = button.dataset.gameAction;
+        const body = action === 'end' ? { reason: 'admin' } : {};
+        postGame(`/api/game/${action}`, body);
+      });
+    });
     document.getElementById('btn-clear').addEventListener('click', () => {
       cells.clear();
       gridEl.querySelectorAll('.cell').forEach(el => {

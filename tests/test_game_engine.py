@@ -433,6 +433,33 @@ def test_real_add_and_remove_changes_refresh_idle_timer():
     assert engine.phase is GamePhase.RUNNING
 
 
+@pytest.mark.parametrize("activity", ["listen", "play"])
+def test_non_cell_playback_activity_refreshes_idle_timer(activity):
+    """Listen and Play share GameEngine.record_activity at runtime."""
+    clock = FakeClock()
+    engine = make_engine(clock, {"1": "C"}, total_timeout_s=60, idle_timeout_s=10)
+    start_running(engine)
+    clock.advance(9)
+
+    assert engine.record_activity() is True
+    clock.advance(9)
+    engine.tick()
+
+    assert engine.phase is GamePhase.RUNNING
+    assert engine.snapshot()["timers"]["remaining_idle_s"] == 1
+
+
+def test_activity_at_exact_idle_deadline_is_too_late():
+    clock = FakeClock()
+    engine = make_engine(clock, total_timeout_s=None, idle_timeout_s=10)
+    start_running(engine)
+    clock.advance(10)
+
+    assert engine.record_activity() is False
+    assert engine.phase is GamePhase.FINISHED
+    assert engine.finish_reason is FinishReason.IDLE_TIMEOUT
+
+
 def test_earliest_expired_deadline_determines_reason():
     clock = FakeClock()
     engine = make_engine(clock, total_timeout_s=60, idle_timeout_s=10)
@@ -498,12 +525,13 @@ def test_reset_with_orbs_waits_in_resetting_until_last_orb_is_removed():
     assert engine.finish_reason is None
 
 
-def test_reset_with_empty_table_returns_ready_immediately():
+def test_reset_with_empty_table_exposes_resetting_before_ready():
     clock = FakeClock()
     engine = make_engine(clock)
     start_running(engine)
 
-    assert engine.reset() is GamePhase.READY
+    assert engine.reset() is GamePhase.RESETTING
+    assert engine.tick() is GamePhase.READY
 
 
 def test_add_during_resetting_keeps_engine_in_resetting():

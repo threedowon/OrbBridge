@@ -58,6 +58,7 @@ class GameRuntime:
         *,
         tick_interval_s: float = 0.05,
         on_phase_change: PhaseCallback | None = None,
+        auto_reset_timeouts: bool = False,
     ) -> None:
         if not isinstance(engine, GameEngine):
             raise TypeError("engine must be a GameEngine")
@@ -65,10 +66,13 @@ class GameRuntime:
             raise ValueError("tick_interval_s must be positive")
         if on_phase_change is not None and not callable(on_phase_change):
             raise TypeError("on_phase_change must be callable")
+        if not isinstance(auto_reset_timeouts, bool):
+            raise TypeError("auto_reset_timeouts must be a boolean")
 
         self._engine = engine
         self._tick_interval_s = float(tick_interval_s)
         self._on_phase_change = on_phase_change
+        self._auto_reset_timeouts = auto_reset_timeouts
         self._queue: Queue[_Command] = Queue()
         self._snapshot_lock = threading.Lock()
         self._snapshot = engine.snapshot()
@@ -136,6 +140,10 @@ class GameRuntime:
     def press_dispensa(self, *, timeout: float = 2.0) -> RuntimeResult:
         """Queue one DFesta button press through the single engine writer."""
         return self._submit("press_dispensa", timeout=timeout)
+
+    def record_activity(self, *, timeout: float = 2.0) -> RuntimeResult:
+        """Queue a non-cell interaction that refreshes the idle deadline."""
+        return self._submit("record_activity", timeout=timeout)
 
     def reset_game(self, *, timeout: float = 2.0) -> RuntimeResult:
         return self._submit("reset", timeout=timeout)
@@ -236,7 +244,22 @@ class GameRuntime:
     def _tick(self) -> None:
         try:
             result = self._execute("tick", {})
-            self.publish_phase_change(result)
+            should_reset = (
+                self._auto_reset_timeouts
+                and result.phase_changed
+                and result.phase == "FINISHED"
+                and result.snapshot.get("finish_reason")
+                in {"total_timeout", "idle_timeout"}
+            )
+            try:
+                self.publish_phase_change(result)
+            finally:
+                if should_reset:
+                    # Background ticks have no HTTP/Serial caller that can
+                    # request RESETTING. Do it even if a display callback fails;
+                    # UI delivery must never hold the state machine in FINISHED.
+                    resetting = self._execute("reset", {})
+                    self.publish_phase_change(resetting)
         except Exception:
             # A clock/configuration failure must not silently kill the runtime
             # thread. A later explicit command will surface the same error.
@@ -259,6 +282,8 @@ class GameRuntime:
             value = self._engine.finish(payload["reason"])
         elif action == "press_dispensa":
             value = self._engine.press_dispensa()
+        elif action == "record_activity":
+            value = self._engine.record_activity()
         elif action == "reset":
             value = self._engine.reset()
         elif action == "add_orb":

@@ -122,15 +122,64 @@ def test_command_phase_changes_are_published_explicitly_in_caller_order():
         runtime.close()
 
 
-def test_background_tick_publishes_timeout_transition_automatically():
+@pytest.mark.parametrize(
+    ("total_timeout_s", "idle_timeout_s", "advance_s", "reason"),
+    [
+        (5, None, 5, "total_timeout"),
+        (None, 5, 5, "idle_timeout"),
+    ],
+)
+def test_background_timeout_enters_resetting_automatically(
+    total_timeout_s,
+    idle_timeout_s,
+    advance_s,
+    reason,
+):
     clock = FakeClock()
     transitions = []
     runtime = GameRuntime(
-        make_engine(clock, total_timeout_s=5, idle_timeout_s=None),
+        make_engine(
+            clock,
+            total_timeout_s=total_timeout_s,
+            idle_timeout_s=idle_timeout_s,
+        ),
         tick_interval_s=0.005,
         on_phase_change=lambda old, new, snapshot: transitions.append(
             (old, new, snapshot["finish_reason"])
         ),
+        auto_reset_timeouts=True,
+    )
+    runtime.start()
+    try:
+        runtime.publish_phase_change(runtime.start_game())
+        runtime.publish_phase_change(runtime.complete_start())
+        # Keep one orb on the table so RESETTING remains observable until it is
+        # physically removed.
+        runtime.add_orb(orb_id="orb-c", slave=1, cell=1)
+        transitions.clear()
+
+        clock.advance(advance_s)
+        wait_until(lambda: runtime.snapshot()["phase"] == "RESETTING")
+
+        assert transitions == [
+            ("RUNNING", "FINISHED", reason),
+            ("FINISHED", "RESETTING", reason),
+        ]
+    finally:
+        runtime.close()
+
+
+def test_empty_timeout_still_publishes_resetting_before_ready():
+    """An empty table must not collapse FINISHED directly into READY."""
+    clock = FakeClock()
+    transitions = []
+    runtime = GameRuntime(
+        make_engine(clock, total_timeout_s=None, idle_timeout_s=5),
+        tick_interval_s=0.005,
+        on_phase_change=lambda old, new, snapshot: transitions.append(
+            (old, new, snapshot["finish_reason"])
+        ),
+        auto_reset_timeouts=True,
     )
     runtime.start()
     try:
@@ -139,9 +188,15 @@ def test_background_tick_publishes_timeout_transition_automatically():
         transitions.clear()
 
         clock.advance(5)
-        wait_until(lambda: runtime.snapshot()["phase"] == "FINISHED")
+        wait_until(
+            lambda: any(new == "READY" for _old, new, _reason in transitions)
+        )
 
-        assert transitions == [("RUNNING", "FINISHED", "total_timeout")]
+        assert transitions == [
+            ("RUNNING", "FINISHED", "idle_timeout"),
+            ("FINISHED", "RESETTING", "idle_timeout"),
+            ("RESETTING", "READY", None),
+        ]
     finally:
         runtime.close()
 

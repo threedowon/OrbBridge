@@ -12,8 +12,8 @@ Serial / HTTP game command
   → PlaybackScheduler
       ├─ absolute monotonic deadline
       ├─ midi_out.trigger_many()
-      └─ OSC playback event
-            → bridge → WebSocket → screen beat 표시
+      └─ WebSocket playback event
+            → screen beat 표시
 ```
 
 ## 모드

@@ -1,5 +1,5 @@
-# PyInstaller spec — OrbBridge launcher (bridge + main + static UI)
-# Build: server/build_launcher.bat  or  release/build_release.bat
+# PyInstaller spec — OrbBridge launcher (Python runtime + web interfaces)
+# Build: server/build_launcher.bat
 
 import sys
 from pathlib import Path
@@ -21,6 +21,7 @@ def _collect_datas():
         "config.json",
         "config.table.json",
         "orb_mapping.json",
+        "portmapping.json",
         "stage_data.json",
         "voice_catalog.json",
     ):
@@ -39,10 +40,6 @@ a = Analysis(
     binaries=[],
     datas=_collect_datas(),
     hiddenimports=[
-        "pythonosc",
-        "pythonosc.dispatcher",
-        "pythonosc.osc_server",
-        "pythonosc.udp_client",
         "websockets",
         "websockets.legacy",
         "websockets.legacy.server",

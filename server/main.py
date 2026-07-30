@@ -4,7 +4,6 @@ from pathlib import Path
 import serial
 import threading
 import time
-from pythonosc import udp_client
 
 from game_engine import (
     FinishReason,
@@ -47,10 +46,13 @@ _raw_input_mode = config.get("input_mode", "table")
 # legacy: "mock" → "table" (웹 /table UI 입력)
 input_mode      = "table" if _raw_input_mode == "mock" else _raw_input_mode
 
-osc = udp_client.SimpleUDPClient(config["osc"]["host"], config["osc"]["port"])
-_osc_lock = threading.Lock()
-
 NOTE_MAP = {1: "C", 2: "D", 3: "E", 4: "F", 5: "G", 6: "A", 7: "B", 8: "C"}
+
+# Serial JSON and the admin HTTP controls use these exact action strings.
+# Keeping them in one place prevents UI labels and hardware commands drifting.
+GAME_ACTION_START = "start"
+GAME_ACTION_END = "end"
+GAME_ACTION_RESET = "reset"
 
 # ── Admin 상태 (셀 점유, 이벤트 로그, 시리얼) ────────
 _state_lock = threading.Lock()
@@ -67,9 +69,9 @@ _game_runtime: GameRuntime | None = None
 _scheduler_lock = threading.Lock()
 _playback_scheduler: PlaybackScheduler | None = None
 
-# ── M4 직접 WebSocket (브라우저 실시간 이벤트 + 재연결 snapshot) ──
-# OSC는 TouchDesigner 등 외부 소비자용으로 유지한다. 웹 UI는 더 이상
-# OSC loopback과 bridge_service를 거치지 않고 이 서비스에서 직접 받는다.
+# ── 직접 WebSocket (브라우저 실시간 이벤트 + 재연결 snapshot) ──
+# screen/table/admin은 모두 이 서비스에서 직접 상태를 받는다.
+_web_event_lock = threading.Lock()
 _websocket_lock = threading.Lock()
 _websocket_service = None
 
@@ -150,7 +152,7 @@ def audio_output_mode() -> str:
 def _scheduler_send_notes(notes: list[dict]) -> list[dict]:
     """Send one due Scheduler beat as a single locked MIDI burst.
 
-    Web mode receives the same notes through the playback beat OSC payload, so
+    Web mode receives the same notes through the playback beat WebSocket event, so
     Python intentionally does not open MIDI ports in that development fallback.
     """
     if audio_output_mode() != "midi" or not notes:
@@ -166,25 +168,25 @@ def _scheduler_send_notes(notes: list[dict]) -> list[dict]:
 
 
 def _scheduler_publish_event(event: dict) -> None:
-    """Translate Scheduler callbacks to the shared OSC/WebSocket protocol."""
+    """Translate Scheduler callbacks to browser WebSocket events."""
     event_type = event["type"]
     run_id = int(event["run_id"])
     mode = str(event["mode"])
 
     if event_type == "start":
-        _osc_send(
+        _publish_web_event(
             "/game/playback/start",
             [run_id, mode, int(event["step_count"])],
         )
     elif event_type == "beat":
-        # OSC transports the optional web-audio note batch as compact JSON.
+        # WebSocket transports the optional Web Audio note batch as compact JSON.
         # MIDI mode ignores this field and uses Python's trigger_many directly.
         encoded_notes = json.dumps(
             event.get("notes") or [],
             ensure_ascii=False,
             separators=(",", ":"),
         )
-        _osc_send(
+        _publish_web_event(
             "/game/playback/beat",
             [
                 run_id,
@@ -195,7 +197,7 @@ def _scheduler_publish_event(event: dict) -> None:
             ],
         )
     elif event_type == "end":
-        _osc_send(
+        _publish_web_event(
             "/game/playback/end",
             [run_id, mode, 1 if event.get("cancelled") else 0],
         )
@@ -240,25 +242,12 @@ def _start_playback(mode: PlaybackMode) -> dict:
     return get_playback_scheduler().start(mode, melody, cells)
 
 
-def _osc_send(address: str, args) -> None:
-    """Publish one event to OSC consumers and directly to web clients.
+def _publish_web_event(address: str, args) -> None:
+    """Publish one ordered event directly to every connected browser."""
 
-    The function name remains for compatibility with existing tests and debug
-    scripts. M4 adds the direct WebSocket fan-out without changing the event
-    address/argument protocol used by the browser.
-    """
-
-    # Keep Runtime and Scheduler publications in one total order. The former
-    # OSC bridge inherited UDP send order; direct WebSocket delivery must retain
-    # the same guarantee when both producer threads emit at nearly the same time.
-    with _osc_lock:
-        try:
-            osc.send_message(address, args)
-        except OSError as exc:
-            # Web UI delivery must remain available even when no OSC receiver is
-            # running or the configured external destination is unavailable.
-            print(f"[OSC] WARN: {address} 전송 실패: {exc}")
-
+    # Runtime and Scheduler run on separate threads. One lock preserves their
+    # publication order before WebSocketService fans the event out to clients.
+    with _web_event_lock:
         with _websocket_lock:
             service = _websocket_service
         if service is not None:
@@ -274,7 +263,7 @@ def _new_game_engine() -> GameEngine:
     )
 
 
-def _phase_payload(snapshot: dict) -> list:
+def _phase_payload(snapshot: dict, previous_phase: str | None = None) -> list:
     timers = snapshot.get("timers") or {}
     return [
         snapshot["phase"],
@@ -286,11 +275,12 @@ def _phase_payload(snapshot: dict) -> list:
         timers.get("remaining_idle_s")
         if timers.get("remaining_idle_s") is not None
         else -1,
+        previous_phase or "",
     ]
 
 
 def _on_phase_change(previous: str, current: str, snapshot: dict) -> None:
-    """Translate Python phase transitions to OSC and stop invalid playback."""
+    """Publish one authoritative phase transition and stop invalid playback."""
     with _scheduler_lock:
         scheduler = _playback_scheduler
     playback = scheduler.snapshot() if scheduler is not None else {}
@@ -310,19 +300,22 @@ def _on_phase_change(previous: str, current: str, snapshot: dict) -> None:
         and not keep_final_dispensa
     ):
         _cancel_playback()
-    set_ready(current == GamePhase.RUNNING.value)
 
-    if current == GamePhase.FINISHED.value:
-        _osc_send("/game/end", [snapshot.get("finish_reason") or "manual"])
-    elif current == GamePhase.RESETTING.value:
-        _osc_send("/game/reset", [])
-    elif (
-        current == GamePhase.READY.value
-        and previous == GamePhase.RESETTING.value
-    ):
-        _osc_send("/game/reset_complete", [])
-
-    _osc_send("/game/state", _phase_payload(snapshot))
+    # Persist exactly the same transition shown live in admin. Derived
+    # ready/not-ready messages are intentionally omitted because they obscured
+    # STARTING, FINISHED, and RESETTING with an inaccurate generic "대기" label.
+    _record_event(
+        {
+            "type": "game_state",
+            "previous_phase": previous,
+            "phase": current,
+            "finish_reason": snapshot.get("finish_reason"),
+            "revision": snapshot.get("revision", 0),
+        }
+    )
+    reason = snapshot.get("finish_reason") or ""
+    print(f"[state] {previous} → {current}{f' ({reason})' if reason else ''}")
+    _publish_web_event("/game/state", _phase_payload(snapshot, previous))
 
 
 def get_game_runtime() -> GameRuntime:
@@ -333,6 +326,7 @@ def get_game_runtime() -> GameRuntime:
                 _new_game_engine(),
                 tick_interval_s=0.05,
                 on_phase_change=_on_phase_change,
+                auto_reset_timeouts=True,
             )
             _game_runtime.start()
         return _game_runtime
@@ -427,7 +421,7 @@ def start_websocket_service():
         service = WebSocketService(
             get_web_snapshot,
             host=host,
-            # Browser URLs and the legacy bridge contract both use this port.
+            # All three browser interfaces use the same realtime port.
             port=8765,
         )
         service.start()
@@ -456,12 +450,7 @@ def parse_cell(cell: int):
     note = NOTE_MAP.get(row, "invalid")
     return q, note
 
-# ── ready / game lifecycle ─────────────────────────────
-def set_ready(ready: bool) -> None:
-    _osc_send("/game/ready", [1 if ready else 0])
-    print(f"[ready] {ready}")
-
-
+# ── game lifecycle ─────────────────────────────────────
 def reload_stage_data() -> None:
     """Pick up Melody Editor saves (stage_data.json, config melody) without restarting."""
     global stage_data, stage, answer_sequence, time_limit, idle_time_limit
@@ -488,20 +477,29 @@ def reload_stage_data() -> None:
 
 def _publish_transition(result: RuntimeResult) -> dict:
     runtime = get_game_runtime()
-    runtime.publish_phase_change(result)
     snapshot = result.snapshot
 
-    # A solved game must immediately release the table for orb recovery.
-    # Keep FINISHED as an observable transition so screen success effects run,
-    # then let the Python source of truth enter RESETTING without a browser call.
-    if (
+    # Automatic endings must release the table for orb recovery. FINISHED stays
+    # observable first so the screen can render the exact ending reason.
+    should_reset = (
         result.phase_changed
         and result.phase == GamePhase.FINISHED.value
-        and snapshot.get("finish_reason") == FinishReason.COMPLETE.value
-    ):
-        reset_result = runtime.reset_game()
-        runtime.publish_phase_change(reset_result)
-        snapshot = reset_result.snapshot
+        and snapshot.get("finish_reason")
+        in {
+            FinishReason.COMPLETE.value,
+            FinishReason.TOTAL_TIMEOUT.value,
+            FinishReason.IDLE_TIMEOUT.value,
+        }
+    )
+    try:
+        runtime.publish_phase_change(result)
+    finally:
+        if should_reset:
+            # A browser publication failure must not leave physical orb removal
+            # disabled. Runtime state continues to RESETTING independently.
+            reset_result = runtime.reset_game()
+            runtime.publish_phase_change(reset_result)
+            snapshot = reset_result.snapshot
 
     return snapshot
 
@@ -524,7 +522,6 @@ def start_game() -> dict:
     _publish_transition(started)
 
     print(f"[game] 시작 — stage {current_stage}, melody={melody_id}")
-    _osc_send("/game/start", [current_stage, 0])
     request_listen()
 
     if bool(config.get("start_auto_complete", True)):
@@ -571,27 +568,43 @@ def reset_game() -> dict:
 
 def request_listen() -> dict:
     """Start Python-owned target-melody preview from STARTING or RUNNING."""
-    snapshot = get_game_state()
+    runtime = get_game_runtime()
+    snapshot = runtime.snapshot()
     phase = snapshot["phase"]
     if phase not in (GamePhase.STARTING.value, GamePhase.RUNNING.value):
         print(f"[game] 다시 듣기 무시 — {phase}")
         return {"ok": False, "ignored": True, "game": snapshot}
 
+    if phase == GamePhase.RUNNING.value:
+        # Listen is a real participant interaction even though no cell changes.
+        activity = runtime.record_activity()
+        snapshot = _publish_transition(activity)
+        if snapshot["phase"] != GamePhase.RUNNING.value:
+            print("[game] 다시 듣기 무시 — 타이머 만료")
+            return {"ok": False, "ignored": True, "game": snapshot}
+
     print("[game] 다시 듣기")
-    _osc_send("/game/listen", [])
     playback = _start_playback(PlaybackMode.LISTEN)
     return {"ok": True, "playback": playback, "game": snapshot}
 
 
 def request_play() -> dict:
     """Play each placed orb at its current column and physical pitch."""
-    snapshot = get_game_state()
+    runtime = get_game_runtime()
+    snapshot = runtime.snapshot()
     if snapshot["phase"] != GamePhase.RUNNING.value:
         print("[game] 재생 무시 — RUNNING 아님")
         return {"ok": False, "ignored": True, "game": snapshot}
 
+    # Play shares the same idle-activity rule as Listen. The queued engine
+    # command also guarantees an exact timeout deadline wins over the button.
+    activity = runtime.record_activity()
+    snapshot = _publish_transition(activity)
+    if snapshot["phase"] != GamePhase.RUNNING.value:
+        print("[game] 재생 무시 — 타이머 만료")
+        return {"ok": False, "ignored": True, "game": snapshot}
+
     print("[game] 재생")
-    _osc_send("/game/play", [])
     playback = _start_playback(PlaybackMode.PLAY)
     return {"ok": True, "playback": playback, "game": snapshot}
 
@@ -618,7 +631,6 @@ def request_dispensa() -> dict:
         return {"ok": False, "ignored": True, "game": snapshot}
 
     print("[game] 디페스타")
-    _osc_send("/game/dispensa", [])
     try:
         playback = _start_playback(PlaybackMode.DISPENSA)
     finally:
@@ -652,7 +664,7 @@ def handle_serial_message(event: dict) -> None:
     if t == "game":
         action = str(event.get("action", "")).lower()
         try:
-            if action == "start":
+            if action == GAME_ACTION_START:
                 start_game()
             elif action in ("start_complete", "start-complete"):
                 complete_game_start()
@@ -662,9 +674,9 @@ def handle_serial_message(event: dict) -> None:
                 request_play()
             elif action == "dispensa":
                 request_dispensa()
-            elif action == "end":
+            elif action == GAME_ACTION_END:
                 end_game(str(event.get("reason", "manual")))
-            elif action == "reset":
+            elif action == GAME_ACTION_RESET:
                 reset_game()
             else:
                 print(f"[WARN] unknown game action: {action}")
@@ -717,7 +729,10 @@ def handle_event(event: dict) -> dict:
             result = runtime_result.value.value
             _record_event({"type": "added", "slave": slave, "cell": cell,
                            "id": orb_id, "voice": "unknown", "note": note, "result": result})
-            _osc_send("/orb/added", [slave, cell, "unknown", note, result, orb_id])
+            _publish_web_event(
+                "/orb/added",
+                [slave, cell, "unknown", note, result, orb_id],
+            )
             snapshot = _publish_transition(runtime_result)
             return {
                 "ok": True,
@@ -739,7 +754,10 @@ def handle_event(event: dict) -> dict:
                        "id": orb_key, "voice": voice, "note": note, "result": result})
 
         print(f"[added]   slave={slave} cell={cell} Q={q_actual} note={note} voice={voice} → {result}")
-        _osc_send("/orb/added", [slave, cell, voice, note, result, orb_key])
+        _publish_web_event(
+            "/orb/added",
+            [slave, cell, voice, note, result, orb_key],
+        )
 
         # MIDI mode: sound immediately (screen skips placeExternal tone to avoid double)
         if (
@@ -777,7 +795,10 @@ def handle_event(event: dict) -> dict:
                    "id": orb_key or orb_id, "voice": voice, "note": note})
 
     print(f"[removed] slave={slave} cell={cell} Q={q_actual} note={note} voice={voice}")
-    _osc_send("/orb/removed", [slave, cell, voice, note, orb_key or orb_id])
+    _publish_web_event(
+        "/orb/removed",
+        [slave, cell, voice, note, orb_key or orb_id],
+    )
     snapshot = _publish_transition(runtime_result)
     return {
         "ok": True,
@@ -806,7 +827,7 @@ def _synth_added_unknown(slave_id: int, cell: int) -> None:
     _record_event({"type": "recovered", "slave": slave_id, "cell": cell,
                    "note": note, "voice": "미상", "synthetic": True})
     print(f"[recover] slave={slave_id} cell={cell} note={note} → added 유실 추정(미상, admin만)")
-    _osc_send("/orb/recovered", [slave_id, cell, note])
+    _publish_web_event("/orb/recovered", [slave_id, cell, note])
     _publish_transition(runtime_result)
 
 
@@ -825,7 +846,10 @@ def _synth_removed(slave_id: int, cell: int) -> None:
     _record_event({"type": "removed", "slave": slave_id, "cell": cell,
                    "id": orb_key, "voice": voice, "note": note, "synthetic": True})
     print(f"[recover] slave={slave_id} cell={cell} → removed 유실 복구(screen+admin)")
-    _osc_send("/orb/removed", [slave_id, cell, voice, note, orb_key])
+    _publish_web_event(
+        "/orb/removed",
+        [slave_id, cell, voice, note, orb_key],
+    )
     _publish_transition(runtime_result)
 
 

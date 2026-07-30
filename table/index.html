@@ -780,14 +780,6 @@
       });
     }
 
-    async function setReady(on) {
-      if (on) {
-        await setPhase('RUNNING');
-      } else if (phase === 'RUNNING') {
-        await setPhase('FINISHED');
-      }
-    }
-
     function setWsStatus(ok) {
       wsDot.className = 'dot-status ' + (ok ? 'ok' : 'err');
       wsDot.title = ok ? 'WS 연결됨' : 'WS 끊김';
@@ -1217,14 +1209,8 @@
       }
 
       const args = Array.isArray(msg?.args) ? msg.args : [];
-      if (msg.address === '/game/ready') await setReady(!!args[0]);
-      if (msg.address === '/game/start') {
-        clearAllOrbs();
-        await setPhase('STARTING');
-      }
-      if (msg.address === '/game/end') await setPhase('FINISHED');
-      if (msg.address === '/game/reset') await setPhase('RESETTING');
-      if (msg.address === '/game/reset_complete') await setPhase('READY');
+      // Game state has one authoritative event. Redundant ready/start/end
+      // signals previously allowed a generic flag to overwrite the real phase.
       if (msg.address === '/game/state') await setPhase(args[0]);
       if (msg.address === '/orb/added') {
         const [slave, cell, voice, , , orbId] = args;
@@ -1241,8 +1227,8 @@
       wsSnapshotReceived = false;
       ws.onopen = () => {
         setWsStatus(true);
-        // Direct M4 servers send the full state first. HTTP remains a delayed
-        // compatibility fallback for an older standalone bridge.
+        // The direct server sends the full state first. HTTP remains a delayed
+        // fallback for startup races or an older server build.
         setTimeout(() => {
           if (!wsSnapshotReceived && ws?.readyState === WebSocket.OPEN) {
             void syncPhaseFromServer();

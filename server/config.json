@@ -11,10 +11,6 @@
     "port": "COM5",
     "baudrate": 115200
   },
-  "osc": {
-    "host": "127.0.0.1",
-    "port": 9000
-  },
   "debug": {
     "http_port": 8090,
     "recent_window_s": 10.0,

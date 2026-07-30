@@ -1,7 +1,7 @@
 """Pure game-state model for the OrbBridge Python-engine refactor.
 
-This module intentionally has no Serial, MIDI, HTTP, OSC, WebSocket, file, or
-thread dependencies. Runtime adapters will be connected in a later milestone.
+This module intentionally has no Serial, MIDI, HTTP, WebSocket, file, or thread
+dependencies. Runtime adapters are kept outside the state model.
 """
 
 from __future__ import annotations
@@ -248,7 +248,7 @@ class GameEngine:
         return self.phase
 
     def reset(self) -> GamePhase:
-        """Enter RESETTING and return to READY only after the table is empty."""
+        """Enter RESETTING; removal or the next tick completes an empty reset."""
         now = self._now()
         if self.phase is GamePhase.READY and not self._cells:
             return self.phase
@@ -256,8 +256,6 @@ class GameEngine:
         if self._started_at is not None and self._finished_at is None:
             self._finished_at = now
         self._set_phase(GamePhase.RESETTING)
-        if not self._cells:
-            self._enter_ready()
         return self.phase
 
     def tick(self) -> GamePhase:
@@ -265,7 +263,29 @@ class GameEngine:
         now = self._now()
         if self.phase is GamePhase.RUNNING:
             self._expire_if_needed(now)
+        elif self.phase is GamePhase.RESETTING and not self._cells:
+            # Keep RESETTING observable for one runtime turn even when no orb
+            # needs removal, then complete the reset without browser input.
+            self._enter_ready()
         return self.phase
+
+    def record_activity(self) -> bool:
+        """Refresh the idle deadline for a real RUNNING-phase interaction.
+
+        Listen and Play do not mutate a cell, so their callers use this method
+        to count those button presses as activity. An expired deadline always
+        wins over an input received at the same instant.
+        """
+        now = self._now()
+        if self.phase is not GamePhase.RUNNING:
+            raise InvalidTransition(
+                f"ACTIVITY is invalid from {self.phase.value}"
+            )
+        if self._expire_if_needed(now):
+            return False
+        self._last_activity_at = now
+        self._revision += 1
+        return True
 
     def press_dispensa(self) -> bool:
         """Count one DFesta button press only while the current answer is solved.

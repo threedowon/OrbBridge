@@ -1,9 +1,8 @@
-"""Direct Python → WebSocket event and snapshot service.
+"""Direct Python → browser WebSocket event and snapshot service.
 
-Live browser events keep the former bridge message shape
-``{"address": "/...", "args": [...]}``.  A newly connected client receives
-one authoritative snapshot first, so events missed while disconnected do not
-leave the screen or table in a stale state.
+Live events use ``{"address": "/...", "args": [...]}``. A newly connected
+client receives one authoritative snapshot first, so events missed while
+disconnected do not leave any web interface in a stale state.
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ DEFAULT_WS_PORT = 8765
 
 
 def event_message(address: str, args: Sequence[Any] | Any = ()) -> dict:
-    """Build one live event in the bridge-compatible wire format."""
+    """Build one live browser event in the shared wire format."""
 
     normalized_address = str(address or "").strip()
     if not normalized_address.startswith("/"):

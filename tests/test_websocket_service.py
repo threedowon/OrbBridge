@@ -13,8 +13,8 @@ sys.path.insert(0, str(SERVER))
 from websocket_service import WebSocketService, event_message, snapshot_message
 
 
-def test_wire_messages_validate_and_preserve_the_bridge_event_shape():
-    """M4 adds message types without changing browser event addresses or args."""
+def test_wire_messages_validate_and_preserve_the_browser_event_shape():
+    """Browser event names and argument order remain stable."""
 
     assert event_message("/game/state", ("RUNNING", 4)) == {
         "type": "event",

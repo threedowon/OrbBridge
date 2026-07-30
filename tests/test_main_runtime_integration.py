@@ -9,21 +9,6 @@ ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "server"
 
 
-class FakeOscClient:
-    """Record OSC output without opening UDP during integration tests."""
-
-    instances = []
-
-    def __init__(self, host, port):
-        self.host = host
-        self.port = port
-        self.messages = []
-        self.__class__.instances.append(self)
-
-    def send_message(self, address, args):
-        self.messages.append((address, list(args)))
-
-
 class FakeScheduler:
     """Expose the production Scheduler contract without starting worker threads."""
 
@@ -61,7 +46,7 @@ class FakeScheduler:
 
 
 class FakeWebSocketService:
-    """Record direct browser broadcasts without opening a TCP listener."""
+    """Record browser broadcasts without opening a TCP listener."""
 
     def __init__(self):
         self.messages = []
@@ -82,14 +67,7 @@ def _load_main_module():
     serial_module.SerialException = type("SerialException", (Exception,), {})
     serial_module.Serial = lambda *args, **kwargs: None
 
-    udp_client_module = types.ModuleType("pythonosc.udp_client")
-    udp_client_module.SimpleUDPClient = FakeOscClient
-    pythonosc_module = types.ModuleType("pythonosc")
-    pythonosc_module.udp_client = udp_client_module
-
     sys.modules["serial"] = serial_module
-    sys.modules["pythonosc"] = pythonosc_module
-    sys.modules["pythonosc.udp_client"] = udp_client_module
     sys.path.insert(0, str(SERVER))
     sys.modules.pop("main", None)
 
@@ -97,13 +75,13 @@ def _load_main_module():
     try:
         module = importlib.import_module("main")
         module._playback_scheduler = FakeScheduler()
+        module._websocket_service = FakeWebSocketService()
         return module
     finally:
         os.chdir(previous_cwd)
 
 
 def test_main_routes_web_event_through_runtime_snapshot_and_midi():
-    FakeOscClient.instances.clear()
     main = _load_main_module()
     midi_calls = []
     midi_module = types.ModuleType("midi_out")
@@ -164,9 +142,12 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
         assert completed["game"]["phase"] == "RUNNING"
         assert completed["game"]["solved"] is True
         assert completed["game"]["completion"]["dispensa_presses_remaining"] == 1
-        assert "/game/end" not in [
-            address for address, _args in main.osc.messages
+        phase_events = [
+            args[0]
+            for address, args in main._websocket_service.messages
+            if address == "/game/state"
         ]
+        assert "FINISHED" not in phase_events
 
         finished = main.request_dispensa()
 
@@ -176,20 +157,22 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
         assert main.get_game_state()["phase"] == "RESETTING"
         assert len(midi_calls) == 8
 
-        addresses = [address for address, _args in main.osc.messages]
+        messages = main._websocket_service.messages
+        addresses = [address for address, _args in messages]
         final_added_index = max(
             i for i, value in enumerate(addresses) if value == "/orb/added"
         )
-        game_end_index = max(
-            i for i, value in enumerate(addresses) if value == "/game/end"
+        finished_index = next(
+            i
+            for i, (address, args) in enumerate(messages)
+            if address == "/game/state" and args[0] == "FINISHED"
         )
-        game_reset_index = max(
-            i for i, value in enumerate(addresses) if value == "/game/reset"
+        resetting_index = next(
+            i
+            for i, (address, args) in enumerate(messages)
+            if address == "/game/state" and args[0] == "RESETTING"
         )
-        dispensa_index = max(
-            i for i, value in enumerate(addresses) if value == "/game/dispensa"
-        )
-        assert final_added_index < dispensa_index < game_end_index < game_reset_index
+        assert final_added_index < finished_index < resetting_index
 
         for orb_id, slave, cell, _voice in placements:
             removed = main.handle_event(
@@ -199,22 +182,24 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
         assert removed["game"]["phase"] == "READY"
         assert main.get_cells() == {}
 
-        addresses = [address for address, _args in main.osc.messages]
+        messages = main._websocket_service.messages
+        addresses = [address for address, _args in messages]
         removed_index = max(i for i, value in enumerate(addresses) if value == "/orb/removed")
-        reset_complete_index = max(
-            i for i, value in enumerate(addresses) if value == "/game/reset_complete"
+        ready_index = max(
+            i
+            for i, (address, args) in enumerate(messages)
+            if address == "/game/state" and args[0] == "READY"
         )
-        assert removed_index < reset_complete_index
+        assert removed_index < ready_index
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
-        for name in ("main", "serial", "pythonosc", "pythonosc.udp_client", "midi_out"):
+        for name in ("main", "serial", "midi_out"):
             sys.modules.pop(name, None)
 
 
 def test_manual_finish_stays_finished_until_reset_is_requested():
-    FakeOscClient.instances.clear()
     main = _load_main_module()
 
     try:
@@ -224,27 +209,39 @@ def test_manual_finish_stays_finished_until_reset_is_requested():
         assert finished["game"]["phase"] == "FINISHED"
         assert finished["game"]["finish_reason"] == "manual"
 
-        addresses = [address for address, _args in main.osc.messages]
-        assert "/game/end" in addresses
-        assert "/game/reset" not in addresses
+        phases = [
+            args[0]
+            for address, args in main._websocket_service.messages
+            if address == "/game/state"
+        ]
+        assert phases[-1] == "FINISHED"
+        assert "RESETTING" not in phases
 
         reset = main.reset_game()
-        assert reset["game"]["phase"] == "READY"
+        assert reset["game"]["phase"] == "RESETTING"
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
-        for name in ("main", "serial", "pythonosc", "pythonosc.udp_client"):
+        for name in ("main", "serial"):
             sys.modules.pop(name, None)
 
 
 
 def test_listen_play_and_dispensa_use_python_scheduler():
-    FakeOscClient.instances.clear()
     main = _load_main_module()
 
     try:
         main.start_game()
+        runtime = main.get_game_runtime()
+        original_record_activity = runtime.record_activity
+        activity_calls = []
+
+        def record_activity(*args, **kwargs):
+            activity_calls.append(True)
+            return original_record_activity(*args, **kwargs)
+
+        runtime.record_activity = record_activity
         play = main.request_play()
         dispensa = main.request_dispensa()
         listen = main.request_listen()
@@ -256,21 +253,79 @@ def test_listen_play_and_dispensa_use_python_scheduler():
         assert [
             call["mode"] for call in main._playback_scheduler.starts
         ] == ["listen", "play", "dispensa", "listen"]
+        assert activity_calls == [True, True]
 
-        addresses = [address for address, _args in main.osc.messages]
-        assert "/game/listen" in addresses
-        assert "/game/play" in addresses
-        assert "/game/dispensa" in addresses
+        # Command-only broadcasts were removed. Browser rendering follows the
+        # Scheduler's playback events and authoritative game state.
+        addresses = [
+            address for address, _args in main._websocket_service.messages
+        ]
+        assert "/game/listen" not in addresses
+        assert "/game/play" not in addresses
+        assert "/game/dispensa" not in addresses
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
-        for name in ("main", "serial", "pythonosc", "pythonosc.udp_client"):
+        for name in ("main", "serial"):
+            sys.modules.pop(name, None)
+
+
+def test_serial_game_controls_use_start_end_reset_literals():
+    main = _load_main_module()
+    calls = []
+    main.start_game = lambda: calls.append("start")
+    main.end_game = lambda reason="manual": calls.append(("end", reason))
+    main.reset_game = lambda: calls.append("reset")
+
+    try:
+        main.handle_serial_message({"type": "game", "action": "start"})
+        main.handle_serial_message(
+            {"type": "game", "action": "end", "reason": "hardware"}
+        )
+        main.handle_serial_message({"type": "game", "action": "reset"})
+
+        assert calls == ["start", ("end", "hardware"), "reset"]
+        assert (
+            main.GAME_ACTION_START,
+            main.GAME_ACTION_END,
+            main.GAME_ACTION_RESET,
+        ) == ("start", "end", "reset")
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
+        for name in ("main", "serial"):
+            sys.modules.pop(name, None)
+
+
+def test_admin_controls_display_the_same_serial_action_literals():
+    html = (ROOT / "admin" / "index.html").read_text(encoding="utf-8")
+
+    for action in ("start", "end", "reset"):
+        assert f'data-game-action="{action}">{action}</button>' in html
+
+
+def test_phase_log_uses_authoritative_state_names_only():
+    main = _load_main_module()
+
+    try:
+        main.start_game()
+        main.end_game("manual")
+        events = main.get_events()
+
+        states = [event["phase"] for event in events if event["type"] == "game_state"]
+        assert states == ["STARTING", "RUNNING", "FINISHED"]
+        assert all(event["type"] != "ready" for event in events)
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
+        for name in ("main", "serial"):
             sys.modules.pop(name, None)
 
 
 def test_stage_rules_expose_120_second_total_and_30_second_idle_timers():
-    FakeOscClient.instances.clear()
     main = _load_main_module()
 
     try:
@@ -286,12 +341,11 @@ def test_stage_rules_expose_120_second_total_and_30_second_idle_timers():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
-        for name in ("main", "serial", "pythonosc", "pythonosc.udp_client"):
+        for name in ("main", "serial"):
             sys.modules.pop(name, None)
 
 
 def test_playback_requests_are_ignored_outside_active_game_phases():
-    FakeOscClient.instances.clear()
     main = _load_main_module()
 
     try:
@@ -305,12 +359,11 @@ def test_playback_requests_are_ignored_outside_active_game_phases():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
-        for name in ("main", "serial", "pythonosc", "pythonosc.udp_client"):
+        for name in ("main", "serial"):
             sys.modules.pop(name, None)
 
 
 def test_finish_phase_cancels_active_scheduler_without_blocking_runtime():
-    FakeOscClient.instances.clear()
     main = _load_main_module()
 
     try:
@@ -325,22 +378,20 @@ def test_finish_phase_cancels_active_scheduler_without_blocking_runtime():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
-        for name in ("main", "serial", "pythonosc", "pythonosc.udp_client"):
+        for name in ("main", "serial"):
             sys.modules.pop(name, None)
 
 
 def test_main_fans_out_events_and_builds_complete_web_snapshot():
-    """M4 keeps OSC output while giving browsers one direct recovery source."""
+    """Browsers receive one direct event stream and recovery snapshot."""
 
-    FakeOscClient.instances.clear()
     main = _load_main_module()
     websocket = FakeWebSocketService()
     main._websocket_service = websocket
 
     try:
-        main._osc_send("/game/example", [7, "value"])
+        main._publish_web_event("/game/example", [7, "value"])
 
-        assert main.osc.messages[-1] == ("/game/example", [7, "value"])
         assert websocket.messages == [("/game/example", [7, "value"])]
 
         snapshot = main.get_web_snapshot()
@@ -355,5 +406,5 @@ def test_main_fans_out_events_and_builds_complete_web_snapshot():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
-        for name in ("main", "serial", "pythonosc", "pythonosc.udp_client"):
+        for name in ("main", "serial"):
             sys.modules.pop(name, None)
