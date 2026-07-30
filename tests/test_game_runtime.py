@@ -102,11 +102,17 @@ def test_command_phase_changes_are_published_explicitly_in_caller_order():
 
         final_orb = runtime.add_orb(orb_id="orb-c", slave=1, cell=1)
 
-        assert final_orb.phase == "FINISHED"
+        assert final_orb.phase == "RUNNING"
+        assert final_orb.snapshot["solved"] is True
         assert transitions == []
 
         transitions.append(("output", "orb_added", None))
         runtime.publish_phase_change(final_orb)
+        dispensa = runtime.press_dispensa()
+
+        assert dispensa.phase == "FINISHED"
+        assert transitions == [("output", "orb_added", None)]
+        runtime.publish_phase_change(dispensa)
 
         assert transitions == [
             ("output", "orb_added", None),

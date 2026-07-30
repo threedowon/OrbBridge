@@ -414,6 +414,8 @@
           <div class="stat-box"><div class="num" id="stat-orbs">0</div><div class="lbl">등록 Orb</div></div>
           <div class="stat-box"><div class="num" id="stat-stage">—</div><div class="lbl">Stage</div></div>
           <div class="stat-box"><div class="num" id="stat-mode">—</div><div class="lbl">입력 모드</div></div>
+          <div class="stat-box"><div class="num" id="stat-total-time">—</div><div class="lbl">Timeover 잔여</div></div>
+          <div class="stat-box"><div class="num" id="stat-idle-time">—</div><div class="lbl">Idle 잔여</div></div>
         </div>
       </div>
 
@@ -605,6 +607,15 @@
       return `${m}분 ${s % 60}초`;
     }
 
+    function fmtRemaining(seconds) {
+      const value = Number(seconds);
+      if (!Number.isFinite(value)) return '—';
+      const total = Math.max(0, Math.ceil(value));
+      const minutes = Math.floor(total / 60);
+      const remainder = total % 60;
+      return `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
+    }
+
     function renderSlaves(slaves) {
       const box = document.getElementById('slave-status');
       if (!slaves || slaves.length === 0) {
@@ -651,6 +662,11 @@
         document.getElementById('stat-stage').textContent = s.current_stage;
         document.getElementById('stat-mode').textContent = s.input_mode;
         document.getElementById('stat-orbs').textContent = s.orb_count ?? '—';
+        const timers = s.game?.timers || {};
+        document.getElementById('stat-total-time').textContent =
+          fmtRemaining(timers.remaining_total_s);
+        document.getElementById('stat-idle-time').textContent =
+          fmtRemaining(timers.remaining_idle_s);
 
         renderSlaves(s.slaves);
       } catch { /* server may be starting */ }
@@ -760,7 +776,9 @@
     loadSnapshot();
     fetchStatus();
     connectWs();
-    setInterval(fetchStatus, 3000);
+    // One-second polling keeps both countdowns readable without making the
+    // browser another source of timer truth.
+    setInterval(fetchStatus, 1000);
   </script>
 </body>
 </html>

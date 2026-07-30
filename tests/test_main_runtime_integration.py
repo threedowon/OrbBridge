@@ -144,8 +144,18 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
                 {"type": "added", "slave": slave, "cell": cell, "id": orb_id}
             )
 
-        assert completed["game"]["phase"] == "RESETTING"
-        assert completed["game"]["finish_reason"] == "complete"
+        assert completed["game"]["phase"] == "RUNNING"
+        assert completed["game"]["solved"] is True
+        assert completed["game"]["completion"]["dispensa_presses_remaining"] == 1
+        assert "/game/end" not in [
+            address for address, _args in main.osc.messages
+        ]
+
+        finished = main.request_dispensa()
+
+        assert finished["counted"] is True
+        assert finished["game"]["phase"] == "RESETTING"
+        assert finished["game"]["finish_reason"] == "complete"
         assert main.get_game_state()["phase"] == "RESETTING"
         assert len(midi_calls) == 8
 
@@ -159,7 +169,10 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
         game_reset_index = max(
             i for i, value in enumerate(addresses) if value == "/game/reset"
         )
-        assert final_added_index < game_end_index < game_reset_index
+        dispensa_index = max(
+            i for i, value in enumerate(addresses) if value == "/game/dispensa"
+        )
+        assert final_added_index < dispensa_index < game_end_index < game_reset_index
 
         for orb_id, slave, cell, _voice in placements:
             removed = main.handle_event(
@@ -221,6 +234,7 @@ def test_listen_play_and_dispensa_use_python_scheduler():
 
         assert play["ok"] is True
         assert dispensa["ok"] is True
+        assert dispensa["counted"] is False
         assert listen["ok"] is True
         assert [
             call["mode"] for call in main._playback_scheduler.starts
@@ -230,6 +244,27 @@ def test_listen_play_and_dispensa_use_python_scheduler():
         assert "/game/listen" in addresses
         assert "/game/play" in addresses
         assert "/game/dispensa" in addresses
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
+        for name in ("main", "serial", "pythonosc", "pythonosc.udp_client"):
+            sys.modules.pop(name, None)
+
+
+def test_stage_rules_expose_120_second_total_and_30_second_idle_timers():
+    FakeOscClient.instances.clear()
+    main = _load_main_module()
+
+    try:
+        started = main.start_game()
+        timers = started["game"]["timers"]
+
+        assert timers["total_limit_s"] == 120
+        assert timers["idle_limit_s"] == 30
+        assert 119 <= timers["remaining_total_s"] <= 120
+        assert 29 <= timers["remaining_idle_s"] <= 30
+        assert started["game"]["completion"]["dispensa_presses_required"] == 1
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()

@@ -133,6 +133,10 @@ class GameRuntime:
     def finish_game(self, reason="manual", *, timeout: float = 2.0) -> RuntimeResult:
         return self._submit("finish", timeout=timeout, reason=reason)
 
+    def press_dispensa(self, *, timeout: float = 2.0) -> RuntimeResult:
+        """Queue one DFesta button press through the single engine writer."""
+        return self._submit("press_dispensa", timeout=timeout)
+
     def reset_game(self, *, timeout: float = 2.0) -> RuntimeResult:
         return self._submit("reset", timeout=timeout)
 
@@ -253,6 +257,8 @@ class GameRuntime:
             value = self._engine.complete_start()
         elif action == "finish":
             value = self._engine.finish(payload["reason"])
+        elif action == "press_dispensa":
+            value = self._engine.press_dispensa()
         elif action == "reset":
             value = self._engine.reset()
         elif action == "add_orb":

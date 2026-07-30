@@ -32,11 +32,13 @@ def make_engine(
     *,
     total_timeout_s=60,
     idle_timeout_s=10,
+    dispensa_presses_required=1,
 ) -> GameEngine:
     return GameEngine(
         answers or {"1": "C", "2": "D", "3": "R"},
         total_timeout_s=total_timeout_s,
         idle_timeout_s=idle_timeout_s,
+        dispensa_presses_required=dispensa_presses_required,
         clock=clock,
     )
 
@@ -91,6 +93,17 @@ def test_invalid_timeout_is_rejected(value):
             {"1": "C"},
             total_timeout_s=value,
             idle_timeout_s=10,
+        )
+
+
+@pytest.mark.parametrize("value", [0, -1, True, 1.5, "2"])
+def test_invalid_dispensa_press_count_is_rejected(value):
+    with pytest.raises(ValueError, match="dispensa_presses_required"):
+        GameEngine(
+            {"1": "C"},
+            total_timeout_s=60,
+            idle_timeout_s=10,
+            dispensa_presses_required=value,
         )
 
 
@@ -192,7 +205,7 @@ def test_running_placement_is_judged_correct_wrong_rest_or_unknown():
     )
 
 
-def test_all_required_positions_complete_the_game():
+def test_all_required_positions_wait_for_dispensa_before_completion():
     clock = FakeClock()
     engine = make_engine(clock)
     start_running(engine)
@@ -201,11 +214,22 @@ def test_all_required_positions_complete_the_game():
     result = engine.add_orb(orb_id="orb-d", slave=1, cell=10)
 
     assert result is PlacementResult.CORRECT
+    assert engine.phase is GamePhase.RUNNING
+    snapshot = engine.snapshot()
+    assert snapshot["solved"] is True
+    assert snapshot["completion"] == {
+        "waiting_for_dispensa": True,
+        "dispensa_presses": 0,
+        "dispensa_presses_required": 1,
+        "dispensa_presses_remaining": 1,
+    }
+
+    assert engine.press_dispensa() is True
     assert engine.phase is GamePhase.FINISHED
     assert engine.finish_reason is FinishReason.COMPLETE
 
 
-def test_extra_wrong_orb_blocks_completion_until_removed():
+def test_extra_wrong_orb_blocks_dispensa_completion_until_removed():
     clock = FakeClock()
     engine = make_engine(clock)
     start_running(engine)
@@ -216,8 +240,59 @@ def test_extra_wrong_orb_blocks_completion_until_removed():
 
     assert engine.phase is GamePhase.RUNNING
     assert engine.remove_orb(orb_id="wrong", slave=1, cell=2)
+    assert engine.phase is GamePhase.RUNNING
+    assert engine.press_dispensa() is True
     assert engine.phase is GamePhase.FINISHED
     assert engine.finish_reason is FinishReason.COMPLETE
+
+
+def test_configured_dispensa_count_requires_every_press():
+    clock = FakeClock()
+    engine = make_engine(
+        clock,
+        {"1": "C"},
+        dispensa_presses_required=2,
+    )
+    start_running(engine)
+    engine.add_orb(orb_id="orb-c", slave=1, cell=1)
+
+    assert engine.press_dispensa() is True
+    first = engine.snapshot()
+    assert first["phase"] == "RUNNING"
+    assert first["completion"]["dispensa_presses"] == 1
+    assert first["completion"]["dispensa_presses_remaining"] == 1
+
+    assert engine.press_dispensa() is True
+    assert engine.phase is GamePhase.FINISHED
+    assert engine.finish_reason is FinishReason.COMPLETE
+
+
+def test_dispensa_before_solution_does_not_count():
+    clock = FakeClock()
+    engine = make_engine(clock, {"1": "C"})
+    start_running(engine)
+
+    assert engine.press_dispensa() is False
+    assert engine.snapshot()["completion"]["dispensa_presses"] == 0
+    assert engine.phase is GamePhase.RUNNING
+
+
+def test_breaking_solution_resets_partial_dispensa_progress():
+    clock = FakeClock()
+    engine = make_engine(
+        clock,
+        {"1": "C"},
+        dispensa_presses_required=2,
+    )
+    start_running(engine)
+    engine.add_orb(orb_id="orb-c", slave=1, cell=1)
+    engine.press_dispensa()
+
+    engine.add_orb(orb_id="wrong", slave=1, cell=2)
+
+    snapshot = engine.snapshot()
+    assert snapshot["solved"] is False
+    assert snapshot["completion"]["dispensa_presses"] == 0
 
 
 def test_unknown_orb_on_correct_cell_blocks_completion():
@@ -316,6 +391,31 @@ def test_idle_timeout_finishes_the_game():
 
     assert engine.phase is GamePhase.FINISHED
     assert engine.finish_reason is FinishReason.IDLE_TIMEOUT
+
+
+def test_timers_continue_while_waiting_for_dispensa():
+    clock = FakeClock()
+    engine = make_engine(
+        clock,
+        {"1": "C"},
+        total_timeout_s=120,
+        idle_timeout_s=30,
+    )
+    start_running(engine)
+    engine.add_orb(orb_id="orb-c", slave=1, cell=1)
+    clock.advance(5)
+
+    snapshot = engine.snapshot()
+
+    assert snapshot["phase"] == "RUNNING"
+    assert snapshot["solved"] is True
+    assert snapshot["timers"] == {
+        "elapsed_s": 5,
+        "total_limit_s": 120.0,
+        "idle_limit_s": 30.0,
+        "remaining_total_s": 115,
+        "remaining_idle_s": 25,
+    }
 
 
 def test_real_add_and_remove_changes_refresh_idle_timer():

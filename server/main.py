@@ -23,6 +23,11 @@ ensure_data_files()
 SERVER_DIR = data_dir()
 os.chdir(SERVER_DIR)
 
+# Game-rule defaults apply when an older stage_data.json lacks the new fields.
+DEFAULT_TOTAL_TIMEOUT_S = 120
+DEFAULT_IDLE_TIMEOUT_S = 30
+DEFAULT_DISPENSA_PRESSES_REQUIRED = 1
+
 # ── 설정 로드 ──────────────────────────────────────────
 with open(SERVER_DIR / "config.json")      as f: config      = json.load(f)
 with open(SERVER_DIR / "orb_mapping.json") as f: orb_mapping = json.load(f)
@@ -31,8 +36,12 @@ with open(SERVER_DIR / "stage_data.json")  as f: stage_data  = json.load(f)
 current_stage   = config["current_stage"]
 stage           = next(s for s in stage_data["stages"] if s["stage"] == current_stage)
 answer_sequence = stage["sequence"]
-time_limit      = stage["time_limit"]
-idle_time_limit = stage.get("idle_time_limit")
+time_limit      = stage.get("time_limit", DEFAULT_TOTAL_TIMEOUT_S)
+idle_time_limit = stage.get("idle_time_limit", DEFAULT_IDLE_TIMEOUT_S)
+dispensa_presses_required = stage.get(
+    "dispensa_presses_required",
+    DEFAULT_DISPENSA_PRESSES_REQUIRED,
+)
 melody_id       = config.get("melody", "biplane")
 _raw_input_mode = config.get("input_mode", "table")
 # legacy: "mock" → "table" (웹 /table UI 입력)
@@ -236,6 +245,7 @@ def _new_game_engine() -> GameEngine:
         answer_sequence,
         total_timeout_s=time_limit,
         idle_timeout_s=idle_time_limit,
+        dispensa_presses_required=dispensa_presses_required,
     )
 
 
@@ -256,7 +266,24 @@ def _phase_payload(snapshot: dict) -> list:
 
 def _on_phase_change(previous: str, current: str, snapshot: dict) -> None:
     """Translate Python phase transitions to OSC and stop invalid playback."""
-    if current not in (GamePhase.STARTING.value, GamePhase.RUNNING.value):
+    with _scheduler_lock:
+        scheduler = _playback_scheduler
+    playback = scheduler.snapshot() if scheduler is not None else {}
+    keep_final_dispensa = (
+        playback.get("active")
+        and playback.get("mode") == PlaybackMode.DISPENSA.value
+        and (
+            snapshot.get("finish_reason") == FinishReason.COMPLETE.value
+            or (
+                previous == GamePhase.RESETTING.value
+                and current == GamePhase.READY.value
+            )
+        )
+    )
+    if (
+        current not in (GamePhase.STARTING.value, GamePhase.RUNNING.value)
+        and not keep_final_dispensa
+    ):
         _cancel_playback()
     set_ready(current == GamePhase.RUNNING.value)
 
@@ -352,6 +379,7 @@ def set_ready(ready: bool) -> None:
 def reload_stage_data() -> None:
     """Pick up Melody Editor saves (stage_data.json, config melody) without restarting."""
     global stage_data, stage, answer_sequence, time_limit, idle_time_limit
+    global dispensa_presses_required
     global melody_id, config, current_stage, input_mode
     with open(SERVER_DIR / "config.json", encoding="utf-8") as f:
         config = json.load(f)
@@ -363,8 +391,12 @@ def reload_stage_data() -> None:
         stage_data = json.load(f)
     stage = next(s for s in stage_data["stages"] if s["stage"] == current_stage)
     answer_sequence = stage["sequence"]
-    time_limit = stage["time_limit"]
-    idle_time_limit = stage.get("idle_time_limit")
+    time_limit = stage.get("time_limit", DEFAULT_TOTAL_TIMEOUT_S)
+    idle_time_limit = stage.get("idle_time_limit", DEFAULT_IDLE_TIMEOUT_S)
+    dispensa_presses_required = stage.get(
+        "dispensa_presses_required",
+        DEFAULT_DISPENSA_PRESSES_REQUIRED,
+    )
     print(f"[stage] 재로드 — melody={melody_id}, 정답 시퀀스: {answer_sequence}")
 
 
@@ -479,16 +511,38 @@ def request_play() -> dict:
 
 
 def request_dispensa() -> dict:
-    """Play the answer melody with every unique voice currently on the table."""
-    snapshot = get_game_state()
+    """Play all voices and count the DFesta press toward solved-game completion."""
+    runtime = get_game_runtime()
+    snapshot = runtime.snapshot()
     if snapshot["phase"] != GamePhase.RUNNING.value:
         print("[game] 디페스타 무시 — RUNNING 아님")
         return {"ok": False, "ignored": True, "game": snapshot}
 
+    # Queue the button event before playback so an exact timeout deadline wins.
+    # Phase publication is intentionally delayed until the final Dispensa plan
+    # has started; the completion transition must not cancel its own audio.
+    runtime_result = runtime.press_dispensa()
+    if (
+        runtime_result.phase == GamePhase.FINISHED.value
+        and runtime_result.snapshot.get("finish_reason")
+        != FinishReason.COMPLETE.value
+    ):
+        snapshot = _publish_transition(runtime_result)
+        print("[game] 디페스타 무시 — 타이머 만료")
+        return {"ok": False, "ignored": True, "game": snapshot}
+
     print("[game] 디페스타")
     _osc_send("/game/dispensa", [])
-    playback = _start_playback(PlaybackMode.DISPENSA)
-    return {"ok": True, "playback": playback, "game": snapshot}
+    try:
+        playback = _start_playback(PlaybackMode.DISPENSA)
+    finally:
+        snapshot = _publish_transition(runtime_result)
+    return {
+        "ok": True,
+        "counted": bool(runtime_result.value),
+        "playback": playback,
+        "game": snapshot,
+    }
 
 def handle_serial_message(event: dict) -> None:
     """USB/serial 한 줄 JSON — orb 이벤트 또는 game 버튼."""

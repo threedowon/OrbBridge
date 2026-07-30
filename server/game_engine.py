@@ -94,6 +94,7 @@ class GameEngine:
         *,
         total_timeout_s: float | None,
         idle_timeout_s: float | None,
+        dispensa_presses_required: int = 1,
         clock: Callable[[], float] = monotonic,
     ) -> None:
         self._answers = self._normalize_answers(answers)
@@ -109,6 +110,9 @@ class GameEngine:
         self.idle_timeout_s = self._normalize_timeout(
             idle_timeout_s, "idle_timeout_s"
         )
+        self.dispensa_presses_required = self._normalize_press_count(
+            dispensa_presses_required
+        )
         if not callable(clock):
             raise TypeError("clock must be callable")
         self._clock = clock
@@ -121,6 +125,7 @@ class GameEngine:
         self._started_at: float | None = None
         self._last_activity_at: float | None = None
         self._finished_at: float | None = None
+        self._dispensa_presses = 0
         self._revision = 0
 
     @staticmethod
@@ -172,6 +177,13 @@ class GameEngine:
             raise ValueError(f"{name} must be a positive number or None")
         return duration
 
+    @staticmethod
+    def _normalize_press_count(value: int) -> int:
+        """Require an explicit positive whole-number completion threshold."""
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError("dispensa_presses_required must be a positive integer")
+        return value
+
     def _now(self) -> float:
         try:
             now = float(self._clock())
@@ -203,6 +215,7 @@ class GameEngine:
         self._started_at = None
         self._last_activity_at = None
         self._finished_at = None
+        self._dispensa_presses = 0
         self._set_phase(GamePhase.STARTING)
         return self.phase
 
@@ -218,7 +231,6 @@ class GameEngine:
         self._finished_at = None
         self.finish_reason = None
         self._set_phase(GamePhase.RUNNING)
-        self._finish_if_complete(now)
         return self.phase
 
     def finish(self, reason: FinishReason | str = FinishReason.MANUAL) -> GamePhase:
@@ -249,12 +261,41 @@ class GameEngine:
         return self.phase
 
     def tick(self) -> GamePhase:
-        """Advance timeout/completion checks using the injected clock."""
+        """Advance timeout checks using the injected clock."""
         now = self._now()
         if self.phase is GamePhase.RUNNING:
-            if not self._expire_if_needed(now):
-                self._finish_if_complete(now)
+            self._expire_if_needed(now)
         return self.phase
+
+    def press_dispensa(self) -> bool:
+        """Count one DFesta button press only while the current answer is solved.
+
+        The button remains usable as a playback command before the answer is
+        correct, but those presses do not advance game completion. Timeout
+        deadlines win when a press lands exactly on an expired deadline.
+        """
+        now = self._now()
+        if self.phase is not GamePhase.RUNNING:
+            raise InvalidTransition(
+                f"DISPENSA is invalid from {self.phase.value}"
+            )
+        if self._expire_if_needed(now):
+            return False
+
+        # A real button press is user activity even when the answer is not yet
+        # correct, so it refreshes the idle deadline.
+        self._last_activity_at = now
+        if not self._is_solved():
+            if self._dispensa_presses:
+                self._dispensa_presses = 0
+            self._revision += 1
+            return False
+
+        self._dispensa_presses += 1
+        self._revision += 1
+        if self._dispensa_presses >= self.dispensa_presses_required:
+            self._enter_finished(FinishReason.COMPLETE, now)
+        return True
 
     def add_orb(
         self,
@@ -304,7 +345,7 @@ class GameEngine:
         if running:
             self._last_activity_at = now
             result = self._result_for(address, placement)
-            self._finish_if_complete(now)
+            self._reset_completion_progress_if_unsolved()
             return result
         return PlacementResult.INACTIVE
 
@@ -336,7 +377,7 @@ class GameEngine:
 
         if self.phase is GamePhase.RUNNING:
             self._last_activity_at = now
-            self._finish_if_complete(now)
+            self._reset_completion_progress_if_unsolved()
         elif self.phase is GamePhase.RESETTING and not self._cells:
             self._enter_ready()
         return True
@@ -357,10 +398,13 @@ class GameEngine:
         """Return a JSON-serializable, current-state snapshot."""
         now = self._now()
         if self.phase is GamePhase.RUNNING:
-            if not self._expire_if_needed(now):
-                self._finish_if_complete(now)
+            self._expire_if_needed(now)
 
         correct_positions, wrong_cells = self._solution_state()
+        solved = (
+            not wrong_cells
+            and self._required_positions.issubset(correct_positions)
+        )
         cells = {}
         for address in sorted(self._cells):
             placement = self._cells[address]
@@ -392,6 +436,11 @@ class GameEngine:
                     0.0, self._last_activity_at + self.idle_timeout_s - now
                 )
 
+        presses_remaining = max(
+            0,
+            self.dispensa_presses_required - self._dispensa_presses,
+        )
+
         return {
             "phase": self.phase.value,
             "finish_reason": (
@@ -405,11 +454,21 @@ class GameEngine:
             "required_positions": sorted(self._required_positions),
             "correct_positions": sorted(correct_positions),
             "wrong_cells": sorted(wrong_cells),
-            "solved": self._is_solved(),
+            "solved": solved,
+            "completion": {
+                "waiting_for_dispensa": (
+                    self.phase is GamePhase.RUNNING and solved
+                ),
+                "dispensa_presses": self._dispensa_presses,
+                "dispensa_presses_required": self.dispensa_presses_required,
+                "dispensa_presses_remaining": presses_remaining,
+            },
             "cell_count": len(self._cells),
             "cells": cells,
             "timers": {
                 "elapsed_s": elapsed_s,
+                "total_limit_s": self.total_timeout_s,
+                "idle_limit_s": self.idle_timeout_s,
                 "remaining_total_s": remaining_total_s,
                 "remaining_idle_s": remaining_idle_s,
             },
@@ -442,6 +501,7 @@ class GameEngine:
         self._started_at = None
         self._last_activity_at = None
         self._finished_at = None
+        self._dispensa_presses = 0
         self._set_phase(GamePhase.READY)
 
     def _expire_if_needed(self, now: float) -> bool:
@@ -473,11 +533,10 @@ class GameEngine:
         self._enter_finished(reason, now)
         return True
 
-    def _finish_if_complete(self, now: float) -> bool:
-        if self.phase is GamePhase.RUNNING and self._is_solved():
-            self._enter_finished(FinishReason.COMPLETE, now)
-            return True
-        return False
+    def _reset_completion_progress_if_unsolved(self) -> None:
+        """Invalidate partial DFesta progress when the answer stops matching."""
+        if not self._is_solved():
+            self._dispensa_presses = 0
 
     def _result_for(
         self,

@@ -19,6 +19,9 @@ DEFAULT_RANGE = ["C4", "C5"]
 BEAT_COLS = 12
 LOG_LIMIT = 80
 SKIP_FILES = {"config.json"}
+DEFAULT_STAGE_TIME_LIMIT_S = 120
+DEFAULT_STAGE_IDLE_LIMIT_S = 30
+DEFAULT_STAGE_DISPENSA_PRESSES_REQUIRED = 1
 
 
 def stage_data_path() -> Path:
@@ -232,7 +235,17 @@ def sync_stage_data(
     stages = doc.setdefault("stages", [])
     stage = next((s for s in stages if s.get("stage") == stage_number), None)
     if stage is None:
-        stage = {"stage": stage_number, "sequence": {}, "time_limit": 60}
+        # Keep newly created stages aligned with the runtime's game-rule
+        # defaults while preserving every field on existing stages.
+        stage = {
+            "stage": stage_number,
+            "sequence": {},
+            "time_limit": DEFAULT_STAGE_TIME_LIMIT_S,
+            "idle_time_limit": DEFAULT_STAGE_IDLE_LIMIT_S,
+            "dispensa_presses_required": (
+                DEFAULT_STAGE_DISPENSA_PRESSES_REQUIRED
+            ),
+        }
         stages.append(stage)
         stages.sort(key=lambda s: int(s.get("stage", 0)))
 
