@@ -641,65 +641,87 @@
       }
     }
 
+    function renderStatus(s) {
+      if (!s) return;
+      const serialOk = s.serial?.connected;
+      const tableMode = s.input_mode === 'table' || s.input_mode === 'mock';
+      setDot('dot-serial', serialOk ? 'ok' : (tableMode ? 'warn' : 'err'));
+      document.getElementById('lbl-serial').textContent = tableMode
+        ? 'Table (web)'
+        : (serialOk ? `Serial ${s.serial.port}` : `Serial ${s.serial?.error || '끊김'}`);
+
+      const gamePhase = s.game?.phase || (s.game_active ? 'RUNNING' : 'READY');
+      setDot('dot-game', gamePhase === 'RUNNING' ? 'ok' : (gamePhase === 'RESETTING' ? 'warn' : ''));
+      document.getElementById('lbl-game').textContent =
+        `${gamePhase} (stage ${s.current_stage})`;
+
+      document.getElementById('stat-stage').textContent = s.current_stage;
+      document.getElementById('stat-mode').textContent = s.input_mode;
+      document.getElementById('stat-orbs').textContent = s.orb_count ?? '—';
+      const timers = s.game?.timers || {};
+      document.getElementById('stat-total-time').textContent =
+        fmtRemaining(timers.remaining_total_s);
+      document.getElementById('stat-idle-time').textContent =
+        fmtRemaining(timers.remaining_idle_s);
+      renderSlaves(s.slaves);
+    }
+
     async function fetchStatus() {
       try {
         const res = await fetch('/api/status');
         if (!res.ok) return;
-        const s = await res.json();
-
-        const serialOk = s.serial?.connected;
-        const tableMode = s.input_mode === 'table' || s.input_mode === 'mock';
-        setDot('dot-serial', serialOk ? 'ok' : (tableMode ? 'warn' : 'err'));
-        document.getElementById('lbl-serial').textContent = tableMode
-          ? 'Table (web)'
-          : (serialOk ? `Serial ${s.serial.port}` : `Serial ${s.serial?.error || '끊김'}`);
-
-        const gamePhase = s.game?.phase || (s.game_active ? 'RUNNING' : 'READY');
-        setDot('dot-game', gamePhase === 'RUNNING' ? 'ok' : (gamePhase === 'RESETTING' ? 'warn' : ''));
-        document.getElementById('lbl-game').textContent =
-          `${gamePhase} (stage ${s.current_stage})`;
-
-        document.getElementById('stat-stage').textContent = s.current_stage;
-        document.getElementById('stat-mode').textContent = s.input_mode;
-        document.getElementById('stat-orbs').textContent = s.orb_count ?? '—';
-        const timers = s.game?.timers || {};
-        document.getElementById('stat-total-time').textContent =
-          fmtRemaining(timers.remaining_total_s);
-        document.getElementById('stat-idle-time').textContent =
-          fmtRemaining(timers.remaining_idle_s);
-
-        renderSlaves(s.slaves);
+        renderStatus(await res.json());
       } catch { /* server may be starting */ }
+    }
+
+    function renderCellsSnapshot(data) {
+      cells.clear();
+      gridEl.querySelectorAll('.cell').forEach(el => {
+        el.className = 'cell';
+        el.querySelector('.note').textContent = '';
+        el.querySelector('.voice').textContent = '';
+      });
+      for (const [key, val] of Object.entries(data || {})) {
+        const [slave, cell] = key.split(':').map(Number);
+        applyCellState(slave, cell, val);
+      }
+      updateStats();
+    }
+
+    function renderEventSnapshot(events) {
+      logEl.innerHTML = '';
+      for (const ev of (events || []).slice().reverse()) {
+        const cls = ev.type === 'added' ? 'log-added' : ev.type === 'removed' ? 'log-removed' : 'log-info';
+        const entry = document.createElement('div');
+        entry.className = 'log-entry';
+        entry.innerHTML = `<span class="log-time">${fmtTime(ev.ts)}</span><span class="${cls}">[${ev.type}]</span> S${ev.slave} C${ev.cell} ${ev.voice || ''} ${ev.id ? shortId(ev.id) : ''}`;
+        logEl.appendChild(entry);
+      }
     }
 
     async function loadSnapshot() {
       try {
         const res = await fetch('/api/cells');
         if (!res.ok) return;
-        const data = await res.json();
-        cells.clear();
-        for (const [key, val] of Object.entries(data)) {
-          const [slave, cell] = key.split(':').map(Number);
-          applyCellState(slave, cell, val);
-        }
+        renderCellsSnapshot(await res.json());
       } catch { /* ignore */ }
 
       try {
         const res = await fetch('/api/events');
         if (!res.ok) return;
-        const events = await res.json();
-        logEl.innerHTML = '';
-        for (const ev of events.slice().reverse()) {
-          const cls = ev.type === 'added' ? 'log-added' : ev.type === 'removed' ? 'log-removed' : 'log-info';
-          const entry = document.createElement('div');
-          entry.className = 'log-entry';
-          entry.innerHTML = `<span class="log-time">${fmtTime(ev.ts)}</span><span class="${cls}">[${ev.type}]</span> S${ev.slave} C${ev.cell} ${ev.voice || ''} ${ev.id ? shortId(ev.id) : ''}`;
-          logEl.appendChild(entry);
-        }
+        renderEventSnapshot(await res.json());
       } catch { /* ignore */ }
     }
 
     function handleWsMessage(msg) {
+      if (msg?.type === 'snapshot') {
+        const snapshot = msg.snapshot || {};
+        renderCellsSnapshot(snapshot.cells);
+        renderEventSnapshot(snapshot.events);
+        renderStatus(snapshot.status);
+        return;
+      }
+
       const { address, args } = msg;
       if (address === '/orb/added' && args.length >= 6) {
         const [slave, cell, voice, note, result, orb_id] = args;

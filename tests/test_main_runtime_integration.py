@@ -60,6 +60,23 @@ class FakeScheduler:
         self.closed = True
 
 
+class FakeWebSocketService:
+    """Record direct browser broadcasts without opening a TCP listener."""
+
+    def __init__(self):
+        self.messages = []
+        self.running = True
+        self.closed = False
+
+    def broadcast(self, address, args):
+        self.messages.append((address, list(args)))
+        return True
+
+    def close(self):
+        self.running = False
+        self.closed = True
+
+
 def _load_main_module():
     serial_module = types.ModuleType("serial")
     serial_module.SerialException = type("SerialException", (Exception,), {})
@@ -305,6 +322,36 @@ def test_finish_phase_cancels_active_scheduler_without_blocking_runtime():
         assert finished["game"]["phase"] == "FINISHED"
         assert main._playback_scheduler.cancel_count == before + 1
     finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
+        for name in ("main", "serial", "pythonosc", "pythonosc.udp_client"):
+            sys.modules.pop(name, None)
+
+
+def test_main_fans_out_events_and_builds_complete_web_snapshot():
+    """M4 keeps OSC output while giving browsers one direct recovery source."""
+
+    FakeOscClient.instances.clear()
+    main = _load_main_module()
+    websocket = FakeWebSocketService()
+    main._websocket_service = websocket
+
+    try:
+        main._osc_send("/game/example", [7, "value"])
+
+        assert main.osc.messages[-1] == ("/game/example", [7, "value"])
+        assert websocket.messages == [("/game/example", [7, "value"])]
+
+        snapshot = main.get_web_snapshot()
+        assert snapshot["schema_version"] == 1
+        assert snapshot["game"]["phase"] == "READY"
+        assert snapshot["status"]["game"] == snapshot["game"]
+        assert snapshot["status"]["cell_count"] == snapshot["game"]["cell_count"]
+        assert snapshot["cells"] == {}
+        assert snapshot["events"] == []
+    finally:
+        main._websocket_service = None
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]

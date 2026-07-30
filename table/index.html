@@ -438,6 +438,9 @@
     let phaseSyncInFlight = false;
     let lastGameRevision = null;
     let ws = null;
+    let wsSnapshotReceived = false;
+    // Snapshot rebuilding is async; keep later live events in wire order.
+    let wsMessageChain = Promise.resolve();
     let dragPayload = null;
     let dropTarget = null;
 
@@ -643,9 +646,9 @@
       refreshDispensaState();
     }
 
-    function applyOrbAt(slave, cell, orbId, voice) {
+    function applyOrbAt(slave, cell, orbId, voice, force = false) {
       const pos = slaveCellToColRow(slave, cell);
-      if (!pos || (!ready && !resetting)) return;
+      if (!pos || (!force && !ready && !resetting)) return;
       const { col, row } = pos;
       const prev = findCellWithOrbId(orbId);
       if (prev && (prev.col !== col || prev.row !== row)) {
@@ -680,9 +683,9 @@
       refreshDispensaState();
     }
 
-    async function syncPlacedFromCells() {
+    async function syncPlacedFromCells(cellsSnapshot = null) {
       try {
-        const cells = await fetch(`${API}/api/cells`).then(r => r.json());
+        const cells = cellsSnapshot ?? await fetch(`${API}/api/cells`).then(r => r.json());
         placed.clear();
         gridEl.querySelectorAll('.cell').forEach(el => {
           el.className = 'cell';
@@ -692,7 +695,7 @@
         for (const [cellKey, info] of Object.entries(cells)) {
           const [slave, cell] = cellKey.split(':').map(Number);
           if (!info?.id) continue;
-          applyOrbAt(slave, cell, info.id, info.voice);
+          applyOrbAt(slave, cell, info.id, info.voice, true);
         }
       } catch (e) {
         console.warn('cells sync failed', e);
@@ -726,7 +729,7 @@
       }
     }
 
-    async function setPhase(nextPhase) {
+    async function setPhase(nextPhase, cellsSnapshot = null) {
       const previous = phase;
       phase = String(nextPhase || 'READY').toUpperCase();
       phaseSynced = true;
@@ -747,8 +750,8 @@
         clearAllOrbs();
         if (allOrbs.length) pickTrayOrbs();
         await loadAnswerMap();
-        await syncPlacedFromCells();
-      } else if (resetting) {
+        if (cellsSnapshot === null) await syncPlacedFromCells();
+      } else if (resetting && cellsSnapshot === null) {
         await syncPlacedFromCells();
       } else if (phase === 'READY') {
         clearAllOrbs();
@@ -759,6 +762,12 @@
         beatLamps.forEach(l => l.classList.remove('lit'));
         btnDispensa.classList.remove('all-correct');
         refreshDispensaState();
+      }
+
+      // A reconnect snapshot is authoritative even when the phase itself did
+      // not change. This repairs any orb events missed while WS was offline.
+      if (cellsSnapshot !== null && phase !== 'READY') {
+        await syncPlacedFromCells(cellsSnapshot);
       }
 
       gridEl.querySelectorAll('.cell').forEach(el => {
@@ -782,6 +791,15 @@
     function setWsStatus(ok) {
       wsDot.className = 'dot-status ' + (ok ? 'ok' : 'err');
       wsDot.title = ok ? 'WS 연결됨' : 'WS 끊김';
+    }
+
+    async function applyWebSocketSnapshot(snapshot) {
+      if (!snapshot?.game) return;
+      const game = snapshot.game;
+      const nextPhase = String(game.phase || 'READY').toUpperCase();
+      await setPhase(nextPhase, snapshot.cells || {});
+      const revision = Number(game.revision);
+      if (Number.isFinite(revision)) lastGameRevision = revision;
     }
 
     async function sendEvent(event) {
@@ -1191,11 +1209,45 @@
       else buildOrbTray();
     }
 
+    async function handleWsMessage(msg) {
+      if (msg?.type === 'snapshot') {
+        wsSnapshotReceived = true;
+        await applyWebSocketSnapshot(msg.snapshot);
+        return;
+      }
+
+      const args = Array.isArray(msg?.args) ? msg.args : [];
+      if (msg.address === '/game/ready') await setReady(!!args[0]);
+      if (msg.address === '/game/start') {
+        clearAllOrbs();
+        await setPhase('STARTING');
+      }
+      if (msg.address === '/game/end') await setPhase('FINISHED');
+      if (msg.address === '/game/reset') await setPhase('RESETTING');
+      if (msg.address === '/game/reset_complete') await setPhase('READY');
+      if (msg.address === '/game/state') await setPhase(args[0]);
+      if (msg.address === '/orb/added') {
+        const [slave, cell, voice, , , orbId] = args;
+        if (orbId) applyOrbAt(slave, cell, orbId, voice);
+      }
+      if (msg.address === '/orb/removed') {
+        const [slave, cell] = args;
+        applyOrbRemoved(slave, cell);
+      }
+    }
+
     function connectWs() {
       ws = new WebSocket(WS_URL);
+      wsSnapshotReceived = false;
       ws.onopen = () => {
         setWsStatus(true);
-        void syncPhaseFromServer();
+        // Direct M4 servers send the full state first. HTTP remains a delayed
+        // compatibility fallback for an older standalone bridge.
+        setTimeout(() => {
+          if (!wsSnapshotReceived && ws?.readyState === WebSocket.OPEN) {
+            void syncPhaseFromServer();
+          }
+        }, 750);
       };
       ws.onclose = () => {
         setWsStatus(false);
@@ -1203,34 +1255,15 @@
       };
       ws.onerror = () => setWsStatus(false);
       ws.onmessage = (e) => {
+        let message;
         try {
-          const msg = JSON.parse(e.data);
-          if (msg.address === '/game/ready') void setReady(!!msg.args[0]);
-          if (msg.address === '/game/start') {
-            clearAllOrbs();
-            void setPhase('STARTING');
-          }
-          if (msg.address === '/game/end') {
-            void setPhase('FINISHED');
-          }
-          if (msg.address === '/game/reset') {
-            void setPhase('RESETTING');
-          }
-          if (msg.address === '/game/reset_complete') {
-            void setPhase('READY');
-          }
-          if (msg.address === '/game/state') {
-            void setPhase(msg.args[0]);
-          }
-          if (msg.address === '/orb/added') {
-            const [slave, cell, voice, , , orbId] = msg.args;
-            if (orbId) applyOrbAt(slave, cell, orbId, voice);
-          }
-          if (msg.address === '/orb/removed') {
-            const [slave, cell] = msg.args;
-            applyOrbRemoved(slave, cell);
-          }
-        } catch { /* ignore */ }
+          message = JSON.parse(e.data);
+        } catch {
+          return;
+        }
+        wsMessageChain = wsMessageChain
+          .then(() => handleWsMessage(message))
+          .catch(error => console.warn('WebSocket message failed', error));
       };
     }
 
@@ -1280,9 +1313,6 @@
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') void syncPhaseFromServer();
     });
-    setInterval(() => {
-      if (document.visibilityState === 'visible') void syncPhaseFromServer();
-    }, 500);
     void syncPhaseFromServer();
     connectWs();
     loadOrbs().catch(() => setWsStatus(false));

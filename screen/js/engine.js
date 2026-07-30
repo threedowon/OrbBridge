@@ -145,7 +145,7 @@ export function createEngine() {
      * MIDI placement sound already came from Python, so the browser stays mute
      * in MIDI mode and only uses Web Audio in the development fallback mode.
      */
-    placeExternal(col, row, voiceId = 0, orbId = null) {
+    placeExternal(col, row, voiceId = 0, orbId = null, { silent = false } = {}) {
       if (!melody || voiceId < 0) return;
       if (col < 0 || col >= gridCols() || row < 0 || row >= rows()) return;
 
@@ -161,7 +161,9 @@ export function createEngine() {
       const note = rowToNoteIn(row, melody.scale);
       playTone(note.freq, voiceId, 0.32, 0, {
         noteName: note.name,
-        silent: isMidiMode(),
+        // A reconnect snapshot reconstructs visual state and must never replay
+        // every placed orb through either the MIDI or Web Audio fallback.
+        silent: silent || isMidiMode(),
       });
       emit('gridChange');
       redraw();

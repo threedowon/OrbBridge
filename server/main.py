@@ -67,6 +67,12 @@ _game_runtime: GameRuntime | None = None
 _scheduler_lock = threading.Lock()
 _playback_scheduler: PlaybackScheduler | None = None
 
+# ── M4 직접 WebSocket (브라우저 실시간 이벤트 + 재연결 snapshot) ──
+# OSC는 TouchDesigner 등 외부 소비자용으로 유지한다. 웹 UI는 더 이상
+# OSC loopback과 bridge_service를 거치지 않고 이 서비스에서 직접 받는다.
+_websocket_lock = threading.Lock()
+_websocket_service = None
+
 # ── 슬레이브 생존 추적 (heartbeat 기반 online/offline) ──
 # slave.ino 가 3초(HEARTBEAT_MS)마다 heartbeat 를 보낸다. 이 시간(주기의 ~2.5배)
 # 안에 heartbeat 가 없으면 offline 으로 본다. 몇 개 놓쳐도 깜빡이지 않도록 여유.
@@ -160,7 +166,7 @@ def _scheduler_send_notes(notes: list[dict]) -> list[dict]:
 
 
 def _scheduler_publish_event(event: dict) -> None:
-    """Translate Scheduler callbacks to the OSC/bridge/WebSocket protocol."""
+    """Translate Scheduler callbacks to the shared OSC/WebSocket protocol."""
     event_type = event["type"]
     run_id = int(event["run_id"])
     mode = str(event["mode"])
@@ -235,9 +241,28 @@ def _start_playback(mode: PlaybackMode) -> dict:
 
 
 def _osc_send(address: str, args) -> None:
-    """Serialize UDP writes made by HTTP, serial, and runtime threads."""
+    """Publish one event to OSC consumers and directly to web clients.
+
+    The function name remains for compatibility with existing tests and debug
+    scripts. M4 adds the direct WebSocket fan-out without changing the event
+    address/argument protocol used by the browser.
+    """
+
+    # Keep Runtime and Scheduler publications in one total order. The former
+    # OSC bridge inherited UDP send order; direct WebSocket delivery must retain
+    # the same guarantee when both producer threads emit at nearly the same time.
     with _osc_lock:
-        osc.send_message(address, args)
+        try:
+            osc.send_message(address, args)
+        except OSError as exc:
+            # Web UI delivery must remain available even when no OSC receiver is
+            # running or the configured external destination is unavailable.
+            print(f"[OSC] WARN: {address} 전송 실패: {exc}")
+
+        with _websocket_lock:
+            service = _websocket_service
+        if service is not None:
+            service.broadcast(address, args)
 
 
 def _new_game_engine() -> GameEngine:
@@ -339,9 +364,12 @@ def get_status() -> dict:
         }
 
 
-def get_cells() -> dict:
+def get_cells(game_snapshot: dict | None = None) -> dict:
+    """Build the UI cell payload from one optional pinned game revision."""
+
     cells = {}
-    for key, data in get_game_state()["cells"].items():
+    source = game_snapshot if game_snapshot is not None else get_game_state()
+    for key, data in source["cells"].items():
         orb_id = data["orb_id"]
         synthetic = orb_id.startswith("__recovered__:")
         cells[key] = {
@@ -358,6 +386,64 @@ def get_cells() -> dict:
 def get_events() -> list:
     with _state_lock:
         return list(_event_log)
+
+
+def get_web_snapshot() -> dict:
+    """Return the complete browser recovery payload sent on every WS connect."""
+
+    game = get_game_state()
+    status = get_status()
+    # ``get_status`` reads the cached engine once more; pin its game fields to
+    # the same revision used for ``cells`` so one reconnect payload is coherent.
+    status["game"] = game
+    status["game_active"] = game["phase"] == GamePhase.RUNNING.value
+    status["cell_count"] = game["cell_count"]
+    return {
+        "schema_version": 1,
+        "game": game,
+        "cells": get_cells(game),
+        "status": status,
+        "events": get_events(),
+    }
+
+
+def start_websocket_service():
+    """Start the process-wide direct WebSocket publisher once."""
+
+    global _websocket_service
+    with _websocket_lock:
+        if _websocket_service is not None and _websocket_service.running:
+            return _websocket_service
+
+        from websocket_service import WebSocketService
+
+        ws_cfg = config.get("websocket") or {}
+        host = str(
+            ws_cfg.get(
+                "host",
+                config.get("mock", {}).get("host", "127.0.0.1"),
+            )
+        )
+        service = WebSocketService(
+            get_web_snapshot,
+            host=host,
+            # Browser URLs and the legacy bridge contract both use this port.
+            port=8765,
+        )
+        service.start()
+        _websocket_service = service
+        return service
+
+
+def stop_websocket_service() -> None:
+    """Stop direct browser delivery during an orderly process shutdown."""
+
+    global _websocket_service
+    with _websocket_lock:
+        service = _websocket_service
+        _websocket_service = None
+    if service is not None:
+        service.close()
 
 
 # ── 셀 파싱 ────────────────────────────────────────────
@@ -819,6 +905,7 @@ def serial_loop():
 # ── 진입점 ─────────────────────────────────────────────
 def run_main() -> None:
     runtime = get_game_runtime()
+    start_websocket_service()
     print(f"[stage {current_stage}] 정답 시퀀스: {answer_sequence}")
     print(f"[melody] {melody_id}")
     print(f"[input] {input_mode} mode")
@@ -868,6 +955,7 @@ def run_main() -> None:
     except KeyboardInterrupt:
         print("종료")
     finally:
+        stop_websocket_service()
         runtime.close()
         with _scheduler_lock:
             scheduler = _playback_scheduler
@@ -876,8 +964,4 @@ def run_main() -> None:
 
 
 if __name__ == "__main__":
-    from bridge_service import start_bridge_thread
-
-    start_bridge_thread()
-    time.sleep(0.4)
     run_main()

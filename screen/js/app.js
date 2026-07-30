@@ -27,6 +27,9 @@ let gameRunning = false;
 let gamePhase = 'READY';
 let lastFinishRevision = -1;
 let playbackRunId = 0;
+let wsSnapshotReceived = false;
+// Preserve server wire order even when snapshot recovery performs async work.
+let wsMessageChain = Promise.resolve();
 
 const views = {
   start: document.getElementById('view-start'),
@@ -172,7 +175,7 @@ async function enterPlayView() {
 }
 
 async function handleOrbAdded(slave, cell, voice, orbId) {
-  if (!currentMelody || !gameRunning || !ownsAudio()) return;
+  if (!currentMelody || !gameRunning) return;
   const voiceIndex = voiceToIndex(voice);
   if (voiceIndex < 0) {
     showOrbPlaced(voice || 'unknown');
@@ -191,7 +194,7 @@ async function handleOrbAdded(slave, cell, voice, orbId) {
 }
 
 function handleOrbRemoved(slave, cell, orbId) {
-  if (!currentMelody || !ownsAudio()) return;
+  if (!currentMelody) return;
   try {
     const { col, row } = tableToStaff(slave, cell, currentMelody.scale);
     if (col >= getBeats()) return;
@@ -241,7 +244,42 @@ async function syncGameState() {
   }
 }
 
-/** Ignore delayed UDP/WS events that belong to an older Python playback run. */
+/** Rebuild visual state from the snapshot sent first on each WS connection. */
+async function applyWebSocketSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return;
+
+  const game = snapshot.game;
+  if (game) applyGameSnapshot(game, false);
+  if (!currentMelody || !staffApi) return;
+
+  await loadVoiceCatalog();
+  engine.load(currentMelody, 0, { autoStart: false });
+
+  const cells = snapshot.cells || {};
+  for (const [cellKey, info] of Object.entries(cells)) {
+    if (!info?.id || info.synthetic) continue;
+    const [slave, cell] = cellKey.split(':').map(Number);
+    const voiceIndex = voiceToIndex(info.voice);
+    if (!Number.isInteger(slave) || !Number.isInteger(cell) || voiceIndex < 0) {
+      continue;
+    }
+    try {
+      const { col, row } = tableToStaff(slave, cell, currentMelody.scale);
+      if (col >= getBeats()) continue;
+      engine.placeExternal(col, row, voiceIndex, info.id, { silent: true });
+    } catch {
+      // One malformed cell must not prevent the remaining snapshot recovery.
+    }
+  }
+
+  const playback = snapshot.status?.playback || snapshot.playback;
+  if (playback?.active) {
+    beginPlayback(playback.run_id, playback.mode);
+  }
+  engine.redraw();
+}
+
+/** Ignore delayed realtime events that belong to an older Python playback run. */
 function beginPlayback(runId, mode) {
   const parsedRunId = Number(runId) || 0;
   if (parsedRunId < playbackRunId) return;
@@ -292,12 +330,18 @@ function endPlayback(runId, mode) {
   engine.endPlayback(mode);
 }
 
-function handleWsMessage(message) {
-  const { address, args } = message;
+async function handleWsMessage(message) {
+  if (message?.type === 'snapshot') {
+    wsSnapshotReceived = true;
+    await applyWebSocketSnapshot(message.snapshot);
+    return;
+  }
+
+  const { address } = message;
+  const args = Array.isArray(message?.args) ? message.args : [];
   switch (address) {
     case '/orb/added':
-      handleOrbAdded(args[0], args[1], args[2], args[5])
-        .catch(error => console.warn(error));
+      await handleOrbAdded(args[0], args[1], args[2], args[5]);
       break;
     case '/orb/removed':
       handleOrbRemoved(args[0], args[1], args[4]);
@@ -334,9 +378,16 @@ function handleWsMessage(message) {
 
 function connectWs() {
   ws = new WebSocket(WS_URL);
+  wsSnapshotReceived = false;
   ws.onopen = () => {
     setConn(true);
-    void syncGameState();
+    // M4 servers send a complete snapshot immediately. Keep one delayed HTTP
+    // fallback so this screen can still connect to an older bridge process.
+    setTimeout(() => {
+      if (!wsSnapshotReceived && ws?.readyState === WebSocket.OPEN) {
+        void syncGameState();
+      }
+    }, 750);
   };
   ws.onclose = () => {
     setConn(false);
@@ -344,11 +395,18 @@ function connectWs() {
   };
   ws.onerror = () => setConn(false);
   ws.onmessage = event => {
+    let message;
     try {
-      handleWsMessage(JSON.parse(event.data));
+      message = JSON.parse(event.data);
     } catch {
-      // Ignore malformed bridge messages; the next state snapshot self-heals.
+      // Ignore malformed messages; the next connection snapshot self-heals.
+      return;
     }
+    // The service sends snapshot first. Serializing browser work keeps a later
+    // live event from overtaking an async catalog load or snapshot rebuild.
+    wsMessageChain = wsMessageChain
+      .then(() => handleWsMessage(message))
+      .catch(error => console.warn('WebSocket message failed', error));
   };
 }
 

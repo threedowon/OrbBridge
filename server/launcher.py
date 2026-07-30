@@ -1,4 +1,4 @@
-"""OrbBridge single-process launcher — bridge + main (PyInstaller entry point)."""
+"""OrbBridge single-process launcher (PyInstaller entry point)."""
 
 from __future__ import annotations
 
@@ -20,11 +20,6 @@ def _open_browser() -> None:
 
 def main() -> None:
     ensure_data_files()
-
-    from bridge_service import start_bridge_thread
-
-    start_bridge_thread()
-    time.sleep(0.4)
 
     from main import run_main
 
