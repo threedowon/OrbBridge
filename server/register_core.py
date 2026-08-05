@@ -1,4 +1,4 @@
-"""DS2431 serial detect + orb_mapping.json registration logic."""
+"""DS2431 시리얼 감지와 orb_mapping.json 등록 로직이다."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ LOG_LIMIT = 80
 
 
 def friendly_serial_error(error: str) -> str:
-    """Turn raw serial exceptions into short Korean messages."""
+    """시리얼 예외를 짧은 한국어 메시지로 변환한다."""
     if not error:
         return ""
     e = error.strip()
@@ -54,11 +54,11 @@ def friendly_serial_error(error: str) -> str:
     if "invalid id" in low or e.startswith("voice must"):
         return e
 
-    # Windows pyserial often: "COM13 PermissionError(13, '액세스가 거부되었습니다.', ...)"
+    # Windows pyserial은 흔히 다음 형식의 권한 오류를 반환한다.
     if "permissionerror" in low or "액세스가 거부" in e:
         return "포트 접근이 거부되었습니다. 다른 프로그램을 종료한 뒤 다시 시도하세요."
 
-    # Trim long Python repr
+    # 긴 Python 객체 표현은 화면에 맞게 자른다.
     if len(e) > 120:
         return e[:117] + "…"
     return e
@@ -195,7 +195,7 @@ def _looks_like_id(s: str) -> bool:
 
 
 def list_com_ports() -> list[dict]:
-    """Return available serial ports with optional description."""
+    """사용 가능한 시리얼 포트와 선택적 설명을 반환한다."""
     try:
         from serial.tools import list_ports
     except ImportError:
@@ -211,7 +211,7 @@ def list_com_ports() -> list[dict]:
 
 
 class SerialManager:
-    """Background serial reader with hot-swappable COM port."""
+    """실행 중 COM 포트를 바꿀 수 있는 백그라운드 시리얼 리더다."""
 
     def __init__(self, state: RegisterState, baudrate: int, port: str = "") -> None:
         self.state = state
@@ -293,7 +293,7 @@ class SerialManager:
 
 
 def serial_loop(state: RegisterState, port: str, baudrate: int) -> None:
-    """Legacy helper — prefer SerialManager."""
+    """이전 호출부용 보조 함수이며 새 코드는 SerialManager를 사용한다."""
     mgr = SerialManager(state, baudrate, port)
     mgr.start()
     while True:

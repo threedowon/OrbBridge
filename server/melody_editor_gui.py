@@ -1,4 +1,4 @@
-"""Melody Editor — compact UI for BPM · note · duration on the active melody."""
+"""활성 멜로디의 BPM·음표·길이를 편집하는 간결한 화면이다."""
 
 from __future__ import annotations
 

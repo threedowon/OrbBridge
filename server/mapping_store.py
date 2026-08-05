@@ -1,4 +1,4 @@
-"""Load / save orb_mapping.json and voice helpers."""
+"""orb_mapping.json 입출력과 voice 보조 기능을 제공한다."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ VOICE_RE = re.compile(r"^([a-z0-9]+)_(\d+)$", re.I)
 
 
 def app_dir() -> Path:
-    """Writable app data directory (exe folder when frozen, server/ in dev)."""
+    """쓰기 가능한 앱 데이터 경로를 반환한다."""
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent
@@ -23,7 +23,7 @@ REGISTER_CONFIG_PATH = BACKEND_DIR / "config.json"
 
 
 def ensure_register_data() -> None:
-    """Create orb_mapping.json / config.json beside the app if missing."""
+    """앱 옆에 누락된 orb_mapping.json과 config.json을 생성한다."""
     if not MAPPING_PATH.exists():
         MAPPING_PATH.write_text("{}\n", encoding="utf-8")
 
@@ -40,7 +40,7 @@ def ensure_register_data() -> None:
 
 
 def normalize_id(raw: str) -> str:
-    """Normalize DS2431 / orb id to `AA:BB:CC:...` uppercase hex."""
+    """DS2431·오브 ID를 대문자 `AA:BB:CC:...` 형식으로 정규화한다."""
     if not raw or not str(raw).strip():
         raise ValueError("empty id")
 
@@ -62,10 +62,10 @@ def normalize_id(raw: str) -> str:
 
 
 def resolve_orb_key(orb_id: str, mapping: dict) -> str:
-    """Map UI / serial id to a key in orb_mapping.json.
+    """UI·시리얼 ID를 orb_mapping.json의 키로 변환한다.
 
-    New ids must pass normalize_id. Keys already stored (e.g. legacy test ids
-    with non-hex nibbles) are accepted as-is.
+    새 ID는 normalize_id 검증을 통과해야 한다. 이전 테스트 ID처럼 이미 저장된
+    키는 16진수 형식이 아니어도 그대로 허용한다.
     """
     raw = str(orb_id).strip()
     if not raw:

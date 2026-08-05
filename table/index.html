@@ -193,7 +193,7 @@
       width: 100%;
     }
 
-    body.not-ready .playfield {
+    body.state-ready .playfield {
       opacity: 0.45;
       pointer-events: none;
     }
@@ -257,7 +257,7 @@
       justify-self: center;
     }
 
-    .dispensa-btn {
+    .dfesta-btn {
       width: var(--action, 52px);
       height: var(--action, 52px);
       border-radius: 50%;
@@ -272,29 +272,29 @@
       transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.12s;
     }
 
-    .dispensa-btn svg {
+    .dfesta-btn svg {
       width: 42%;
       height: 42%;
       fill: currentColor;
     }
 
-    .dispensa-btn.all-correct {
+    .dfesta-btn.all-correct {
       background: #7c3aed;
       border-color: #5b21b6;
       color: #fff;
     }
 
-    .dispensa-btn:hover:not(:disabled) {
+    .dfesta-btn:hover:not(:disabled) {
       background: #f5f5f5;
       transform: scale(1.04);
     }
 
-    .dispensa-btn.all-correct:hover:not(:disabled) {
+    .dfesta-btn.all-correct:hover:not(:disabled) {
       background: #8b5cf6;
     }
 
-    .dispensa-btn:active:not(:disabled) { transform: scale(0.97); }
-    .dispensa-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .dfesta-btn:active:not(:disabled) { transform: scale(0.97); }
+    .dfesta-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
     .beat-lamps {
       position: absolute;
@@ -325,7 +325,7 @@
       box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.35);
     }
 
-    body.not-ready .beat-lamp.lit {
+    body.state-ready .beat-lamp.lit {
       background: var(--slot-bg);
       border-color: var(--slot-border);
       box-shadow: none;
@@ -369,7 +369,7 @@
       </div>
 
       <div class="bottom-bar">
-        <button type="button" class="dispensa-btn" id="btn-dispensa" title="디페스타 — 올려둔 모든 목소리로 멜로디 재생" aria-label="디페스타" disabled>
+        <button type="button" class="dfesta-btn" id="btn-dfesta" title="디페스타 — 올려둔 모든 목소리로 멜로디 재생" aria-label="디페스타" disabled>
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 2.4l2.35 7.23h7.6l-6.15 4.47 2.35 7.23L12 17.1l-6.15 4.23 2.35-7.23-6.15-4.47h7.6z"/>
           </svg>
@@ -418,12 +418,12 @@
     const statusDot = document.getElementById('status-dot');
     const wsDot = document.getElementById('ws-dot');
     const btnPlay = document.getElementById('btn-play');
-    const btnDispensa = document.getElementById('btn-dispensa');
+    const btnDFesta = document.getElementById('btn-dfesta');
     const btnListen = document.getElementById('btn-listen');
 
-    /** @type {Map<string, { id: string, voice: string, color: string, idx: number }>} */
+    /** 오브 ID별 표시 정보다. @type {Map<string, { id: string, voice: string, color: string, idx: number }>} */
     const placed = new Map();
-    /** @type {string[]} answer note name per beat col (C4, REST→'') */
+    /** @type {string[]} beat 열별 정답 음표 이름(C4, REST→'') */
     let answerNotes = Array(BEAT_COLS).fill('');
     /** @type {boolean[]} REST(쉼) 박자 — 비어 있어야 정답, 오브가 있으면 오답 */
     let restColumns = Array(BEAT_COLS).fill(false);
@@ -431,15 +431,15 @@
     let lampRefresh = 0;
     let allOrbs = [];
     let orbs = [];
-    let phase = 'READY';
-    let ready = false;
+    let gameState = 'READY';
+    let running = false;
     let resetting = false;
-    let phaseSynced = false;
-    let phaseSyncInFlight = false;
+    let stateSynced = false;
+    let stateSyncInFlight = false;
     let lastGameRevision = null;
     let ws = null;
     let wsSnapshotReceived = false;
-    // Snapshot rebuilding is async; keep later live events in wire order.
+    // snapshot 복구가 비동기여도 이후 실시간 이벤트의 전송 순서를 유지한다.
     let wsMessageChain = Promise.resolve();
     let dragPayload = null;
     let dropTarget = null;
@@ -545,10 +545,10 @@
     }
 
     function updateBeatLamps() {
-      if (!ready) {
+      if (!running) {
         beatLamps.forEach(l => l?.classList.remove('lit'));
-        btnDispensa.classList.remove('all-correct');
-        btnDispensa.disabled = true;
+        btnDFesta.classList.remove('all-correct');
+        btnDFesta.disabled = true;
         return;
       }
       let allCorrect = true;
@@ -571,9 +571,9 @@
         if (lamp) lamp.classList.toggle('lit', satisfied);
         if (!satisfied) allCorrect = false;
       }
-      const dispensaActive = anyPitch && allCorrect;
-      btnDispensa.classList.toggle('all-correct', dispensaActive);
-      btnDispensa.disabled = !ready || !dispensaActive;
+      const dfestaActive = anyPitch && allCorrect;
+      btnDFesta.classList.toggle('all-correct', dfestaActive);
+      btnDFesta.disabled = !running || !dfestaActive;
     }
 
     function shufflePick(source, count) {
@@ -591,15 +591,15 @@
       buildOrbTray();
     }
 
-    function isDispensaActive() {
-      return ready && btnDispensa.classList.contains('all-correct');
+    function isDFestaActive() {
+      return running && btnDFesta.classList.contains('all-correct');
     }
 
     function canRemoveOrbs() {
-      return ready || resetting;
+      return running || resetting;
     }
 
-    function refreshDispensaState() {
+    function refreshDFestaState() {
       updateBeatLamps();
       if (lampRefresh) cancelAnimationFrame(lampRefresh);
       lampRefresh = requestAnimationFrame(() => {
@@ -618,7 +618,7 @@
         beatLampsEl.appendChild(lamp);
         beatLamps.push(lamp);
       }
-      refreshDispensaState();
+      refreshDFestaState();
     }
 
     async function loadAnswerMap() {
@@ -643,12 +643,12 @@
       } catch (e) {
         console.warn('answer map load failed', e);
       }
-      refreshDispensaState();
+      refreshDFestaState();
     }
 
     function applyOrbAt(slave, cell, orbId, voice, force = false) {
       const pos = slaveCellToColRow(slave, cell);
-      if (!pos || (!force && !ready && !resetting)) return;
+      if (!pos || (!force && !running && !resetting)) return;
       const { col, row } = pos;
       const prev = findCellWithOrbId(orbId);
       if (prev && (prev.col !== col || prev.row !== row)) {
@@ -668,19 +668,19 @@
       });
       renderCell(col, row);
       updateOrbTrayState();
-      refreshDispensaState();
+      refreshDFestaState();
     }
 
     function applyOrbRemoved(slave, cell) {
       const pos = slaveCellToColRow(slave, cell);
-      if (!pos || (!ready && !resetting)) return;
+      if (!pos || (!running && !resetting)) return;
       const { col, row } = pos;
       const k = key(col, row);
       if (!placed.has(k)) return;
       placed.delete(k);
       renderCell(col, row);
       updateOrbTrayState();
-      refreshDispensaState();
+      refreshDFestaState();
     }
 
     async function syncPlacedFromCells(cellsSnapshot = null) {
@@ -702,22 +702,22 @@
       }
     }
 
-    async function syncPhaseFromServer() {
-      if (phaseSyncInFlight) return;
-      phaseSyncInFlight = true;
+    async function syncStateFromServer() {
+      if (stateSyncInFlight) return;
+      stateSyncInFlight = true;
       try {
         const res = await fetch(`${API}/api/game/state`, { cache: 'no-store' });
         if (!res.ok) return;
         const snapshot = await res.json();
-        const nextPhase = String(snapshot.phase || 'READY').toUpperCase();
+        const nextState = String(snapshot.state || 'READY').toUpperCase();
         const revision = Number.isFinite(Number(snapshot.revision))
           ? Number(snapshot.revision)
           : null;
         const revisionChanged = revision !== null && revision !== lastGameRevision;
 
-        if (!phaseSynced || nextPhase !== phase) {
-          await setPhase(nextPhase);
-        } else if (revisionChanged && (ready || resetting)) {
+        if (!stateSynced || nextState !== gameState) {
+          await setGameState(nextState);
+        } else if (revisionChanged && (running || resetting)) {
           await syncPlacedFromCells();
         }
 
@@ -725,48 +725,47 @@
       } catch (e) {
         console.warn('game state sync failed', e);
       } finally {
-        phaseSyncInFlight = false;
+        stateSyncInFlight = false;
       }
     }
 
-    async function setPhase(nextPhase, cellsSnapshot = null) {
-      const previous = phase;
-      phase = String(nextPhase || 'READY').toUpperCase();
-      phaseSynced = true;
-      ready = phase === 'RUNNING';
-      resetting = phase === 'RESETTING';
+    async function setGameState(nextState, cellsSnapshot = null) {
+      const previous = gameState;
+      gameState = String(nextState || 'READY').toUpperCase();
+      stateSynced = true;
+      running = gameState === 'RUNNING';
+      resetting = gameState === 'RESETTING';
 
-      document.body.classList.toggle('not-ready', !ready && !resetting);
+      document.body.classList.toggle('state-ready', !running && !resetting);
       document.body.classList.toggle('resetting', resetting);
-      statusDot.className = 'dot-status ' + (ready ? 'ok' : 'wait');
-      statusDot.title = ready
+      statusDot.className = 'dot-status ' + (running ? 'ok' : 'wait');
+      statusDot.title = running
         ? 'RUNNING'
-        : (resetting ? 'RESETTING — 오브를 모두 제거하세요' : phase);
-      btnPlay.disabled = !ready;
-      btnListen.disabled = !ready;
-      if (!ready) btnDispensa.disabled = true;
+        : (resetting ? 'RESETTING — 오브를 모두 제거하세요' : gameState);
+      btnPlay.disabled = !running;
+      btnListen.disabled = !running;
+      if (!running) btnDFesta.disabled = true;
 
-      if (ready && previous !== 'RUNNING') {
+      if (running && previous !== 'RUNNING') {
         clearAllOrbs();
         if (allOrbs.length) pickTrayOrbs();
         await loadAnswerMap();
         if (cellsSnapshot === null) await syncPlacedFromCells();
       } else if (resetting && cellsSnapshot === null) {
         await syncPlacedFromCells();
-      } else if (phase === 'READY') {
+      } else if (gameState === 'READY') {
         clearAllOrbs();
         orbs = [];
         buildOrbTray();
         answerNotes = Array(BEAT_COLS).fill('');
         restColumns = Array(BEAT_COLS).fill(false);
         beatLamps.forEach(l => l.classList.remove('lit'));
-        btnDispensa.classList.remove('all-correct');
-        refreshDispensaState();
+        btnDFesta.classList.remove('all-correct');
+        refreshDFestaState();
       }
 
-      // A reconnect snapshot is authoritative even when the phase itself did
-      // not change. This repairs any orb events missed while WS was offline.
-      if (cellsSnapshot !== null && phase !== 'READY') {
+      // 상태가 같아도 재연결 snapshot을 기준으로 삼아 WS 단절 중 빠진 오브를 복구한다.
+      if (cellsSnapshot !== null && gameState !== 'READY') {
         await syncPlacedFromCells(cellsSnapshot);
       }
 
@@ -775,7 +774,7 @@
         const row = Number(el.dataset.row);
         const filled = placed.has(key(col, row));
         const removable = resetting && filled;
-        el.classList.toggle('disabled', !ready && !removable);
+        el.classList.toggle('disabled', !running && !removable);
         el.draggable = filled && canRemoveOrbs();
       });
     }
@@ -788,8 +787,8 @@
     async function applyWebSocketSnapshot(snapshot) {
       if (!snapshot?.game) return;
       const game = snapshot.game;
-      const nextPhase = String(game.phase || 'READY').toUpperCase();
-      await setPhase(nextPhase, snapshot.cells || {});
+      const nextState = String(game.state || 'READY').toUpperCase();
+      await setGameState(nextState, snapshot.cells || {});
       const revision = Number(game.revision);
       if (Number.isFinite(revision)) lastGameRevision = revision;
     }
@@ -819,7 +818,7 @@
       try {
         const raw = e.dataTransfer.getData(MIME);
         if (raw) return JSON.parse(raw);
-      } catch { /* ignore */ }
+      } catch { /* 연결 해제 오류는 무시한다. */ }
       return dragPayload;
     }
 
@@ -864,7 +863,7 @@
     }
 
     async function placeOrb(orbIdx, col, row) {
-      if (!ready) return;
+      if (!running) return;
       const orb = orbs[orbIdx];
       if (!orb) return;
 
@@ -889,7 +888,7 @@
       });
       renderCell(col, row);
       updateOrbTrayState();
-      refreshDispensaState();
+      refreshDFestaState();
     }
 
     async function moveOrb(fromCol, fromRow, toCol, toRow) {
@@ -921,11 +920,11 @@
       placed.set(destK, state);
       renderCell(toCol, toRow);
       updateOrbTrayState();
-      refreshDispensaState();
+      refreshDFestaState();
     }
 
     async function handleCellDrop(col, row, data) {
-      if (!ready || !data) return;
+      if (!running || !data) return;
 
       if (data.src === 'tray') {
         await placeOrb(data.idx, col, row);
@@ -962,7 +961,7 @@
 
     function setupPlayfieldDragDrop() {
       playfieldEl.addEventListener('dragover', (e) => {
-        if (!ready || !dragPayload) return;
+        if (!running || !dragPayload) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
 
@@ -977,7 +976,7 @@
       });
 
       playfieldEl.addEventListener('drop', async (e) => {
-        if (!ready || !dragPayload) return;
+        if (!running || !dragPayload) return;
         e.preventDefault();
         const data = dragPayload ?? readDragData(e);
         const cell = resolveDropCell(e.clientX, e.clientY, data);
@@ -1019,7 +1018,7 @@
       });
 
       gridEl.addEventListener('dragover', (e) => {
-        if (!ready) return;
+        if (!running) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
 
@@ -1077,7 +1076,7 @@
           btn.tabIndex = 0;
           btn.title = `${String.fromCharCode(65 + i)} · ${o.voice} — 드래그해서 배치`;
           btn.addEventListener('dragstart', (e) => {
-            if (!ready) {
+            if (!running) {
               e.preventDefault();
               return;
             }
@@ -1129,7 +1128,7 @@
         applyCellStyle(el, null);
       });
       updateOrbTrayState();
-      refreshDispensaState();
+      refreshDFestaState();
     }
 
     async function removeAt(col, row) {
@@ -1145,7 +1144,7 @@
       placed.delete(k);
       renderCell(col, row);
       updateOrbTrayState();
-      refreshDispensaState();
+      refreshDFestaState();
       return true;
     }
 
@@ -1197,7 +1196,7 @@
     async function loadOrbs() {
       const res = await fetch(`${API}/api/orbs`);
       allOrbs = await res.json();
-      if (ready) pickTrayOrbs();
+      if (running) pickTrayOrbs();
       else buildOrbTray();
     }
 
@@ -1209,9 +1208,8 @@
       }
 
       const args = Array.isArray(msg?.args) ? msg.args : [];
-      // Game state has one authoritative event. Redundant ready/start/end
-      // signals previously allowed a generic flag to overwrite the real phase.
-      if (msg.address === '/game/state') await setPhase(args[0]);
+      // 게임 상태는 /game/state 이벤트 하나만 기준으로 사용한다.
+      if (msg.address === '/game/state') await setGameState(args[0]);
       if (msg.address === '/orb/added') {
         const [slave, cell, voice, , , orbId] = args;
         if (orbId) applyOrbAt(slave, cell, orbId, voice);
@@ -1227,11 +1225,10 @@
       wsSnapshotReceived = false;
       ws.onopen = () => {
         setWsStatus(true);
-        // The direct server sends the full state first. HTTP remains a delayed
-        // fallback for startup races or an older server build.
+        // 서버가 전체 상태를 먼저 보내며 HTTP는 시작 경합용 지연 fallback이다.
         setTimeout(() => {
           if (!wsSnapshotReceived && ws?.readyState === WebSocket.OPEN) {
-            void syncPhaseFromServer();
+            void syncStateFromServer();
           }
         }, 750);
       };
@@ -1254,7 +1251,7 @@
     }
 
     btnListen.addEventListener('click', async () => {
-      if (!ready || btnListen.disabled) return;
+      if (!running || btnListen.disabled) return;
       btnListen.disabled = true;
       try {
         const res = await fetch(`${API}/api/game/listen`, { method: 'POST' });
@@ -1262,12 +1259,12 @@
       } catch (e) {
         console.error('listen:', e);
       } finally {
-        if (ready) btnListen.disabled = false;
+        if (running) btnListen.disabled = false;
       }
     });
 
     btnPlay.addEventListener('click', async () => {
-      if (!ready) return;
+      if (!running) return;
       try {
         const res = await fetch(`${API}/api/game/play`, { method: 'POST' });
         if (!res.ok) throw new Error(await res.text());
@@ -1276,13 +1273,13 @@
       }
     });
 
-    btnDispensa.addEventListener('click', async () => {
-      if (!isDispensaActive()) return;
+    btnDFesta.addEventListener('click', async () => {
+      if (!isDFestaActive()) return;
       try {
-        const res = await fetch(`${API}/api/game/dispensa`, { method: 'POST' });
+        const res = await fetch(`${API}/api/game/dfesta`, { method: 'POST' });
         if (!res.ok) throw new Error(await res.text());
       } catch (e) {
-        console.error('dispensa:', e);
+        console.error('dfesta:', e);
       }
     });
 
@@ -1297,9 +1294,9 @@
     new ResizeObserver(fitGrid).observe(playfieldEl);
     window.addEventListener('resize', fitGrid);
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') void syncPhaseFromServer();
+      if (document.visibilityState === 'visible') void syncStateFromServer();
     });
-    void syncPhaseFromServer();
+    void syncStateFromServer();
     connectWs();
     loadOrbs().catch(() => setWsStatus(false));
   </script>

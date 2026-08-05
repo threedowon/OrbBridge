@@ -1,16 +1,16 @@
 /*
- * OrbBridge — Slave ESP32-S3  (이벤트 + Carrier-Sense + 바이너리 프레임)
+ * OrbBridge — Slave ESP32-S3  (이벤트 + 반송파 감지 + 바이너리 프레임)
  *
- * 16× OneWire → DS2431
+ * 16개 OneWire 버스에서 DS2431을 읽는다.
  * RS485: slave 가 자율 전송(단방향). master 는 듣기만.
  *   - 전송은 13바이트 바이너리 프레임(+CRC8) — JSON 보다 ~5배 짧아 충돌·깨짐↓, CRC 로 검출.
- *   - 전송 전 버스가 조용한지 듣고(carrier-sense) 사용 중이면 랜덤 백오프.
- *   - 유실돼도 heartbeat 의 state 마스크로 PC 가 자가복구.
+ *   - 전송 전에 버스를 확인하고 사용 중이면 무작위 시간만큼 대기한다.
+ *   - 유실돼도 heartbeat의 점유 마스크로 PC가 자가복구한다.
  *
  * 프레임(13B): [STX=0x02][TYPE][SLAVE][CELL][UID 0..7 (8B)][CRC8]
- *   TYPE 1=added 2=removed 3=heartbeat
- *   heartbeat 는 CELL=0, UID 자리 첫 2바이트에 state(비트마스크) 저장
- *   CRC8 = crc8(frame[1..11])
+ *   TYPE 값은 1=added, 2=removed, 3=heartbeat다.
+ *   heartbeat는 CELL=0이며 UID 자리 첫 2바이트에 점유 마스크를 저장한다.
+ *   CRC8은 crc8(frame[1..11])로 계산한다.
  *
  * RS485 핀·속도: TX=20, RX=21, 9600 8N1
  */
@@ -29,12 +29,12 @@
 
 #define RING_PIN        38
 #define LEDS_PER_RING   12
-// 임시 stopgap: 밝기 낮춰 전류↓. 외부 5V 전원 달면 32로.
+// 임시로 밝기를 낮춰 전류를 줄이며 외부 5V 전원을 연결하면 32로 올린다.
 #define RING_BRIGHTNESS 8
 
 #define DEBUG_USB    0
 
-// Carrier-sense
+// 반송파 감지 설정
 #define BUS_IDLE_MS  4
 #define CS_MAX_TRIES 20
 
@@ -86,7 +86,7 @@ void drainBus() {
   }
 }
 
-// carrier-sense 로 바이너리 프레임 전송 (조용할 때 + 랜덤 백오프)
+// 버스가 조용할 때 무작위 대기 후 바이너리 프레임을 전송한다.
 void csSendBytes(const uint8_t* buf, int len) {
   for (int t = 0; t < CS_MAX_TRIES; t++) {
     drainBus();
@@ -107,15 +107,15 @@ void csSendBytes(const uint8_t* buf, int len) {
   // 계속 바쁨 → 이번 전송 포기(자가복구가 메꿈)
 }
 
-void sendFrame(uint8_t type, uint8_t cell, const byte* uid, uint16_t state) {
+void sendFrame(uint8_t type, uint8_t cell, const byte* uid, uint16_t occupancyMask) {
   uint8_t f[FRAME_LEN];
   f[0] = STX;
   f[1] = type;
   f[2] = SLAVE_ID;
   f[3] = cell;
   if (type == T_HEART) {
-    f[4] = (uint8_t)(state & 0xFF);
-    f[5] = (uint8_t)((state >> 8) & 0xFF);
+    f[4] = (uint8_t)(occupancyMask & 0xFF);
+    f[5] = (uint8_t)((occupancyMask >> 8) & 0xFF);
     for (int i = 6; i < 12; i++) f[i] = 0;
   } else {
     for (int i = 0; i < 8; i++) f[4 + i] = uid[i];
@@ -150,9 +150,11 @@ bool sameAddr(const byte a[8], const byte b[8]) {
 }
 
 void sendHeartbeat() {
-  uint16_t state = 0;
-  for (int i = 0; i < BUS_COUNT; i++) if (hasLast[i]) state |= (uint16_t)(1u << i);
-  sendFrame(T_HEART, 0, nullptr, state);
+  uint16_t occupancyMask = 0;
+  for (int i = 0; i < BUS_COUNT; i++) {
+    if (hasLast[i]) occupancyMask |= (uint16_t)(1u << i);
+  }
+  sendFrame(T_HEART, 0, nullptr, occupancyMask);
 }
 
 bool readBus(int i, byte addr[8]) {

@@ -414,7 +414,7 @@
           <div class="stat-box"><div class="num" id="stat-orbs">0</div><div class="lbl">등록 Orb</div></div>
           <div class="stat-box"><div class="num" id="stat-stage">—</div><div class="lbl">Stage</div></div>
           <div class="stat-box"><div class="num" id="stat-mode">—</div><div class="lbl">입력 모드</div></div>
-          <div class="stat-box"><div class="num" id="stat-total-time">—</div><div class="lbl">Timeover 잔여</div></div>
+          <div class="stat-box"><div class="num" id="stat-total-time">—</div><div class="lbl">TimeOver 잔여</div></div>
           <div class="stat-box"><div class="num" id="stat-idle-time">—</div><div class="lbl">Idle 잔여</div></div>
         </div>
       </div>
@@ -451,7 +451,7 @@
     const WS_URL = `ws://${location.hostname || '127.0.0.1'}:8765`;
     const LOG_LIMIT = 200;
 
-    /** @type {Map<string, object>} */
+    /** 셀 키별 상태 정보다. @type {Map<string, object>} */
     const cells = new Map();
     let selectedKey = null;
     let ws = null;
@@ -651,17 +651,17 @@
         ? 'Table (web)'
         : (serialOk ? `Serial ${s.serial.port}` : `Serial ${s.serial?.error || '끊김'}`);
 
-      const gamePhase = s.game?.phase || (s.game_active ? 'RUNNING' : 'READY');
-      setDot('dot-game', gamePhase === 'RUNNING' ? 'ok' : (gamePhase === 'RESETTING' ? 'warn' : ''));
+      const gameState = s.game?.state || 'READY';
+      setDot('dot-game', gameState === 'RUNNING' ? 'ok' : (gameState === 'RESETTING' ? 'warn' : ''));
       document.getElementById('lbl-game').textContent =
-        `${gamePhase} (stage ${s.current_stage})`;
+        `${gameState} (stage ${s.current_stage})`;
 
       document.getElementById('stat-stage').textContent = s.current_stage;
       document.getElementById('stat-mode').textContent = s.input_mode;
       document.getElementById('stat-orbs').textContent = s.orb_count ?? '—';
       const timers = s.game?.timers || {};
       document.getElementById('stat-total-time').textContent =
-        fmtRemaining(timers.remaining_total_s);
+        fmtRemaining(timers.remaining_time_over_s);
       document.getElementById('stat-idle-time').textContent =
         fmtRemaining(timers.remaining_idle_s);
       renderSlaves(s.slaves);
@@ -672,7 +672,7 @@
         const res = await fetch('/api/status');
         if (!res.ok) return;
         renderStatus(await res.json());
-      } catch { /* server may be starting */ }
+      } catch { /* 서버가 시작 중일 수 있다. */ }
     }
 
     function renderCellsSnapshot(data) {
@@ -693,10 +693,10 @@
       logEl.innerHTML = '';
       for (const ev of (events || []).slice().reverse()) {
         if (ev.type === 'game_state') {
-          const reason = ev.finish_reason ? ` (${ev.finish_reason})` : '';
+          const reason = ev.end_reason ? ` (${ev.end_reason})` : '';
           addLog(
             'state',
-            `${ev.previous_phase || '—'} → ${ev.phase}${reason}`,
+            `${ev.previous_state || '—'} → ${ev.state}${reason}`,
             'log-info',
             ev.ts,
             false,
@@ -719,13 +719,13 @@
         const res = await fetch('/api/cells');
         if (!res.ok) return;
         renderCellsSnapshot(await res.json());
-      } catch { /* ignore */ }
+      } catch { /* 다음 동기화에서 복구한다. */ }
 
       try {
         const res = await fetch('/api/events');
         if (!res.ok) return;
         renderEventSnapshot(await res.json());
-      } catch { /* ignore */ }
+      } catch { /* 다음 동기화에서 복구한다. */ }
     }
 
     function handleWsMessage(msg) {
@@ -753,10 +753,10 @@
         applyCellState(slave, cell, { id: '', voice: '미상', note, result: 'unknown', synthetic: true });
         addLog('복구', `S${slave} C${cell} ${note} → 유실 추정(미상, 화면 미표시)`, 'log-warn');
       } else if (address === '/game/state') {
-        const [phase, reason, , , , previousPhase] = args;
-        const transition = previousPhase
-          ? `${previousPhase} → ${phase}`
-          : String(phase || 'UNKNOWN');
+        const [state, reason, , , , previousState] = args;
+        const transition = previousState
+          ? `${previousState} → ${state}`
+          : String(state || 'UNKNOWN');
         addLog(
           'state',
           `${transition}${reason ? ` (${reason})` : ''}`,
@@ -767,7 +767,7 @@
     }
 
     function connectWs() {
-      if (ws) { try { ws.close(); } catch { /* */ } }
+      if (ws) { try { ws.close(); } catch { /* 이미 종료된 연결이다. */ } }
       ws = new WebSocket(WS_URL);
       ws.onopen = () => {
         setDot('dot-ws', 'ok');
@@ -782,7 +782,7 @@
       };
       ws.onerror = () => setDot('dot-ws', 'err');
       ws.onmessage = (e) => {
-        try { handleWsMessage(JSON.parse(e.data)); } catch { /* */ }
+        try { handleWsMessage(JSON.parse(e.data)); } catch { /* 잘못된 메시지는 무시한다. */ }
       };
     }
 
@@ -795,13 +795,11 @@
       if (!res.ok) addLog('error', await res.text(), 'log-warn');
     }
 
-    // UI labels, HTTP suffixes, and Serial JSON actions use the same literal
-    // strings: start, end, reset.
+    // UI, HTTP 경로, Serial JSON이 같은 start·end·reset 문자열을 사용한다.
     document.querySelectorAll('[data-game-action]').forEach(button => {
       button.addEventListener('click', () => {
         const action = button.dataset.gameAction;
-        const body = action === 'end' ? { reason: 'admin' } : {};
-        postGame(`/api/game/${action}`, body);
+        postGame(`/api/game/${action}`);
       });
     });
     document.getElementById('btn-clear').addEventListener('click', () => {
@@ -819,8 +817,7 @@
     loadSnapshot();
     fetchStatus();
     connectWs();
-    // One-second polling keeps both countdowns readable without making the
-    // browser another source of timer truth.
+    // 브라우저가 타이머 기준이 되지 않도록 서버 값을 1초마다 표시만 갱신한다.
     setInterval(fetchStatus, 1000);
   </script>
 </body>

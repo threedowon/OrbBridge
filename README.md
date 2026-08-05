@@ -11,7 +11,7 @@ OrbBridge/
 │   ├── main.py            Serial/HTTP 어댑터, WebSocket·MIDI 출력
 │   ├── game_engine.py     상태·판정·완료·timeout 순수 로직
 │   ├── game_runtime.py    입력 Queue·단일 writer·tick·snapshot
-│   ├── scheduler.py       Listen·Play·Dispensa 절대시각 Scheduler
+│   ├── scheduler.py       Listen·Play·DFesta 절대시각 Scheduler
 │   ├── websocket_service.py Python → 브라우저 직접 전송·재접속 snapshot
 │   ├── mock_server.py     HTTP API + table/screen/admin 정적 파일 서빙
 │   ├── launcher.py        PyInstaller 단일 exe 진입점
@@ -53,7 +53,20 @@ OrbBridge/
 
 - Python이 `screen`, `table`, `admin`에 **WebSocket(8765)** 으로 직접 전송합니다.
 - 연결 직후 전체 snapshot을 먼저 보내므로 새로고침·재접속 뒤에도 상태를 복구합니다.
-- 게임 phase는 `/game/state` 한 이벤트만 기준으로 사용합니다.
+- 게임 상태는 `/game/state` 이벤트 하나만 기준으로 사용합니다.
+
+### 게임 용어
+
+| 구분 | 표준 값 |
+|------|---------|
+| 게임 상태 | `READY`, `RUNNING`, `RESETTING` |
+| 게임 제어 이벤트 | `start`, `end`, `reset` |
+| 재생·버튼 이벤트 | `listen`, `play`, `dfesta` |
+| 종료 사유 | `complete`, `idle`, `time_over`, `manual` |
+| 테이블 하트비트 점유값 | `occupancy_mask` |
+
+게임 상태는 항상 `state` 필드에만 담습니다. `start`는 바로 `RUNNING`으로
+전이하고, 모든 종료 조건과 `end`·`reset`은 바로 `RESETTING`으로 전이합니다.
 
 ## 데이터 흐름
 
@@ -69,12 +82,12 @@ table [오브 배치]
                                    └─ WebSocket /orb/added ──► 모든 UI
 
 table [다시듣기 / 재생 / 디페스타]
-    └─ POST /api/game/listen|play|dispensa ──► server
+    └─ POST /api/game/listen|play|dfesta ──► server
           └─ Python Scheduler ─┬─► MIDI note batch
                                └─► WebSocket playback beat ──► screen 표시
 
-GameEngine [DFesta 완료 또는 timeout]
-    └─ FINISHED → RESETTING ──► WebSocket /game/state ──► 모든 UI
+GameEngine [DFesta 완료·Idle·TimeOver·end·reset]
+    └─ RUNNING → RESETTING ──► WebSocket /game/state ──► 모든 UI
 
 RESETTING
     └─ 오브를 모두 제거하면 READY
@@ -288,8 +301,8 @@ cd server && python melody_editor_tool.py
 
 | 주소 | 설명 |
 |------|------|
-| `/game/state` | 실제 phase·종료 이유·revision·남은 시간·이전 phase |
-| `/game/playback/start` | Listen·Play·Dispensa 재생 시작 |
+| `/game/state` | 실제 상태·종료 이유·revision·남은 시간·이전 상태 |
+| `/game/playback/start` | Listen·Play·DFesta 재생 시작 |
 | `/game/playback/beat` | 현재 beat와 브라우저 오디오 fallback 정보 |
 | `/game/playback/end` | 재생 종료 |
 | `/orb/added` | 오브 올림 |
@@ -302,10 +315,10 @@ cd server && python melody_editor_tool.py
 |--------|------|------|
 | POST | `/api/event` | table → 오브 added/removed |
 | POST | `/api/game/start` | screen → 게임 시작 |
-| POST | `/api/game/start-complete` | 수동 STARTING → RUNNING |
 | POST | `/api/game/end` | 게임 종료 |
 | POST | `/api/game/reset` | 리셋·오브 제거 대기 |
 | POST | `/api/game/listen` | 다시 듣기 |
 | POST | `/api/game/play` | 재생 |
+| POST | `/api/game/dfesta` | DFesta 버튼 입력 |
 | GET | `/api/game/state` | Python 게임 snapshot |
 | GET | `/api/orbs` | 등록된 오브 목록 |

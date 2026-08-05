@@ -4,7 +4,7 @@ import { noteNameToRow, BEAT_COLS } from './data.js';
 export const ROW_NOTES = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'];
 export const ROW_LABELS = ['C', 'D', 'E', 'F', 'G', 'A', 'B', 'C'];
 
-/** orb_mapping.json voice → VOICES index (loaded from GET /api/voices) */
+/** GET /api/voices에서 불러온 orb_mapping voice의 VOICES index다. */
 let VOICE_INDEX = {
   aespa_1: 0,
   aespa_2: 1,
@@ -28,7 +28,7 @@ export function cellToTableRow(cell) {
   return cell <= 8 ? cell : cell - 8;
 }
 
-/** slave + cell → beat column. cell 1–8 = Q1, 9–16 = Q2 */
+/** slave와 cell을 beat 열로 바꾸며 cell 1–8은 Q1, 9–16은 Q2다. */
 export function slaveCellToCol(slave, cell) {
   const q = cell <= 8 ? 1 : 2;
   const col = q + (slave - 1) * 2 - 1;

@@ -6,9 +6,9 @@ import threading
 import time
 
 from game_engine import (
-    FinishReason,
+    EndReason,
     GameEngine,
-    GamePhase,
+    GameState,
     InvalidTransition,
     PlacementResult,
 )
@@ -22,10 +22,10 @@ ensure_data_files()
 SERVER_DIR = data_dir()
 os.chdir(SERVER_DIR)
 
-# Game-rule defaults apply when an older stage_data.json lacks the new fields.
-DEFAULT_TOTAL_TIMEOUT_S = 120
-DEFAULT_IDLE_TIMEOUT_S = 30
-DEFAULT_DISPENSA_PRESSES_REQUIRED = 1
+# stage_data.json에 규칙 값이 없을 때 사용하는 기본값이다.
+DEFAULT_TIME_OVER_S = 120
+DEFAULT_IDLE_S = 30
+DEFAULT_DFESTA_PRESSES_REQUIRED = 1
 
 # ── 설정 로드 ──────────────────────────────────────────
 with open(SERVER_DIR / "config.json")      as f: config      = json.load(f)
@@ -35,24 +35,26 @@ with open(SERVER_DIR / "stage_data.json")  as f: stage_data  = json.load(f)
 current_stage   = config["current_stage"]
 stage           = next(s for s in stage_data["stages"] if s["stage"] == current_stage)
 answer_sequence = stage["sequence"]
-time_limit      = stage.get("time_limit", DEFAULT_TOTAL_TIMEOUT_S)
-idle_time_limit = stage.get("idle_time_limit", DEFAULT_IDLE_TIMEOUT_S)
-dispensa_presses_required = stage.get(
-    "dispensa_presses_required",
-    DEFAULT_DISPENSA_PRESSES_REQUIRED,
+time_over_s      = stage.get("time_over_s", DEFAULT_TIME_OVER_S)
+idle_s = stage.get("idle_s", DEFAULT_IDLE_S)
+dfesta_presses_required = stage.get(
+    "dfesta_presses_required",
+    DEFAULT_DFESTA_PRESSES_REQUIRED,
 )
 melody_id       = config.get("melody", "biplane")
 _raw_input_mode = config.get("input_mode", "table")
-# legacy: "mock" → "table" (웹 /table UI 입력)
+# 이전 설정값인 "mock"은 웹 /table 입력을 뜻하는 "table"로 바꾼다.
 input_mode      = "table" if _raw_input_mode == "mock" else _raw_input_mode
 
 NOTE_MAP = {1: "C", 2: "D", 3: "E", 4: "F", 5: "G", 6: "A", 7: "B", 8: "C"}
 
-# Serial JSON and the admin HTTP controls use these exact action strings.
-# Keeping them in one place prevents UI labels and hardware commands drifting.
+# Serial JSON과 admin HTTP 제어가 함께 사용하는 이벤트 문자열이다.
 GAME_ACTION_START = "start"
 GAME_ACTION_END = "end"
 GAME_ACTION_RESET = "reset"
+GAME_ACTION_LISTEN = "listen"
+GAME_ACTION_PLAY = "play"
+GAME_ACTION_DFESTA = "dfesta"
 
 # ── Admin 상태 (셀 점유, 이벤트 로그, 시리얼) ────────
 _state_lock = threading.Lock()
@@ -64,7 +66,7 @@ _serial_status = {"connected": False, "port": "", "error": ""}
 _runtime_lock = threading.Lock()
 _game_runtime: GameRuntime | None = None
 
-# ── M3 재생 Scheduler (Listen·Play·Dispensa의 단일 clock) ──
+# ── M3 재생 Scheduler (Listen·Play·DFesta의 단일 clock) ──
 # GameRuntime은 게임 상태를, PlaybackScheduler는 박자와 MIDI 출력을 소유한다.
 _scheduler_lock = threading.Lock()
 _playback_scheduler: PlaybackScheduler | None = None
@@ -112,7 +114,7 @@ def _touch_slave(slave_id: int, *, heartbeat: bool) -> None:
                 "last_heartbeat": 0.0,
                 "heartbeat_count": 0,
                 "msg_count": 0,
-                "prev_state_mask": None,  # 직전 heartbeat 의 점유 마스크 (debounce용)
+                "prev_occupancy_mask": None,  # 직전 heartbeat 점유 마스크다.
             }
             _slaves[slave_id] = s
         s["last_seen"] = now
@@ -144,16 +146,16 @@ def _slave_list_locked(now: float) -> list:
 
 
 def audio_output_mode() -> str:
-    """Return the validated output backend selected in config.json."""
+    """config.json에서 검증된 오디오 출력 방식을 반환한다."""
     mode = str(config.get("audio_output", "web")).lower().strip()
     return mode if mode in ("midi", "web") else "web"
 
 
 def _scheduler_send_notes(notes: list[dict]) -> list[dict]:
-    """Send one due Scheduler beat as a single locked MIDI burst.
+    """도달한 Scheduler beat 하나를 잠긴 MIDI 묶음으로 보낸다.
 
-    Web mode receives the same notes through the playback beat WebSocket event, so
-    Python intentionally does not open MIDI ports in that development fallback.
+    web 모드는 같은 음표를 WebSocket beat 이벤트로 받으므로 Python에서
+    MIDI 포트를 열지 않는다.
     """
     if audio_output_mode() != "midi" or not notes:
         return []
@@ -168,7 +170,7 @@ def _scheduler_send_notes(notes: list[dict]) -> list[dict]:
 
 
 def _scheduler_publish_event(event: dict) -> None:
-    """Translate Scheduler callbacks to browser WebSocket events."""
+    """Scheduler callback을 브라우저 WebSocket 이벤트로 변환한다."""
     event_type = event["type"]
     run_id = int(event["run_id"])
     mode = str(event["mode"])
@@ -179,8 +181,8 @@ def _scheduler_publish_event(event: dict) -> None:
             [run_id, mode, int(event["step_count"])],
         )
     elif event_type == "beat":
-        # WebSocket transports the optional Web Audio note batch as compact JSON.
-        # MIDI mode ignores this field and uses Python's trigger_many directly.
+        # Web Audio용 음표 묶음을 압축된 JSON으로 전송한다.
+        # MIDI 모드는 이 필드를 무시하고 Python의 trigger_many를 사용한다.
         encoded_notes = json.dumps(
             event.get("notes") or [],
             ensure_ascii=False,
@@ -204,7 +206,7 @@ def _scheduler_publish_event(event: dict) -> None:
 
 
 def get_playback_scheduler() -> PlaybackScheduler:
-    """Create the process-wide Scheduler lazily for tests and CLI tools."""
+    """테스트와 CLI에서도 쓸 수 있게 Scheduler를 지연 생성한다."""
     global _playback_scheduler
     with _scheduler_lock:
         if _playback_scheduler is None:
@@ -216,7 +218,7 @@ def get_playback_scheduler() -> PlaybackScheduler:
 
 
 def _cancel_playback() -> None:
-    """Cancel without joining so GameRuntime phase callbacks never block."""
+    """GameRuntime 상태 callback을 막지 않도록 join 없이 취소한다."""
     with _scheduler_lock:
         scheduler = _playback_scheduler
     if scheduler is not None:
@@ -224,7 +226,7 @@ def _cancel_playback() -> None:
 
 
 def _melody_path() -> Path:
-    """Resolve editable user data first, then the bundled screen fallback."""
+    """편집 가능한 사용자 파일을 우선하고 번들 파일을 fallback으로 찾는다."""
     filename = f"{melody_id}.json"
     user_path = melodies_dir() / filename
     if user_path.is_file():
@@ -236,17 +238,17 @@ def _melody_path() -> Path:
 
 
 def _start_playback(mode: PlaybackMode) -> dict:
-    """Snapshot melody and cells before handing an immutable plan to M3."""
+    """멜로디와 셀을 snapshot한 뒤 변경 불가능한 plan을 Scheduler에 넘긴다."""
     melody = load_melody(_melody_path())
     cells = get_game_state().get("cells") or {}
     return get_playback_scheduler().start(mode, melody, cells)
 
 
 def _publish_web_event(address: str, args) -> None:
-    """Publish one ordered event directly to every connected browser."""
+    """연결된 모든 브라우저에 순서가 보장된 이벤트 하나를 보낸다."""
 
-    # Runtime and Scheduler run on separate threads. One lock preserves their
-    # publication order before WebSocketService fans the event out to clients.
+    # Runtime과 Scheduler가 서로 다른 스레드에서 실행되므로 하나의 lock으로
+    # WebSocketService에 전달되는 순서를 보장한다.
     with _web_event_lock:
         with _websocket_lock:
             service = _websocket_service
@@ -257,65 +259,60 @@ def _publish_web_event(address: str, args) -> None:
 def _new_game_engine() -> GameEngine:
     return GameEngine(
         answer_sequence,
-        total_timeout_s=time_limit,
-        idle_timeout_s=idle_time_limit,
-        dispensa_presses_required=dispensa_presses_required,
+        time_over_s=time_over_s,
+        idle_s=idle_s,
+        dfesta_presses_required=dfesta_presses_required,
     )
 
 
-def _phase_payload(snapshot: dict, previous_phase: str | None = None) -> list:
+def _state_payload(snapshot: dict, previous_state: str | None = None) -> list:
     timers = snapshot.get("timers") or {}
     return [
-        snapshot["phase"],
-        snapshot.get("finish_reason") or "",
+        snapshot["state"],
+        snapshot.get("end_reason") or "",
         snapshot.get("revision", 0),
-        timers.get("remaining_total_s")
-        if timers.get("remaining_total_s") is not None
+        timers.get("remaining_time_over_s")
+        if timers.get("remaining_time_over_s") is not None
         else -1,
         timers.get("remaining_idle_s")
         if timers.get("remaining_idle_s") is not None
         else -1,
-        previous_phase or "",
+        previous_state or "",
     ]
 
 
-def _on_phase_change(previous: str, current: str, snapshot: dict) -> None:
-    """Publish one authoritative phase transition and stop invalid playback."""
+def _on_state_change(previous: str, current: str, snapshot: dict) -> None:
+    """기준 상태 전이 하나를 발행하고 유효하지 않은 재생을 중단한다."""
     with _scheduler_lock:
         scheduler = _playback_scheduler
     playback = scheduler.snapshot() if scheduler is not None else {}
-    keep_final_dispensa = (
+    keep_final_dfesta = (
         playback.get("active")
-        and playback.get("mode") == PlaybackMode.DISPENSA.value
+        and playback.get("mode") == PlaybackMode.DFESTA.value
         and (
-            snapshot.get("finish_reason") == FinishReason.COMPLETE.value
+            snapshot.get("end_reason") == EndReason.COMPLETE.value
             or (
-                previous == GamePhase.RESETTING.value
-                and current == GamePhase.READY.value
+                previous == GameState.RESETTING.value
+                and current == GameState.READY.value
             )
         )
     )
-    if (
-        current not in (GamePhase.STARTING.value, GamePhase.RUNNING.value)
-        and not keep_final_dispensa
-    ):
+    if current != GameState.RUNNING.value and not keep_final_dfesta:
         _cancel_playback()
 
-    # Persist exactly the same transition shown live in admin. Derived
-    # ready/not-ready messages are intentionally omitted because they obscured
-    # STARTING, FINISHED, and RESETTING with an inaccurate generic "대기" label.
+    # admin 실시간 로그와 저장 로그가 같은 상태 전이만 사용하게 한다.
     _record_event(
         {
             "type": "game_state",
-            "previous_phase": previous,
-            "phase": current,
-            "finish_reason": snapshot.get("finish_reason"),
+            "previous_state": previous,
+            "state": current,
+            "end_reason": snapshot.get("end_reason"),
             "revision": snapshot.get("revision", 0),
         }
     )
-    reason = snapshot.get("finish_reason") or ""
+    reason = snapshot.get("end_reason") or ""
     print(f"[state] {previous} → {current}{f' ({reason})' if reason else ''}")
-    _publish_web_event("/game/state", _phase_payload(snapshot, previous))
+    _publish_web_event("/game/state", _state_payload(snapshot, previous))
 
 
 def get_game_runtime() -> GameRuntime:
@@ -325,8 +322,7 @@ def get_game_runtime() -> GameRuntime:
             _game_runtime = GameRuntime(
                 _new_game_engine(),
                 tick_interval_s=0.05,
-                on_phase_change=_on_phase_change,
-                auto_reset_timeouts=True,
+                on_state_change=_on_state_change,
             )
             _game_runtime.start()
         return _game_runtime
@@ -344,7 +340,6 @@ def get_status() -> dict:
         slaves = _slave_list_locked(now)
         return {
             "input_mode": input_mode,
-            "game_active": game["phase"] == GamePhase.RUNNING.value,
             "game": game,
             "current_stage": current_stage,
             "melody": melody_id,
@@ -359,7 +354,7 @@ def get_status() -> dict:
 
 
 def get_cells(game_snapshot: dict | None = None) -> dict:
-    """Build the UI cell payload from one optional pinned game revision."""
+    """고정된 게임 revision 하나로 UI 셀 payload를 만든다."""
 
     cells = {}
     source = game_snapshot if game_snapshot is not None else get_game_state()
@@ -383,17 +378,15 @@ def get_events() -> list:
 
 
 def get_web_snapshot() -> dict:
-    """Return the complete browser recovery payload sent on every WS connect."""
+    """WebSocket 연결마다 보내는 전체 복구 payload를 반환한다."""
 
     game = get_game_state()
     status = get_status()
-    # ``get_status`` reads the cached engine once more; pin its game fields to
-    # the same revision used for ``cells`` so one reconnect payload is coherent.
+    # get_status가 cache를 다시 읽으므로 game과 cells를 같은 revision으로 고정한다.
     status["game"] = game
-    status["game_active"] = game["phase"] == GamePhase.RUNNING.value
     status["cell_count"] = game["cell_count"]
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "game": game,
         "cells": get_cells(game),
         "status": status,
@@ -402,7 +395,7 @@ def get_web_snapshot() -> dict:
 
 
 def start_websocket_service():
-    """Start the process-wide direct WebSocket publisher once."""
+    """프로세스 공용 WebSocket 발행기를 한 번만 시작한다."""
 
     global _websocket_service
     with _websocket_lock:
@@ -421,7 +414,7 @@ def start_websocket_service():
         service = WebSocketService(
             get_web_snapshot,
             host=host,
-            # All three browser interfaces use the same realtime port.
+            # 세 브라우저 인터페이스가 같은 실시간 포트를 사용한다.
             port=8765,
         )
         service.start()
@@ -430,7 +423,7 @@ def start_websocket_service():
 
 
 def stop_websocket_service() -> None:
-    """Stop direct browser delivery during an orderly process shutdown."""
+    """정상 종료 과정에서 브라우저 직접 전송을 중단한다."""
 
     global _websocket_service
     with _websocket_lock:
@@ -450,11 +443,11 @@ def parse_cell(cell: int):
     note = NOTE_MAP.get(row, "invalid")
     return q, note
 
-# ── game lifecycle ─────────────────────────────────────
+# ── 게임 상태 전이 ──────────────────────────────────────
 def reload_stage_data() -> None:
-    """Pick up Melody Editor saves (stage_data.json, config melody) without restarting."""
-    global stage_data, stage, answer_sequence, time_limit, idle_time_limit
-    global dispensa_presses_required
+    """재시작 없이 Melody Editor가 저장한 설정을 다시 읽는다."""
+    global stage_data, stage, answer_sequence, time_over_s, idle_s
+    global dfesta_presses_required
     global melody_id, config, current_stage, input_mode
     with open(SERVER_DIR / "config.json", encoding="utf-8") as f:
         config = json.load(f)
@@ -466,42 +459,20 @@ def reload_stage_data() -> None:
         stage_data = json.load(f)
     stage = next(s for s in stage_data["stages"] if s["stage"] == current_stage)
     answer_sequence = stage["sequence"]
-    time_limit = stage.get("time_limit", DEFAULT_TOTAL_TIMEOUT_S)
-    idle_time_limit = stage.get("idle_time_limit", DEFAULT_IDLE_TIMEOUT_S)
-    dispensa_presses_required = stage.get(
-        "dispensa_presses_required",
-        DEFAULT_DISPENSA_PRESSES_REQUIRED,
+    time_over_s = stage.get("time_over_s", DEFAULT_TIME_OVER_S)
+    idle_s = stage.get("idle_s", DEFAULT_IDLE_S)
+    dfesta_presses_required = stage.get(
+        "dfesta_presses_required",
+        DEFAULT_DFESTA_PRESSES_REQUIRED,
     )
     print(f"[stage] 재로드 — melody={melody_id}, 정답 시퀀스: {answer_sequence}")
 
 
 def _publish_transition(result: RuntimeResult) -> dict:
-    runtime = get_game_runtime()
-    snapshot = result.snapshot
+    """RuntimeResult의 상태 전이를 발행하고 snapshot을 반환한다."""
 
-    # Automatic endings must release the table for orb recovery. FINISHED stays
-    # observable first so the screen can render the exact ending reason.
-    should_reset = (
-        result.phase_changed
-        and result.phase == GamePhase.FINISHED.value
-        and snapshot.get("finish_reason")
-        in {
-            FinishReason.COMPLETE.value,
-            FinishReason.TOTAL_TIMEOUT.value,
-            FinishReason.IDLE_TIMEOUT.value,
-        }
-    )
-    try:
-        runtime.publish_phase_change(result)
-    finally:
-        if should_reset:
-            # A browser publication failure must not leave physical orb removal
-            # disabled. Runtime state continues to RESETTING independently.
-            reset_result = runtime.reset_game()
-            runtime.publish_phase_change(reset_result)
-            snapshot = reset_result.snapshot
-
-    return snapshot
+    get_game_runtime().publish_state_change(result)
+    return result.snapshot
 
 
 def start_game() -> dict:
@@ -510,9 +481,9 @@ def start_game() -> dict:
     reload_stage_data()
 
     current = runtime.snapshot()
-    if current["phase"] != GamePhase.READY.value:
+    if current["state"] != GameState.READY.value:
         raise InvalidTransition(
-            f"START is invalid from {current['phase']}; RESET must finish first"
+            f"START is invalid from {current['state']}; RESET must complete first"
         )
     if current["cell_count"]:
         raise InvalidTransition("START requires an empty table")
@@ -523,65 +494,40 @@ def start_game() -> dict:
 
     print(f"[game] 시작 — stage {current_stage}, melody={melody_id}")
     request_listen()
-
-    if bool(config.get("start_auto_complete", True)):
-        snapshot = complete_game_start()["game"]
-    else:
-        snapshot = started.snapshot
-    return {"ok": True, "game": snapshot}
+    return {"ok": True, "game": get_game_state()}
 
 
-def complete_game_start() -> dict:
-    result = get_game_runtime().complete_start()
-    snapshot = _publish_transition(result)
-    print("[game] STARTING → RUNNING")
-    return {"ok": True, "game": snapshot}
-
-
-def end_game(reason: str = "complete") -> dict:
+def end_game() -> dict:
     runtime = get_game_runtime()
-    snapshot = runtime.snapshot()
-    phase = snapshot["phase"]
+    result = runtime.end_game(EndReason.MANUAL)
+    snapshot = _publish_transition(result)
 
-    if phase == GamePhase.RUNNING.value:
-        finish_reason = (
-            FinishReason.COMPLETE
-            if str(reason).lower() == FinishReason.COMPLETE.value
-            else FinishReason.MANUAL
-        )
-        result = runtime.finish_game(finish_reason)
-        snapshot = _publish_transition(result)
-    elif phase == GamePhase.STARTING.value:
-        result = runtime.reset_game()
-        snapshot = _publish_transition(result)
-
-    print(f"[game] 종료 요청 — {reason} ({snapshot['phase']})")
+    print(f"[game] 종료 요청 — {snapshot['state']}")
     return {"ok": True, "game": snapshot}
 
 
 def reset_game() -> dict:
     result = get_game_runtime().reset_game()
     snapshot = _publish_transition(result)
-    print(f"[game] 리셋 — {snapshot['phase']}")
+    print(f"[game] 리셋 — {snapshot['state']}")
     return {"ok": True, "game": snapshot}
 
 
 def request_listen() -> dict:
-    """Start Python-owned target-melody preview from STARTING or RUNNING."""
+    """RUNNING에서 Python 기준 목표 멜로디 미리듣기를 시작한다."""
     runtime = get_game_runtime()
     snapshot = runtime.snapshot()
-    phase = snapshot["phase"]
-    if phase not in (GamePhase.STARTING.value, GamePhase.RUNNING.value):
-        print(f"[game] 다시 듣기 무시 — {phase}")
+    state = snapshot["state"]
+    if state != GameState.RUNNING.value:
+        print(f"[game] 다시 듣기 무시 — {state}")
         return {"ok": False, "ignored": True, "game": snapshot}
 
-    if phase == GamePhase.RUNNING.value:
-        # Listen is a real participant interaction even though no cell changes.
-        activity = runtime.record_activity()
-        snapshot = _publish_transition(activity)
-        if snapshot["phase"] != GamePhase.RUNNING.value:
-            print("[game] 다시 듣기 무시 — 타이머 만료")
-            return {"ok": False, "ignored": True, "game": snapshot}
+    # Listen은 셀을 바꾸지 않지만 실제 참여자 입력이므로 Idle을 초기화한다.
+    activity = runtime.record_activity()
+    snapshot = _publish_transition(activity)
+    if snapshot["state"] != GameState.RUNNING.value:
+        print("[game] 다시 듣기 무시 — 타이머 만료")
+        return {"ok": False, "ignored": True, "game": snapshot}
 
     print("[game] 다시 듣기")
     playback = _start_playback(PlaybackMode.LISTEN)
@@ -589,18 +535,18 @@ def request_listen() -> dict:
 
 
 def request_play() -> dict:
-    """Play each placed orb at its current column and physical pitch."""
+    """배치된 각 오브를 현재 열과 실제 pitch로 재생한다."""
     runtime = get_game_runtime()
     snapshot = runtime.snapshot()
-    if snapshot["phase"] != GamePhase.RUNNING.value:
+    if snapshot["state"] != GameState.RUNNING.value:
         print("[game] 재생 무시 — RUNNING 아님")
         return {"ok": False, "ignored": True, "game": snapshot}
 
-    # Play shares the same idle-activity rule as Listen. The queued engine
-    # command also guarantees an exact timeout deadline wins over the button.
+    # Play도 Listen과 같은 Idle 활동 규칙을 사용한다.
+    # 제한 시각과 입력이 같으면 Queue의 엔진 판정이 제한 시각을 우선한다.
     activity = runtime.record_activity()
     snapshot = _publish_transition(activity)
-    if snapshot["phase"] != GamePhase.RUNNING.value:
+    if snapshot["state"] != GameState.RUNNING.value:
         print("[game] 재생 무시 — 타이머 만료")
         return {"ok": False, "ignored": True, "game": snapshot}
 
@@ -609,22 +555,21 @@ def request_play() -> dict:
     return {"ok": True, "playback": playback, "game": snapshot}
 
 
-def request_dispensa() -> dict:
-    """Play all voices and count the DFesta press toward solved-game completion."""
+def request_dfesta() -> dict:
+    """모든 voice를 재생하고 DFestaPress를 완료 조건에 반영한다."""
     runtime = get_game_runtime()
     snapshot = runtime.snapshot()
-    if snapshot["phase"] != GamePhase.RUNNING.value:
+    if snapshot["state"] != GameState.RUNNING.value:
         print("[game] 디페스타 무시 — RUNNING 아님")
         return {"ok": False, "ignored": True, "game": snapshot}
 
-    # Queue the button event before playback so an exact timeout deadline wins.
-    # Phase publication is intentionally delayed until the final Dispensa plan
-    # has started; the completion transition must not cancel its own audio.
-    runtime_result = runtime.press_dispensa()
+    # 제한 시각과 버튼 입력이 같으면 제한 시각이 우선하도록 버튼부터 Queue에 넣는다.
+    # 마지막 DFesta 재생이 자기 상태 전이에 취소되지 않도록 재생 시작 뒤에 발행한다.
+    runtime_result = runtime.press_dfesta()
     if (
-        runtime_result.phase == GamePhase.FINISHED.value
-        and runtime_result.snapshot.get("finish_reason")
-        != FinishReason.COMPLETE.value
+        runtime_result.state == GameState.RESETTING.value
+        and runtime_result.snapshot.get("end_reason")
+        != EndReason.COMPLETE.value
     ):
         snapshot = _publish_transition(runtime_result)
         print("[game] 디페스타 무시 — 타이머 만료")
@@ -632,7 +577,7 @@ def request_dispensa() -> dict:
 
     print("[game] 디페스타")
     try:
-        playback = _start_playback(PlaybackMode.DISPENSA)
+        playback = _start_playback(PlaybackMode.DFESTA)
     finally:
         snapshot = _publish_transition(runtime_result)
     return {
@@ -666,16 +611,14 @@ def handle_serial_message(event: dict) -> None:
         try:
             if action == GAME_ACTION_START:
                 start_game()
-            elif action in ("start_complete", "start-complete"):
-                complete_game_start()
-            elif action == "listen":
+            elif action == GAME_ACTION_LISTEN:
                 request_listen()
-            elif action == "play":
+            elif action == GAME_ACTION_PLAY:
                 request_play()
-            elif action == "dispensa":
-                request_dispensa()
+            elif action == GAME_ACTION_DFESTA:
+                request_dfesta()
             elif action == GAME_ACTION_END:
-                end_game(str(event.get("reason", "manual")))
+                end_game()
             elif action == GAME_ACTION_RESET:
                 reset_game()
             else:
@@ -684,13 +627,13 @@ def handle_serial_message(event: dict) -> None:
             print(f"[WARN] game action {action} rejected: {exc}")
         return
     if t == "heartbeat":
-        # 생존 기록은 위에서 완료. state 마스크가 있으면 유실 이벤트 자가복구.
+        # 생존 기록은 위에서 완료했다. 점유 마스크가 있으면 유실 이벤트를 복구한다.
         # (sid 는 위에서 유효 범위 검증·int 변환 완료된 값)
-        if sid is not None and "state" in event:
+        if sid is not None and "occupancy_mask" in event:
             try:
-                reconcile_slave_state(sid, int(event["state"]))
+                reconcile_occupancy_mask(sid, int(event["occupancy_mask"]))
             except (TypeError, ValueError):
-                pass  # 이상한 state 값은 reconcile 만 건너뜀
+                pass  # 잘못된 점유 마스크는 자가복구만 건너뛴다.
         return
     handle_event(event)
 
@@ -759,7 +702,7 @@ def handle_event(event: dict) -> dict:
             [slave, cell, voice, note, result, orb_key],
         )
 
-        # MIDI mode: sound immediately (screen skips placeExternal tone to avoid double)
+        # MIDI 모드는 즉시 소리를 내며 screen은 중복 재생을 건너뛴다.
         if (
             audio_output_mode() == "midi"
             and runtime_result.value is not PlacementResult.INACTIVE
@@ -806,7 +749,7 @@ def handle_event(event: dict) -> dict:
         "game": snapshot,
     }
 
-# ── 자가복구 (heartbeat state mask 기반 reconcile) ────
+# ── 자가복구 (heartbeat 점유 마스크 기반) ─────────────
 # slave heartbeat 의 16비트 점유 마스크로 유실된 added/removed 를 스스로 메꾼다.
 #  - mask=점유 / memory=빔  → added 유실. UID 를 모르므로 "미상"으로 admin 에만 표시
 #                             (/orb/recovered — screen 은 이 주소를 처리 안 함).
@@ -853,15 +796,15 @@ def _synth_removed(slave_id: int, cell: int) -> None:
     _publish_transition(runtime_result)
 
 
-def reconcile_slave_state(slave_id: int, state: int) -> None:
-    """heartbeat 점유 마스크(state)로 메모리와의 불일치를 자가복구. flicker debounce 포함."""
+def reconcile_occupancy_mask(slave_id: int, occupancy_mask: int) -> None:
+    """heartbeat 점유 마스크로 메모리 불일치를 안정화한 뒤 자가복구한다."""
     with _state_lock:
         s = _slaves.get(slave_id)
-        prev = s.get("prev_state_mask") if s else None
+        prev = s.get("prev_occupancy_mask") if s else None
         if s is not None:
-            s["prev_state_mask"] = state
+            s["prev_occupancy_mask"] = occupancy_mask
         # 직전 heartbeat 와 마스크가 동일해야(=~3초 안정) 반영. 순간 오검출 1회는 무시.
-        stable = prev is not None and prev == state
+        stable = prev is not None and prev == occupancy_mask
         occupied_mem = {
             int(k.split(":", 1)[1])
             for k in get_cells()
@@ -872,7 +815,7 @@ def reconcile_slave_state(slave_id: int, state: int) -> None:
         return
 
     for cell in range(1, 17):
-        mask_occ = bool((state >> (cell - 1)) & 1)
+        mask_occ = bool((occupancy_mask >> (cell - 1)) & 1)
         mem_occ  = cell in occupied_mem
         if mask_occ and not mem_occ:
             _synth_added_unknown(slave_id, cell)
@@ -962,12 +905,11 @@ def run_main() -> None:
         get_cells=get_cells,
         get_events=get_events,
         on_game_start=start_game,
-        on_game_start_complete=complete_game_start,
         on_game_end=end_game,
         on_game_reset=reset_game,
         on_game_listen=request_listen,
         on_game_play=request_play,
-        on_game_dispensa=request_dispensa,
+        on_game_dfesta=request_dfesta,
     )
 
     if input_mode == "serial":

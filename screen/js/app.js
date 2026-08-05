@@ -24,11 +24,11 @@ let staffApi = null;
 let currentMelody = null;
 let ws = null;
 let gameRunning = false;
-let gamePhase = 'READY';
-let lastFinishRevision = -1;
+let gameState = 'READY';
+let lastCompleteRevision = -1;
 let playbackRunId = 0;
 let wsSnapshotReceived = false;
-// Preserve server wire order even when snapshot recovery performs async work.
+// snapshot 복구가 비동기여도 서버 전송 순서를 유지한다.
 let wsMessageChain = Promise.resolve();
 
 const views = {
@@ -55,7 +55,7 @@ function setConn(on) {
   connEl.setAttribute('aria-label', label);
 }
 
-/** Only one open screen tab may produce browser fallback audio. */
+/** 열려 있는 screen 탭 중 하나만 브라우저 fallback 오디오를 출력한다. */
 function ownsAudio() {
   try {
     return localStorage.getItem(AUDIO_OWNER_KEY) === tabId;
@@ -67,7 +67,7 @@ function ownsAudio() {
 function claimAudio(force = false) {
   try {
     const owner = localStorage.getItem(AUDIO_OWNER_KEY);
-    // A direct start click is explicit ownership transfer from a stale tab.
+    // 직접 누른 start는 오래된 탭에서 오디오 소유권을 넘겨받는 입력이다.
     if (force || !owner || owner === tabId) {
       localStorage.setItem(AUDIO_OWNER_KEY, tabId);
       return true;
@@ -90,7 +90,7 @@ async function fetchActiveMelodyId() {
       return config.active ?? 'biplane';
     }
   } catch {
-    // Bundled default keeps the screen usable while the server starts.
+    // 서버 시작 중에도 screen을 열 수 있도록 번들 기본값을 사용한다.
   }
   return 'biplane';
 }
@@ -105,7 +105,7 @@ async function apiPost(path, body) {
   return response.json();
 }
 
-/** Prepare visual state only; Python now owns all playback scheduling. */
+/** 재생 시각은 Python이 관리하므로 화면 상태만 준비한다. */
 function setupPlaySession() {
   gameRunning = false;
   playbackRunId = 0;
@@ -125,7 +125,7 @@ async function startGame() {
   unlock();
   const result = await apiPost('/api/game/start');
   if (result.game) applyGameSnapshot(result.game, false);
-  gameRunning = gamePhase === 'RUNNING';
+  gameRunning = gameState === 'RUNNING';
 }
 
 async function loadVoiceCatalog() {
@@ -162,7 +162,7 @@ async function enterPlayView() {
   try {
     await apiPost('/api/game/reset');
   } catch {
-    // A server that is still starting will be retried by the start request.
+    // 서버가 시작 중이면 이어지는 start 요청에서 다시 확인한다.
   }
   setupPlaySession();
   show('play');
@@ -207,28 +207,28 @@ function handleOrbRemoved(slave, cell, orbId) {
 function applyGameSnapshot(snapshot, announce = true) {
   if (!snapshot) return;
   applyGameState(
-    snapshot.phase,
-    snapshot.finish_reason,
+    snapshot.state,
+    snapshot.end_reason,
     snapshot.revision,
     announce,
   );
 }
 
-function applyGameState(phase, reason = null, revision = null, announce = true) {
+function applyGameState(state, reason = null, revision = null, announce = true) {
   const wasRunning = gameRunning;
-  gamePhase = phase || gamePhase;
-  gameRunning = gamePhase === 'RUNNING';
+  gameState = state || gameState;
+  gameRunning = gameState === 'RUNNING';
 
   if (!gameRunning && wasRunning) engine.stop();
 
   if (
     announce
-    && gamePhase === 'FINISHED'
+    && gameState === 'RESETTING'
     && reason === 'complete'
-    && revision !== lastFinishRevision
+    && revision !== lastCompleteRevision
     && wasRunning
   ) {
-    lastFinishRevision = revision;
+    lastCompleteRevision = revision;
     burst();
     playSuccess();
   }
@@ -240,11 +240,11 @@ async function syncGameState() {
     if (!response.ok) return;
     applyGameSnapshot(await response.json(), false);
   } catch {
-    // WebSocket reconnect will retry after the server becomes available.
+    // 서버가 준비되면 WebSocket 재연결에서 다시 동기화한다.
   }
 }
 
-/** Rebuild visual state from the snapshot sent first on each WS connection. */
+/** WebSocket 연결 직후 받은 snapshot으로 화면 상태를 복구한다. */
 async function applyWebSocketSnapshot(snapshot) {
   if (!snapshot || typeof snapshot !== 'object') return;
 
@@ -268,7 +268,7 @@ async function applyWebSocketSnapshot(snapshot) {
       if (col >= getBeats()) continue;
       engine.placeExternal(col, row, voiceIndex, info.id, { silent: true });
     } catch {
-      // One malformed cell must not prevent the remaining snapshot recovery.
+      // 잘못된 셀 하나가 나머지 snapshot 복구를 막지 않게 한다.
     }
   }
 
@@ -279,7 +279,7 @@ async function applyWebSocketSnapshot(snapshot) {
   engine.redraw();
 }
 
-/** Ignore delayed realtime events that belong to an older Python playback run. */
+/** 이전 Python 재생에 속한 지연 실시간 이벤트를 무시한다. */
 function beginPlayback(runId, mode) {
   const parsedRunId = Number(runId) || 0;
   if (parsedRunId < playbackRunId) return;
@@ -288,8 +288,8 @@ function beginPlayback(runId, mode) {
 }
 
 /**
- * Web mode remains a development fallback. Timing still comes from Python:
- * this function plays notes immediately when their server beat arrives.
+ * web 모드는 개발용 fallback이다. 시각 기준은 Python에 있으며,
+ * 서버 beat가 도착하면 해당 음표를 즉시 재생한다.
  */
 function playWebBeat(mode, durationMs, encodedNotes) {
   if (isMidiMode() || !ownsAudio()) return;
@@ -301,7 +301,7 @@ function playWebBeat(mode, durationMs, encodedNotes) {
   }
   if (!Array.isArray(notes) || !notes.length) return;
 
-  const coherent = mode === 'dispensa';
+  const coherent = mode === 'dfesta';
   for (const item of notes) {
     const pitch = Math.max(0, Math.min(7, Number(item.pitch) || 0));
     const note = NOTES[pitch];
@@ -366,8 +366,8 @@ function connectWs() {
   wsSnapshotReceived = false;
   ws.onopen = () => {
     setConn(true);
-    // The server sends a complete snapshot immediately. Keep one delayed HTTP
-    // fallback for startup races or an older server build.
+    // 서버가 즉시 전체 snapshot을 보낸다. 시작 경합에 대비해 지연 HTTP
+    // fallback 하나만 유지한다.
     setTimeout(() => {
       if (!wsSnapshotReceived && ws?.readyState === WebSocket.OPEN) {
         void syncGameState();
@@ -384,11 +384,11 @@ function connectWs() {
     try {
       message = JSON.parse(event.data);
     } catch {
-      // Ignore malformed messages; the next connection snapshot self-heals.
+      // 잘못된 메시지는 무시하고 다음 연결 snapshot에서 복구한다.
       return;
     }
-    // The service sends snapshot first. Serializing browser work keeps a later
-    // live event from overtaking an async catalog load or snapshot rebuild.
+    // snapshot을 먼저 처리하고 이후 실시간 이벤트가 비동기 복구를
+    // 추월하지 않도록 브라우저 작업을 직렬화한다.
     wsMessageChain = wsMessageChain
       .then(() => handleWsMessage(message))
       .catch(error => console.warn('WebSocket message failed', error));
@@ -413,17 +413,17 @@ window.addEventListener('beforeunload', () => {
   try {
     localStorage.removeItem(AUDIO_OWNER_KEY);
   } catch {
-    // Storage can be unavailable in private browsing mode.
+    // 비공개 탐색에서는 Storage를 사용할 수 없을 수 있다.
   }
 });
 
 window.addEventListener('pagehide', () => {
   try {
-    const body = JSON.stringify({ reason: 'screen_reload' });
+    const body = JSON.stringify({});
     const blob = new Blob([body], { type: 'application/json' });
     if (navigator.sendBeacon) navigator.sendBeacon('/api/game/end', blob);
   } catch {
-    // Page shutdown must never block navigation.
+    // 페이지 종료 처리가 화면 이동을 막지 않게 한다.
   }
 });
 
@@ -436,7 +436,7 @@ connectWs();
   try {
     await apiPost('/api/game/reset');
   } catch {
-    // Initial state sync below will recover when the server is ready.
+    // 서버가 준비되면 아래 초기 상태 동기화에서 복구한다.
   }
   gameRunning = false;
 

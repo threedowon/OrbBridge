@@ -1,4 +1,4 @@
-"""Melody Editor — load/save the active screen melody (config.json → active)."""
+"""활성 screen 멜로디를 불러오고 저장하는 Melody Editor 핵심 로직이다."""
 
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ def active_melody_id() -> str:
 
 
 def resolve_melody_id(preferred: str, *, update_config: bool = False) -> str:
-    """Pick an existing melody JSON; optionally rewrite active config when preferred is missing."""
+    """존재하는 멜로디를 고르고 필요하면 활성 설정을 대체 항목으로 갱신한다."""
     preferred = preferred.strip()
     if preferred and melody_path(preferred).is_file():
         return preferred
@@ -143,7 +143,7 @@ def save_melody_editor(
 
 
 def normalize_beat_steps(steps: list[dict[str, Any]], *, file_id: str = "") -> list[dict[str, Any]]:
-    """Pad or trim steps to BEAT_COLS (12). Upgrades legacy 9-step biplane in place."""
+    """step을 12칸으로 맞추고 이전 9칸 biplane 형식을 변환한다."""
     out = [dict(s) for s in steps]
     if len(out) == 9 and file_id == "biplane":
         for extra in BIPLANE_TAIL_STEPS:

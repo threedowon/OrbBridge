@@ -1,4 +1,4 @@
-"""Preview melody steps from Melody Register."""
+"""Melody Register의 멜로디 step을 미리 재생한다."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def _beep(freq: int, ms: int) -> None:
 
         winsound.Beep(freq, ms)
         return
-    # macOS / Linux — no stdlib tone; short sleep as rhythm guide
+    # macOS와 Linux에는 표준 음원 기능이 없어 짧은 대기로 박자만 안내한다.
     time.sleep(ms / 1000)
 
 
@@ -43,7 +43,7 @@ def play_melody(
     bpm: int,
     on_step: Callable[[int], None] | None = None,
 ) -> str | None:
-    """Play steps in a background thread. Returns error message or None."""
+    """백그라운드 스레드에서 step을 재생하고 오류 메시지 또는 None을 반환한다."""
     global _thread
 
     if not steps:

@@ -1,4 +1,4 @@
-"""Tkinter desktop GUI for Voice Register — voice → 8 sample files."""
+"""voice별 8개 샘플 파일을 등록하는 Tkinter 데스크톱 화면이다."""
 
 from __future__ import annotations
 

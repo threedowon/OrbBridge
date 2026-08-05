@@ -1,4 +1,4 @@
-/** voice → KR/EN display names (from GET /api/voices → VOICES) */
+/** GET /api/voices의 voice를 한국어·영어 표시 이름으로 바꾼다. */
 
 import { VOICES } from './data.js';
 
@@ -9,7 +9,7 @@ function findVoice(voiceName) {
 }
 
 export function setVoiceLabels(_voices) {
-  /* labels는 setVoices() 시 VOICES에 포함됨 — 호환용 no-op */
+  /* labels는 setVoices() 때 VOICES에 포함되므로 이전 호출부를 위해 아무것도 하지 않는다. */
 }
 
 export function voiceDisplay(voiceName) {

@@ -4,9 +4,9 @@ import time
 import pytest
 
 from server.game_engine import (
-    FinishReason,
+    EndReason,
     GameEngine,
-    GamePhase,
+    GameState,
     InvalidTransition,
     PlacementResult,
 )
@@ -31,13 +31,13 @@ def make_engine(
     clock=None,
     *,
     answers=None,
-    total_timeout_s=60,
-    idle_timeout_s=10,
+    time_over_s=60,
+    idle_s=10,
 ) -> GameEngine:
     return GameEngine(
         answers or {"1": "C", "2": "D"},
-        total_timeout_s=total_timeout_s,
-        idle_timeout_s=idle_timeout_s,
+        time_over_s=time_over_s,
+        idle_s=idle_s,
         clock=clock or time.monotonic,
     )
 
@@ -65,7 +65,6 @@ def test_lifecycle_and_placement_use_cached_engine_snapshot():
     runtime.start()
     try:
         started = runtime.start_game()
-        running = runtime.complete_start()
         placed = runtime.add_orb(
             orb_id="orb-c",
             slave=1,
@@ -73,147 +72,123 @@ def test_lifecycle_and_placement_use_cached_engine_snapshot():
             voice="aespa_1",
         )
 
-        assert started.value is GamePhase.STARTING
-        assert running.value is GamePhase.RUNNING
+        assert started.value is GameState.RUNNING
         assert placed.value is PlacementResult.CORRECT
         snapshot = runtime.snapshot()
-        assert snapshot["phase"] == "RUNNING"
+        assert snapshot["state"] == "RUNNING"
         assert snapshot["cells"]["1:1"]["orb_id"] == "orb-c"
         assert snapshot["cells"]["1:1"]["voice"] == "aespa_1"
     finally:
         runtime.close()
 
 
-def test_command_phase_changes_are_published_explicitly_in_caller_order():
+def test_command_state_changes_are_published_in_caller_order():
     transitions = []
     runtime = GameRuntime(
         make_engine(answers={"1": "C"}),
-        on_phase_change=lambda old, new, snapshot: transitions.append(
-            (old, new, snapshot["finish_reason"])
+        on_state_change=lambda old, new, snapshot: transitions.append(
+            (old, new, snapshot["end_reason"])
         ),
     )
     runtime.start()
     try:
-        start = runtime.start_game()
-        complete_start = runtime.complete_start()
-        runtime.publish_phase_change(start)
-        runtime.publish_phase_change(complete_start)
+        started = runtime.start_game()
+        assert transitions == []
+        runtime.publish_state_change(started)
         transitions.clear()
 
         final_orb = runtime.add_orb(orb_id="orb-c", slave=1, cell=1)
-
-        assert final_orb.phase == "RUNNING"
-        assert final_orb.snapshot["solved"] is True
+        assert final_orb.state == "RUNNING"
+        assert final_orb.snapshot["is_correct"] is True
         assert transitions == []
 
         transitions.append(("output", "orb_added", None))
-        runtime.publish_phase_change(final_orb)
-        dispensa = runtime.press_dispensa()
-
-        assert dispensa.phase == "FINISHED"
+        runtime.publish_state_change(final_orb)
+        dfesta = runtime.press_dfesta()
+        assert dfesta.state == "RESETTING"
         assert transitions == [("output", "orb_added", None)]
-        runtime.publish_phase_change(dispensa)
+        runtime.publish_state_change(dfesta)
 
         assert transitions == [
             ("output", "orb_added", None),
-            ("RUNNING", "FINISHED", "complete"),
+            ("RUNNING", "RESETTING", "complete"),
         ]
     finally:
         runtime.close()
 
 
 @pytest.mark.parametrize(
-    ("total_timeout_s", "idle_timeout_s", "advance_s", "reason"),
-    [
-        (5, None, 5, "total_timeout"),
-        (None, 5, 5, "idle_timeout"),
-    ],
+    ("time_over_s", "idle_s", "advance_s", "reason"),
+    [(5, None, 5, "time_over"), (None, 5, 5, "idle")],
 )
-def test_background_timeout_enters_resetting_automatically(
-    total_timeout_s,
-    idle_timeout_s,
+def test_background_timeout_enters_resetting_directly(
+    time_over_s,
+    idle_s,
     advance_s,
     reason,
 ):
     clock = FakeClock()
     transitions = []
     runtime = GameRuntime(
-        make_engine(
-            clock,
-            total_timeout_s=total_timeout_s,
-            idle_timeout_s=idle_timeout_s,
-        ),
+        make_engine(clock, time_over_s=time_over_s, idle_s=idle_s),
         tick_interval_s=0.005,
-        on_phase_change=lambda old, new, snapshot: transitions.append(
-            (old, new, snapshot["finish_reason"])
+        on_state_change=lambda old, new, snapshot: transitions.append(
+            (old, new, snapshot["end_reason"])
         ),
-        auto_reset_timeouts=True,
     )
     runtime.start()
     try:
-        runtime.publish_phase_change(runtime.start_game())
-        runtime.publish_phase_change(runtime.complete_start())
-        # Keep one orb on the table so RESETTING remains observable until it is
-        # physically removed.
+        runtime.publish_state_change(runtime.start_game())
         runtime.add_orb(orb_id="orb-c", slave=1, cell=1)
         transitions.clear()
 
         clock.advance(advance_s)
-        wait_until(lambda: runtime.snapshot()["phase"] == "RESETTING")
+        wait_until(lambda: runtime.snapshot()["state"] == "RESETTING")
 
-        assert transitions == [
-            ("RUNNING", "FINISHED", reason),
-            ("FINISHED", "RESETTING", reason),
-        ]
+        assert transitions == [("RUNNING", "RESETTING", reason)]
     finally:
         runtime.close()
 
 
-def test_empty_timeout_still_publishes_resetting_before_ready():
-    """An empty table must not collapse FINISHED directly into READY."""
+def test_empty_timeout_exposes_resetting_before_ready():
     clock = FakeClock()
     transitions = []
     runtime = GameRuntime(
-        make_engine(clock, total_timeout_s=None, idle_timeout_s=5),
+        make_engine(clock, time_over_s=None, idle_s=5),
         tick_interval_s=0.005,
-        on_phase_change=lambda old, new, snapshot: transitions.append(
-            (old, new, snapshot["finish_reason"])
+        on_state_change=lambda old, new, snapshot: transitions.append(
+            (old, new, snapshot["end_reason"])
         ),
-        auto_reset_timeouts=True,
     )
     runtime.start()
     try:
-        runtime.publish_phase_change(runtime.start_game())
-        runtime.publish_phase_change(runtime.complete_start())
+        runtime.publish_state_change(runtime.start_game())
         transitions.clear()
-
         clock.advance(5)
         wait_until(
             lambda: any(new == "READY" for _old, new, _reason in transitions)
         )
 
         assert transitions == [
-            ("RUNNING", "FINISHED", "idle_timeout"),
-            ("FINISHED", "RESETTING", "idle_timeout"),
+            ("RUNNING", "RESETTING", "idle"),
             ("RESETTING", "READY", None),
         ]
     finally:
         runtime.close()
 
 
-def test_remove_can_finish_resetting_and_returns_ready():
+def test_remove_can_complete_resetting_and_return_ready():
     runtime = GameRuntime(make_engine(), tick_interval_s=0.01)
     runtime.start()
     try:
         runtime.start_game()
-        runtime.complete_start()
         runtime.add_orb(orb_id="wrong", slave=1, cell=2)
         resetting = runtime.reset_game()
         removed = runtime.remove_orb(orb_id="wrong", slave=1, cell=2)
 
-        assert resetting.phase == "RESETTING"
+        assert resetting.state == "RESETTING"
         assert removed.value is True
-        assert removed.phase == "READY"
+        assert removed.state == "READY"
         assert runtime.snapshot()["cell_count"] == 0
     finally:
         runtime.close()
@@ -224,12 +199,12 @@ def test_snapshot_returns_a_detached_copy():
     runtime.start()
     try:
         first = runtime.snapshot()
-        first["phase"] = "BROKEN"
+        first["state"] = "BROKEN"
         first["cells"]["fake"] = {}
 
         second = runtime.snapshot()
 
-        assert second["phase"] == "READY"
+        assert second["state"] == "READY"
         assert "fake" not in second["cells"]
     finally:
         runtime.close()
@@ -241,7 +216,6 @@ def test_replace_engine_updates_answers_only_while_ready_and_empty():
     try:
         replacement = make_engine(answers={"1": "D", "2": "R"})
         result = runtime.replace_engine(replacement)
-
         assert result.snapshot["answers"] == {"1": "D", "2": "R"}
 
         runtime.start_game()
@@ -251,16 +225,16 @@ def test_replace_engine_updates_answers_only_while_ready_and_empty():
         runtime.close()
 
 
-def test_engine_error_is_returned_to_producer_and_worker_survives():
+def test_engine_error_is_returned_and_worker_survives():
     runtime = GameRuntime(make_engine())
     runtime.start()
     try:
         with pytest.raises(InvalidTransition):
-            runtime.complete_start()
+            runtime.end_game()
 
         result = runtime.start_game()
 
-        assert result.phase == "STARTING"
+        assert result.state == "RUNNING"
         assert runtime.running
     finally:
         runtime.close()
@@ -268,11 +242,7 @@ def test_engine_error_is_returned_to_producer_and_worker_survives():
 
 class RecordingEngine(GameEngine):
     def __init__(self) -> None:
-        super().__init__(
-            {"1": "D"},
-            total_timeout_s=None,
-            idle_timeout_s=None,
-        )
+        super().__init__({"1": "D"}, time_over_s=None, idle_s=None)
         self.mutation_threads = []
 
     def add_orb(self, **kwargs):
@@ -306,7 +276,9 @@ def test_concurrent_producers_mutate_engine_on_one_worker_thread():
         assert errors == []
         assert len(engine.mutation_threads) == 24
         assert len(set(engine.mutation_threads)) == 1
-        assert engine.mutation_threads[0] not in {thread.ident for thread in threads}
+        assert engine.mutation_threads[0] not in {
+            thread.ident for thread in threads
+        }
     finally:
         runtime.close()
 
@@ -338,15 +310,14 @@ def test_close_is_idempotent_and_rejects_new_commands():
         runtime.start_game()
 
 
-def test_runtime_preserves_finish_reason_in_snapshot():
+def test_runtime_preserves_end_reason_in_snapshot():
     runtime = GameRuntime(make_engine())
     runtime.start()
     try:
         runtime.start_game()
-        runtime.complete_start()
-        result = runtime.finish_game(FinishReason.MANUAL)
+        result = runtime.end_game(EndReason.MANUAL)
 
-        assert result.value is GamePhase.FINISHED
-        assert result.snapshot["finish_reason"] == "manual"
+        assert result.value is GameState.RESETTING
+        assert result.snapshot["end_reason"] == "manual"
     finally:
         runtime.close()

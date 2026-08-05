@@ -32,7 +32,7 @@ export function parseMelodyJson(raw, fileId = 'custom') {
       throw new Error(`step ${label}: duration이 올바르지 않습니다.`);
     }
 
-    // REST, or legacy unused markers X / ?
+    // REST와 이전 미사용 표기인 X·?를 쉼표로 처리한다.
     if (name === NOTE_REST || name === 'R' || name === 'X' || name === '?' || rawName === '-') {
       return { name: NOTE_REST, n: -1, dur };
     }

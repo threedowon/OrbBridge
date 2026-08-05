@@ -1,4 +1,4 @@
-"""Melody Register — load/save screen/melodies/*.json and optional stage_data sync."""
+"""screen/melodies/*.json을 읽고 저장하며 stage_data를 선택적으로 동기화한다."""
 
 from __future__ import annotations
 
@@ -12,16 +12,16 @@ from app_paths import data_dir, melodies_dir
 
 NOTE_CHOICES = ("C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5")
 NOTE_REST = "REST"
-# Combobox 표시 순서 — 위로 갈수록 높은 음, 하단에 REST
+# Combobox에서 높은 음이 위에 오고 REST가 맨 아래에 오게 한다.
 NOTE_CHOICES_UI = tuple(reversed(NOTE_CHOICES))
 EDITOR_NOTE_CHOICES_UI = (*NOTE_CHOICES_UI, NOTE_REST)
 DEFAULT_RANGE = ["C4", "C5"]
 BEAT_COLS = 12
 LOG_LIMIT = 80
 SKIP_FILES = {"config.json"}
-DEFAULT_STAGE_TIME_LIMIT_S = 120
-DEFAULT_STAGE_IDLE_LIMIT_S = 30
-DEFAULT_STAGE_DISPENSA_PRESSES_REQUIRED = 1
+DEFAULT_STAGE_TIME_OVER_S = 120
+DEFAULT_STAGE_IDLE_S = 30
+DEFAULT_STAGE_DFESTA_PRESSES_REQUIRED = 1
 
 
 def stage_data_path() -> Path:
@@ -128,7 +128,7 @@ def validate_melody(data: dict[str, Any]) -> list[str]:
 def normalize_step_note(note: str) -> str:
     raw = str(note or "").strip()
     upper = raw.upper()
-    # legacy: X / ? were "unused" — treat as rest
+    # 이전 형식에서 미사용을 뜻하던 X와 ?를 REST로 처리한다.
     if upper == NOTE_REST or upper in ("X", "?", "R") or raw == "-":
         return NOTE_REST
     if raw in NOTE_CHOICES:
@@ -235,15 +235,14 @@ def sync_stage_data(
     stages = doc.setdefault("stages", [])
     stage = next((s for s in stages if s.get("stage") == stage_number), None)
     if stage is None:
-        # Keep newly created stages aligned with the runtime's game-rule
-        # defaults while preserving every field on existing stages.
+        # 새 stage에는 런타임과 같은 기본 게임 규칙을 넣는다.
         stage = {
             "stage": stage_number,
             "sequence": {},
-            "time_limit": DEFAULT_STAGE_TIME_LIMIT_S,
-            "idle_time_limit": DEFAULT_STAGE_IDLE_LIMIT_S,
-            "dispensa_presses_required": (
-                DEFAULT_STAGE_DISPENSA_PRESSES_REQUIRED
+            "time_over_s": DEFAULT_STAGE_TIME_OVER_S,
+            "idle_s": DEFAULT_STAGE_IDLE_S,
+            "dfesta_presses_required": (
+                DEFAULT_STAGE_DFESTA_PRESSES_REQUIRED
             ),
         }
         stages.append(stage)

@@ -1,4 +1,4 @@
-"""Run Melody Editor — BPM · note · duration for the active melody."""
+"""활성 멜로디의 BPM·음표·길이를 편집하는 도구를 실행한다."""
 
 from app_paths import ensure_data_files
 

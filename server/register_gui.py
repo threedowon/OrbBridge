@@ -1,4 +1,4 @@
-"""Tkinter desktop GUI for DS2431 orb registration."""
+"""DS2431 오브 등록용 Tkinter 데스크톱 화면이다."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from register_core import (
     update_orb,
 )
 
-# Wise fintech theme — lime green CTA on sage canvas
+# 세이지 배경과 라임색 주요 버튼을 사용하는 금융 앱풍 테마다.
 MONO_CANDIDATES = ("JetBrains Mono", "Consolas", "Cascadia Mono", "Courier New")
 UI_CANDIDATES = ("Inter", "Segoe UI", "Helvetica Neue", "Manrope", "Arial")
 
@@ -41,22 +41,22 @@ def _mono_font_family(root: tk.Tk) -> str:
 
 
 C = {
-  # Surface
+  # 배경과 표면 색상
     "canvas": "#ffffff",
     "canvas_soft": "#e8ebe6",
-    # Brand
+    # 브랜드 색상
     "primary": "#9fe870",
     "primary_active": "#cdffad",
     "primary_neutral": "#c5edab",
     "primary_pale": "#e2f6d5",
-    # Text
+    # 글자 색상
     "ink": "#0e0f0c",
     "ink_deep": "#163300",
     "body": "#454745",
     "mute": "#868685",
     "on_primary": "#0e0f0c",
     "on_dark": "#e8ebe6",
-    # Semantic
+    # 의미별 상태 색상
     "positive": "#2ead4b",
     "positive_deep": "#054d28",
     "warning": "#ffd11a",
@@ -93,7 +93,7 @@ class RegisterApp:
         self.root.minsize(700, 680)
         self.root.geometry("760x720")
 
-        # Wise Sans 900 → Inter bold display; Inter 600 labels; Inter 400 body
+        # 제목은 굵게, 레이블은 중간 굵기, 본문은 보통 굵기로 표시한다.
         self._fonts = {
             "title": tkfont.Font(family=ui, size=32, weight="bold"),
             "section": tkfont.Font(family=ui, size=18, weight="bold"),
@@ -258,7 +258,7 @@ class RegisterApp:
         bordered: bool = False,
         compact: bool = False,
     ) -> tuple[tk.Frame, tk.Frame]:
-        """card-content (white on sage) or currency-converter-card (ink border)."""
+        """흰색 카드 또는 진한 테두리 카드를 만든다."""
         bg = C["canvas"]
         pad = (16, 12) if compact else (24, 24)
         outer_kw: dict = dict(bg=bg, padx=pad[0], pady=pad[1])
@@ -328,7 +328,7 @@ class RegisterApp:
         main = tk.Frame(wrap, bg=C["canvas_soft"])
         main.pack(fill=tk.BOTH, expand=True)
 
-        # Header — hero-band on sage canvas
+        # 세이지 배경 위에 상단 제목 영역을 만든다.
         header = tk.Frame(main, bg=C["canvas_soft"])
         header.pack(fill=tk.X, pady=(0, 16))
 
@@ -388,7 +388,7 @@ class RegisterApp:
             fg=C["body"],
         ).pack(side=tk.LEFT)
 
-        # Serial — compact card
+        # 시리얼 설정을 간결한 카드로 표시한다.
         port_outer, port_inner = self._card(
             main, "Serial 포트", bordered=True, compact=True
         )
@@ -405,7 +405,7 @@ class RegisterApp:
             side=tk.LEFT, padx=(0, 6)
         )
 
-        # Detection — card-content (white on sage)
+        # 감지 결과를 흰색 카드에 표시한다.
         det_outer = tk.Frame(main, bg=C["canvas"], padx=16, pady=12)
         det_outer.pack(fill=tk.X, pady=(0, 8))
 
@@ -469,7 +469,7 @@ class RegisterApp:
         self.btn_add = self._pill_btn(btn_row, "등록", self._do_add, primary=True, small=True)
         self.btn_add.pack(side=tk.LEFT)
 
-        # Log + list — sage canvas; white card panels
+        # 로그와 목록은 세이지 배경 위 흰색 카드로 배치한다.
         panel_outer = tk.Frame(main, bg=C["canvas_soft"], padx=0, pady=0)
         panel_outer.pack(fill=tk.BOTH, expand=True)
 
@@ -740,7 +740,7 @@ class RegisterApp:
         self._schedule(500, self._poll_serial)
 
     def _set_badge(self, kind: str, text: str) -> None:
-        # badge-positive / badge-negative — Wise green reserved for CTAs only
+        # 상태 배지는 주요 버튼의 라임색과 구분되는 색을 사용한다.
         styles = {
             "wait": (C["canvas_soft"], C["mute"]),
             "new": (C["primary_pale"], C["positive_deep"]),

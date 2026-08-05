@@ -1,4 +1,4 @@
-"""Voice Register — save logic and usage stats."""
+"""Voice Register의 저장 로직과 사용 통계를 제공한다."""
 
 from __future__ import annotations
 

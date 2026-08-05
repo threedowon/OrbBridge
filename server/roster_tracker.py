@@ -96,7 +96,7 @@ class RosterTracker:
         state.add_listener(self._on_detection)
         self.win.protocol("WM_DELETE_WINDOW", self._on_close)
 
-    # ── UI ────────────────────────────────────────────
+    # ── 화면 구성 ─────────────────────────────────────
     def _btn(self, parent, text, cmd, *, primary=False):
         return tk.Button(
             parent,

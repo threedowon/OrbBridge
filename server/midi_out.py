@@ -1,8 +1,7 @@
-"""MIDI out via loopMIDI for Ableton.
+"""loopMIDI를 통해 Ableton으로 MIDI를 출력한다.
 
-Uses mido + python-rtmidi.
-Resolves Orb voice keys (aespa_1) to portmapping group/member channels.
-Pitch index 0..7 maps to MIDI note 36..43 (C1..G1).
+mido와 python-rtmidi를 사용한다. 오브 voice 키를 portmapping의 그룹·멤버
+채널로 변환하고 pitch index 0..7을 MIDI 음표 36..43에 대응시킨다.
 """
 
 from __future__ import annotations
@@ -16,11 +15,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 PORTMAPPING_PATH = HERE / "portmapping.json"
-NOTE_BASE = 36  # C1
+NOTE_BASE = 36  # 기준 음은 C1이다.
 LISTEN_VOICE = "_listen"
 
-_lock = threading.Lock()          # init / port map
-_send_lock = threading.Lock()     # all port.send (rtmidi is not thread-safe)
+_lock = threading.Lock()          # 초기화와 포트 매핑을 보호한다.
+_send_lock = threading.Lock()     # rtmidi가 스레드 안전하지 않아 전송을 보호한다.
 _ports: dict[str, object] = {}
 _map: dict = {}
 _ready = False
@@ -45,10 +44,10 @@ def _open_output(port_name: str):
     import mido
 
     names = _output_names()
-    # exact match first
+    # 정확히 같은 포트 이름을 먼저 찾는다.
     if port_name in names:
         return mido.open_output(port_name)
-    # case-insensitive / substring (e.g. "aespa 2" vs "aespa")
+    # 대소문자를 무시한 이름과 부분 문자열을 차례로 찾는다.
     lower = port_name.lower()
     for n in names:
         if n.lower() == lower or lower in n.lower() or n.lower() in lower:
@@ -57,7 +56,7 @@ def _open_output(port_name: str):
 
 
 def ensure_init(path: Path | None = None) -> tuple[bool, str]:
-    """Open loopMIDI ports from portmapping. Safe to call repeatedly."""
+    """portmapping의 loopMIDI 포트를 열며 중복 호출도 안전하게 처리한다."""
     global _ready, _init_error, _map
     with _lock:
         if _ready:
@@ -128,7 +127,7 @@ def voice_group_and_index(voice: str) -> tuple[str, int] | None:
 
 
 def resolve_route(voice: str) -> tuple[str, int] | None:
-    """voice key -> (port_name, channel_0_based)."""
+    """voice 키를 포트 이름과 0 기준 채널로 변환한다."""
     voice = (voice or "").strip()
     if not voice:
         return None
@@ -136,7 +135,7 @@ def resolve_route(voice: str) -> tuple[str, int] | None:
     if not _map:
         ensure_init()
 
-    # Flat shortcut e.g. _listen: { "port": "aespa", "channel": 1 }
+    # _listen처럼 멤버 그룹이 없는 단축 매핑을 처리한다.
     if voice in _map:
         entry = _map[voice]
         if isinstance(entry, dict) and "port" in entry and "members" not in entry:
@@ -227,7 +226,7 @@ def trigger(
     velocity: int = 127,
     duration_ms: float = 320,
 ) -> dict:
-    """note_on then scheduled note_off."""
+    """note_on을 보내고 예약된 시각에 note_off를 보낸다."""
     results = trigger_many(
         [
             {
@@ -244,13 +243,13 @@ def trigger(
 
 
 def trigger_many(notes: list[dict]) -> list[dict]:
-    """Send many note_ons in one locked burst, then schedule note_offs."""
+    """여러 note_on을 한 번에 잠가 전송하고 note_off를 예약한다."""
     ok, err = ensure_init()
     if not ok and not _ports:
         return [{"ok": False, "error": err or "midi not ready"} for _ in notes]
 
     prepared: list[tuple[dict, object, str, int, int, int, float]] = []
-    # (meta_out_partial, port, port_name, channel, note, vel, dur)
+    # 각 항목은 결과·포트·포트명·채널·음표·세기·길이로 구성한다.
 
     for item in notes:
         voice = str(item.get("voice") or LISTEN_VOICE)
@@ -299,7 +298,7 @@ def trigger_many(notes: list[dict]) -> list[dict]:
             )
         )
 
-    # Burst note_ons under one lock so concurrent HTTP threads don't interleave
+    # 여러 HTTP 스레드의 note_on이 섞이지 않도록 한 잠금에서 묶어 보낸다.
     import mido
 
     with _send_lock:
@@ -378,4 +377,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

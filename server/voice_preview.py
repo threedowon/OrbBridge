@@ -1,4 +1,4 @@
-"""Preview audio/video samples from Voice Register."""
+"""Voice Register의 오디오·비디오 샘플을 미리 재생한다."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def _play_wav_windows(path: Path) -> str | None:
 
 
 def play_preview(path: Path | str) -> str | None:
-    """Play a local media file. Returns an error message, or None on success."""
+    """로컬 미디어 파일을 재생하고 오류 메시지 또는 None을 반환한다."""
     global _ffplay_proc
     path = Path(path)
     if not path.is_file():

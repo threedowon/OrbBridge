@@ -1,4 +1,4 @@
-"""HTTP server — static UI (/table, /screen, /admin) + REST API."""
+"""정적 UI(/table, /screen, /admin)와 REST API를 제공하는 HTTP 서버이다."""
 
 import json
 import socket
@@ -58,12 +58,11 @@ def start_http_server(
     get_cells: Callable[[], dict] | None = None,
     get_events: Callable[[], list] | None = None,
     on_game_start=None,
-    on_game_start_complete=None,
     on_game_end=None,
     on_game_reset=None,
     on_game_listen=None,
     on_game_play=None,
-    on_game_dispensa=None,
+    on_game_dfesta=None,
 ) -> None:
     host = cfg.get("host", "127.0.0.1")
     port = cfg.get("port", 8080)
@@ -244,13 +243,8 @@ def start_http_server(
                 self._run_callback(on_game_start)
                 return
 
-            if self.path == "/api/game/start-complete":
-                self._run_callback(on_game_start_complete)
-                return
-
             if self.path == "/api/game/end":
-                reason = data.get("reason", "complete")
-                self._run_callback(on_game_end, reason)
+                self._run_callback(on_game_end)
                 return
 
             if self.path == "/api/game/reset":
@@ -265,8 +259,8 @@ def start_http_server(
                 self._run_callback(on_game_play)
                 return
 
-            if self.path == "/api/game/dispensa":
-                self._run_callback(on_game_dispensa)
+            if self.path == "/api/game/dfesta":
+                self._run_callback(on_game_dfesta)
                 return
 
             if self.path == "/api/midi/note":
@@ -333,5 +327,5 @@ def start_http_server(
     threading.Thread(target=run, daemon=True).start()
 
 
-# backward-compatible alias
+# 이전 호출부와의 호환용 별칭이다.
 start_mock_server = start_http_server

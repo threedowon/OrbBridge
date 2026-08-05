@@ -171,7 +171,7 @@ async function loadPorts(){
     if(!d.ports.length) rows.push('<tr><td colspan="4" class="empty">감지된 COM 포트 없음</td></tr>');
     $("portRows").innerHTML = rows.join("");
     if(cur) sel.value = cur;
-  }catch(e){ /* ignore */ }
+  }catch(e){ /* 연결 오류는 다음 갱신에서 복구한다. */ }
 }
 
 function renderMaster(m){

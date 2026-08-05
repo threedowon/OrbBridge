@@ -1,4 +1,4 @@
-"""Tkinter desktop GUI for Melody Register — edit screen/melodies/*.json."""
+"""screen/melodies JSON을 편집하는 Melody Register 화면이다."""
 
 from __future__ import annotations
 

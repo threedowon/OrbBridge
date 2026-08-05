@@ -94,8 +94,8 @@ def test_play_uses_placed_column_voice_and_physical_pitch():
     assert plan.cues[2].notes[0]["voice"] == "bts_1"
 
 
-def test_dispensa_deduplicates_voices_and_uses_target_pitch():
-    plan = build_plan("dispensa", parse_melody(melody_raw()), cells())
+def test_dfesta_deduplicates_voices_and_uses_target_pitch():
+    plan = build_plan("dfesta", parse_melody(melody_raw()), cells())
 
     assert plan.cues[0].notes == (
         {"voice": "aespa_1", "pitch": 0, "duration_ms": 250},

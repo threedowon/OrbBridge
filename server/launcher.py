@@ -1,4 +1,4 @@
-"""OrbBridge single-process launcher (PyInstaller entry point)."""
+"""OrbBridge 단일 프로세스 실행기이며 PyInstaller 진입점이다."""
 
 from __future__ import annotations
 

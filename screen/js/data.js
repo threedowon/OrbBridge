@@ -1,4 +1,4 @@
-/** Fallback when /api/voices is unavailable */
+/** /api/voices를 사용할 수 없을 때 쓰는 기본 voice 목록이다. */
 export let VOICES = [
   { id: 0, name: 'aespa_1',   color: '#f472b6', wave: 'sine',     filter: 900,  gain: 0.20 },
   { id: 1, name: 'aespa_2',   color: '#5eead4', wave: 'triangle', filter: 2200, gain: 0.18 },
@@ -11,7 +11,7 @@ export let VOICES = [
   { id: 8, name: 'cortis_1', color: '#c084fc', wave: 'triangle', filter: 2400, gain: 0.18 },
 ];
 
-/** Replace timbre list from GET /api/voices */
+/** GET /api/voices 응답으로 음색 목록을 교체한다. */
 export function setVoices(list) {
   if (!Array.isArray(list) || !list.length) return;
   VOICES = list.map((v, i) => ({ ...v, id: i }));
@@ -28,7 +28,7 @@ export const NOTES = [
   { name: 'C5', freq: 523.25 },
 ];
 
-export const FINISH_LOOPS = 1;
+export const SUCCESS_LOOPS = 1;
 
 /** table / screen 공통 — 가로 박자 칸 수 */
 export const BEAT_COLS = 12;
@@ -78,7 +78,7 @@ export function rowCount(melody) {
   return melody.scale.length;
 }
 
-/** row 0 = scale 최고음 */
+/** 0번 행은 음계의 가장 높은 음이다. */
 export function rowToNoteIn(row, scale) {
   return scale[scale.length - 1 - row];
 }
@@ -93,12 +93,12 @@ export function isStaffLine(noteName) {
   return /^[CEG]/.test(noteName);
 }
 
-/** @param {number | { n: number, dur?: number }} entry */
+/** 음표 항목에서 음표 번호를 반환한다. @param {number | { n: number, dur?: number }} entry */
 export function noteAt(entry) {
   return typeof entry === 'number' ? entry : entry.n;
 }
 
-/** @param {number | { n: number, dur?: number }} entry */
+/** 음표 항목에서 길이를 반환한다. @param {number | { n: number, dur?: number }} entry */
 export function durAt(entry) {
   return typeof entry === 'number' ? 1 : (entry.dur ?? 1);
 }

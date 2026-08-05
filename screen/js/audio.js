@@ -5,20 +5,20 @@ const NOTE_PITCH = {
   C4: 0, D4: 1, E4: 2, F4: 3, G4: 4, A4: 5, B4: 6, C5: 7,
 };
 
-/** 'web' | 'midi' — from GET /api/status */
+/** GET /api/status에서 받은 'web' 또는 'midi' 출력 방식이다. */
 let audioOutputMode = 'web';
 
 let ctx = null;
 let previewOut = null;
-/** Shared bus: samples → gain → compressor → limiter → speakers. */
+/** 샘플을 gain·compressor·limiter·스피커로 보내는 공용 출력 경로다. */
 let masterGain = null;
 let masterComp = null;
 let masterLimiter = null;
-/** @type {OscillatorNode[]} */
+/** 미리듣기에 사용 중인 oscillator 목록이다. @type {OscillatorNode[]} */
 const activePreviewOscs = [];
-/** @type {Set<HTMLAudioElement>} */
+/** 오브 배치 음원 목록이다. @type {Set<HTMLAudioElement>} */
 const orbSamples = new Set();
-/** @type {Set<HTMLAudioElement>} */
+/** 현재 재생 중인 음원 목록이다. @type {Set<HTMLAudioElement>} */
 const activeSamples = new Set();
 let audioOwnerCheck = () => true;
 
@@ -43,9 +43,9 @@ export function unlock() {
 }
 
 /**
- * Per-voice gain when N sounds play together.
- * - incoherent (different pitches): 1/√N keeps perceived loudness roughly flat
- * - coherent (same pitch, e.g. dispensa): closer to 1/N — same note stacks add up
+ * N개 음원이 동시에 날 때 voice별 음량을 계산한다.
+ * - 음높이가 다르면 1/√N으로 체감 음량을 일정하게 유지한다.
+ * - 같은 음높이가 겹치면 합산 음량을 고려해 1/N에 가깝게 낮춘다.
  */
 export function mixVolume(polyphony, base = SAMPLE_BASE_VOL, { coherent = false } = {}) {
   const n = Math.max(1, polyphony | 0);
@@ -60,14 +60,14 @@ function ensureMasterBus(c) {
   masterGain.gain.value = 1;
 
   masterComp = c.createDynamicsCompressor();
-  // Duck stacked voices before they clip
+  // 겹친 voice가 clipping되기 전에 음량을 낮춘다.
   masterComp.threshold.value = -26;
   masterComp.knee.value = 18;
   masterComp.ratio.value = 10;
   masterComp.attack.value = 0.003;
   masterComp.release.value = 0.22;
 
-  // Hard-ish ceiling (high ratio / low threshold) as a simple limiter
+  // 높은 ratio와 낮은 threshold를 간단한 limiter 상한으로 사용한다.
   masterLimiter = c.createDynamicsCompressor();
   masterLimiter.threshold.value = -8;
   masterLimiter.knee.value = 2;
@@ -90,7 +90,7 @@ function stopSampleSet(pool) {
     try {
       audio.pause();
       audio.currentTime = 0;
-    } catch { /* ignore */ }
+    } catch { /* 이미 닫힌 음원은 무시한다. */ }
   }
   pool.clear();
 }
@@ -107,8 +107,8 @@ function stopPreviewOscillators() {
   const c = ctx;
   const now = c ? c.currentTime : 0;
   for (const osc of activePreviewOscs) {
-    try { osc.stop(now); } catch { /* already stopped */ }
-    try { osc.disconnect(); } catch { /* ignore */ }
+    try { osc.stop(now); } catch { /* 이미 멈춘 oscillator다. */ }
+    try { osc.disconnect(); } catch { /* 이미 해제된 연결이다. */ }
   }
   activePreviewOscs.length = 0;
   if (!previewOut) return;
@@ -116,7 +116,7 @@ function stopPreviewOscillators() {
     previewOut.gain.cancelScheduledValues(0);
     previewOut.gain.setValueAtTime(0, now);
     previewOut.disconnect();
-  } catch { /* ignore */ }
+  } catch { /* 이미 해제된 연결이다. */ }
   previewOut = null;
 }
 
@@ -177,7 +177,7 @@ function playSample(url, when = 0, { orb = false, volume = SAMPLE_BASE_VOL } = {
 
   const start = () => {
     const audio = new Audio(url);
-    // Route through compressor bus so stacked voices auto-limit
+    // 겹친 voice가 자동으로 제한되도록 compressor 경로로 보낸다.
     const src = c.createMediaElementSource(audio);
     const g = c.createGain();
     g.gain.value = vol;
@@ -186,8 +186,8 @@ function playSample(url, when = 0, { orb = false, volume = SAMPLE_BASE_VOL } = {
     pool.add(audio);
     const cleanup = () => {
       pool.delete(audio);
-      try { src.disconnect(); } catch { /* ignore */ }
-      try { g.disconnect(); } catch { /* ignore */ }
+      try { src.disconnect(); } catch { /* 이미 해제된 연결이다. */ }
+      try { g.disconnect(); } catch { /* 이미 해제된 연결이다. */ }
     };
     audio.addEventListener('ended', cleanup, { once: true });
     audio.addEventListener('error', cleanup, { once: true });
@@ -239,7 +239,7 @@ function voiceNameFromId(voiceId) {
   return v?.name || '_listen';
 }
 
-/** Same-tick playTone calls coalesce into one /api/midi/notes POST. */
+/** 같은 tick의 playTone 호출을 /api/midi/notes 요청 하나로 합친다. */
 let _midiBatch = [];
 let _midiFlushScheduled = false;
 
@@ -274,9 +274,9 @@ export function playTone(freq, voiceId, dur = 0.32, when = 0, {
   noteName = '',
   volume = SAMPLE_BASE_VOL,
   polyphony = 1,
-  /** Same pitch stacked (dispensa) — stronger per-voice duck. */
+  /** 같은 음높이가 겹치면 voice별 음량을 더 크게 낮춘다. */
   coherent = false,
-  /** Skip sound (e.g. placeExternal when server already MIDI-triggered). */
+  /** 서버가 이미 MIDI를 출력한 경우처럼 소리를 건너뛴다. */
   silent = false,
 } = {}) {
   if (!audioOwnerCheck() || silent) return;

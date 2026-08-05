@@ -2,6 +2,7 @@ import importlib
 import os
 from pathlib import Path
 import sys
+import time
 import types
 
 
@@ -10,7 +11,7 @@ SERVER = ROOT / "server"
 
 
 class FakeScheduler:
-    """Expose the production Scheduler contract without starting worker threads."""
+    """작업 스레드 없이 운영 Scheduler 계약을 재현한다."""
 
     def __init__(self):
         self.starts = []
@@ -46,7 +47,7 @@ class FakeScheduler:
 
 
 class FakeWebSocketService:
-    """Record browser broadcasts without opening a TCP listener."""
+    """TCP 리스너를 열지 않고 브라우저 전송 내용을 기록한다."""
 
     def __init__(self):
         self.messages = []
@@ -109,7 +110,7 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
 
     try:
         started = main.start_game()
-        assert started["game"]["phase"] == "RUNNING"
+        assert started["game"]["state"] == "RUNNING"
         assert main._playback_scheduler.starts[0]["mode"] == "listen"
 
         orb_id, slave, cell, voice = placements[0]
@@ -118,7 +119,7 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
         )
 
         assert placed["result"] == "correct"
-        assert placed["game"]["phase"] == "RUNNING"
+        assert placed["game"]["state"] == "RUNNING"
         assert midi_calls == [(voice, 0, {"duration_ms": 320})]
 
         game = main.get_game_state()
@@ -132,29 +133,28 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
             "result": "correct",
         }
         assert status["game"] == game
-        assert status["game_active"] is True
 
         for orb_id, slave, cell, _voice in placements[1:]:
             completed = main.handle_event(
                 {"type": "added", "slave": slave, "cell": cell, "id": orb_id}
             )
 
-        assert completed["game"]["phase"] == "RUNNING"
-        assert completed["game"]["solved"] is True
-        assert completed["game"]["completion"]["dispensa_presses_remaining"] == 1
-        phase_events = [
+        assert completed["game"]["state"] == "RUNNING"
+        assert completed["game"]["is_correct"] is True
+        assert completed["game"]["completion"]["dfesta_presses_remaining"] == 1
+        state_events = [
             args[0]
             for address, args in main._websocket_service.messages
             if address == "/game/state"
         ]
-        assert "FINISHED" not in phase_events
+        assert set(state_events) <= {"READY", "RUNNING", "RESETTING"}
 
-        finished = main.request_dispensa()
+        ended = main.request_dfesta()
 
-        assert finished["counted"] is True
-        assert finished["game"]["phase"] == "RESETTING"
-        assert finished["game"]["finish_reason"] == "complete"
-        assert main.get_game_state()["phase"] == "RESETTING"
+        assert ended["counted"] is True
+        assert ended["game"]["state"] == "RESETTING"
+        assert ended["game"]["end_reason"] == "complete"
+        assert main.get_game_state()["state"] == "RESETTING"
         assert len(midi_calls) == 8
 
         messages = main._websocket_service.messages
@@ -162,24 +162,19 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
         final_added_index = max(
             i for i, value in enumerate(addresses) if value == "/orb/added"
         )
-        finished_index = next(
-            i
-            for i, (address, args) in enumerate(messages)
-            if address == "/game/state" and args[0] == "FINISHED"
-        )
         resetting_index = next(
             i
             for i, (address, args) in enumerate(messages)
             if address == "/game/state" and args[0] == "RESETTING"
         )
-        assert final_added_index < finished_index < resetting_index
+        assert final_added_index < resetting_index
 
         for orb_id, slave, cell, _voice in placements:
             removed = main.handle_event(
                 {"type": "removed", "slave": slave, "cell": cell, "id": orb_id}
             )
         assert removed["changed"] is True
-        assert removed["game"]["phase"] == "READY"
+        assert removed["game"]["state"] == "READY"
         assert main.get_cells() == {}
 
         messages = main._websocket_service.messages
@@ -199,26 +194,22 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
             sys.modules.pop(name, None)
 
 
-def test_manual_finish_stays_finished_until_reset_is_requested():
+def test_manual_end_enters_resetting_directly():
     main = _load_main_module()
 
     try:
         main.start_game()
 
-        finished = main.end_game("manual")
-        assert finished["game"]["phase"] == "FINISHED"
-        assert finished["game"]["finish_reason"] == "manual"
+        ended = main.end_game()
+        assert ended["game"]["state"] == "RESETTING"
+        assert ended["game"]["end_reason"] == "manual"
 
-        phases = [
+        states = [
             args[0]
             for address, args in main._websocket_service.messages
             if address == "/game/state"
         ]
-        assert phases[-1] == "FINISHED"
-        assert "RESETTING" not in phases
-
-        reset = main.reset_game()
-        assert reset["game"]["phase"] == "RESETTING"
+        assert states[-1] == "RESETTING"
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
@@ -228,7 +219,7 @@ def test_manual_finish_stays_finished_until_reset_is_requested():
 
 
 
-def test_listen_play_and_dispensa_use_python_scheduler():
+def test_listen_play_and_dfesta_use_python_scheduler():
     main = _load_main_module()
 
     try:
@@ -243,26 +234,26 @@ def test_listen_play_and_dispensa_use_python_scheduler():
 
         runtime.record_activity = record_activity
         play = main.request_play()
-        dispensa = main.request_dispensa()
+        dfesta = main.request_dfesta()
         listen = main.request_listen()
 
         assert play["ok"] is True
-        assert dispensa["ok"] is True
-        assert dispensa["counted"] is False
+        assert dfesta["ok"] is True
+        assert dfesta["counted"] is False
         assert listen["ok"] is True
         assert [
             call["mode"] for call in main._playback_scheduler.starts
-        ] == ["listen", "play", "dispensa", "listen"]
+        ] == ["listen", "play", "dfesta", "listen"]
         assert activity_calls == [True, True]
 
-        # Command-only broadcasts were removed. Browser rendering follows the
-        # Scheduler's playback events and authoritative game state.
+        # 명령 전용 전송은 제거했다. 브라우저는 Scheduler 재생 이벤트와
+        # 기준 게임 상태를 렌더링한다.
         addresses = [
             address for address, _args in main._websocket_service.messages
         ]
         assert "/game/listen" not in addresses
         assert "/game/play" not in addresses
-        assert "/game/dispensa" not in addresses
+        assert "/game/dfesta" not in addresses
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
@@ -271,26 +262,61 @@ def test_listen_play_and_dispensa_use_python_scheduler():
             sys.modules.pop(name, None)
 
 
-def test_serial_game_controls_use_start_end_reset_literals():
+def test_serial_game_controls_use_the_canonical_action_literals():
     main = _load_main_module()
     calls = []
     main.start_game = lambda: calls.append("start")
-    main.end_game = lambda reason="manual": calls.append(("end", reason))
+    main.end_game = lambda: calls.append("end")
     main.reset_game = lambda: calls.append("reset")
+    main.request_listen = lambda: calls.append("listen")
+    main.request_play = lambda: calls.append("play")
+    main.request_dfesta = lambda: calls.append("dfesta")
 
     try:
         main.handle_serial_message({"type": "game", "action": "start"})
-        main.handle_serial_message(
-            {"type": "game", "action": "end", "reason": "hardware"}
-        )
+        main.handle_serial_message({"type": "game", "action": "listen"})
+        main.handle_serial_message({"type": "game", "action": "play"})
+        main.handle_serial_message({"type": "game", "action": "dfesta"})
+        main.handle_serial_message({"type": "game", "action": "end"})
         main.handle_serial_message({"type": "game", "action": "reset"})
 
-        assert calls == ["start", ("end", "hardware"), "reset"]
+        assert calls == [
+            "start",
+            "listen",
+            "play",
+            "dfesta",
+            "end",
+            "reset",
+        ]
         assert (
             main.GAME_ACTION_START,
             main.GAME_ACTION_END,
             main.GAME_ACTION_RESET,
-        ) == ("start", "end", "reset")
+            main.GAME_ACTION_LISTEN,
+            main.GAME_ACTION_PLAY,
+            main.GAME_ACTION_DFESTA,
+        ) == ("start", "end", "reset", "listen", "play", "dfesta")
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
+        for name in ("main", "serial"):
+            sys.modules.pop(name, None)
+
+
+def test_heartbeat_uses_occupancy_mask_instead_of_game_state_field():
+    main = _load_main_module()
+    calls = []
+    main.reconcile_occupancy_mask = lambda slave, mask: calls.append(
+        (slave, mask)
+    )
+
+    try:
+        main.handle_serial_message(
+            {"type": "heartbeat", "slave": 2, "occupancy_mask": 5}
+        )
+
+        assert calls == [(2, 5)]
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
@@ -306,17 +332,21 @@ def test_admin_controls_display_the_same_serial_action_literals():
         assert f'data-game-action="{action}">{action}</button>' in html
 
 
-def test_phase_log_uses_authoritative_state_names_only():
+def test_state_log_uses_authoritative_state_names_only():
     main = _load_main_module()
 
     try:
         main.start_game()
-        main.end_game("manual")
+        main.end_game()
         events = main.get_events()
 
-        states = [event["phase"] for event in events if event["type"] == "game_state"]
-        assert states == ["STARTING", "RUNNING", "FINISHED"]
-        assert all(event["type"] != "ready" for event in events)
+        states = [
+            event["state"]
+            for event in events
+            if event["type"] == "game_state"
+        ]
+        assert states == ["RUNNING", "RESETTING"]
+        assert all(state in {"READY", "RUNNING", "RESETTING"} for state in states)
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
@@ -325,18 +355,67 @@ def test_phase_log_uses_authoritative_state_names_only():
             sys.modules.pop(name, None)
 
 
-def test_stage_rules_expose_120_second_total_and_30_second_idle_timers():
+def test_idle_transition_log_matches_runtime_until_reset_is_complete():
+    main = _load_main_module()
+    main.reload_stage_data = lambda: None
+    main.answer_sequence = {"1": "C"}
+    main.time_over_s = None
+    main.idle_s = 0.02
+
+    try:
+        main.start_game()
+        runtime = main.get_game_runtime()
+        runtime.add_orb(orb_id="orb-a", slave=1, cell=2)
+
+        deadline = time.monotonic() + 1
+        while (
+            runtime.snapshot()["state"] != "RESETTING"
+            and time.monotonic() < deadline
+        ):
+            time.sleep(0.005)
+        assert runtime.snapshot()["state"] == "RESETTING"
+
+        removed = runtime.remove_orb(
+            orb_id="orb-a",
+            slave=1,
+            cell=2,
+        )
+        runtime.publish_state_change(removed)
+
+        transitions = [
+            (
+                event["previous_state"],
+                event["state"],
+                event["end_reason"],
+            )
+            for event in main.get_events()
+            if event["type"] == "game_state"
+        ]
+        assert transitions == [
+            ("READY", "RUNNING", None),
+            ("RUNNING", "RESETTING", "idle"),
+            ("RESETTING", "READY", None),
+        ]
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
+        for name in ("main", "serial"):
+            sys.modules.pop(name, None)
+
+
+def test_stage_rules_expose_120_second_time_over_and_30_second_idle_timers():
     main = _load_main_module()
 
     try:
         started = main.start_game()
         timers = started["game"]["timers"]
 
-        assert timers["total_limit_s"] == 120
+        assert timers["time_over_limit_s"] == 120
         assert timers["idle_limit_s"] == 30
-        assert 119 <= timers["remaining_total_s"] <= 120
+        assert 119 <= timers["remaining_time_over_s"] <= 120
         assert 29 <= timers["remaining_idle_s"] <= 30
-        assert started["game"]["completion"]["dispensa_presses_required"] == 1
+        assert started["game"]["completion"]["dfesta_presses_required"] == 1
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
@@ -345,15 +424,15 @@ def test_stage_rules_expose_120_second_total_and_30_second_idle_timers():
             sys.modules.pop(name, None)
 
 
-def test_playback_requests_are_ignored_outside_active_game_phases():
+def test_playback_requests_are_ignored_outside_active_game_states():
     main = _load_main_module()
 
     try:
-        assert main.get_game_state()["phase"] == "READY"
+        assert main.get_game_state()["state"] == "READY"
 
         assert main.request_listen()["ignored"] is True
         assert main.request_play()["ignored"] is True
-        assert main.request_dispensa()["ignored"] is True
+        assert main.request_dfesta()["ignored"] is True
         assert main._playback_scheduler.starts == []
     finally:
         if main._game_runtime is not None:
@@ -363,16 +442,16 @@ def test_playback_requests_are_ignored_outside_active_game_phases():
             sys.modules.pop(name, None)
 
 
-def test_finish_phase_cancels_active_scheduler_without_blocking_runtime():
+def test_resetting_state_cancels_active_scheduler_without_blocking_runtime():
     main = _load_main_module()
 
     try:
         main.start_game()
         before = main._playback_scheduler.cancel_count
 
-        finished = main.end_game("manual")
+        ended = main.end_game()
 
-        assert finished["game"]["phase"] == "FINISHED"
+        assert ended["game"]["state"] == "RESETTING"
         assert main._playback_scheduler.cancel_count == before + 1
     finally:
         if main._game_runtime is not None:
@@ -383,7 +462,7 @@ def test_finish_phase_cancels_active_scheduler_without_blocking_runtime():
 
 
 def test_main_fans_out_events_and_builds_complete_web_snapshot():
-    """Browsers receive one direct event stream and recovery snapshot."""
+    """브라우저가 단일 실시간 이벤트 흐름과 복구 snapshot을 받는다."""
 
     main = _load_main_module()
     websocket = FakeWebSocketService()
@@ -395,8 +474,8 @@ def test_main_fans_out_events_and_builds_complete_web_snapshot():
         assert websocket.messages == [("/game/example", [7, "value"])]
 
         snapshot = main.get_web_snapshot()
-        assert snapshot["schema_version"] == 1
-        assert snapshot["game"]["phase"] == "READY"
+        assert snapshot["schema_version"] == 2
+        assert snapshot["game"]["state"] == "READY"
         assert snapshot["status"]["game"] == snapshot["game"]
         assert snapshot["status"]["cell_count"] == snapshot["game"]["cell_count"]
         assert snapshot["cells"] == {}

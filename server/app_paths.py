@@ -1,4 +1,4 @@
-"""Dev vs PyInstaller paths — bundle assets + writable data beside exe."""
+"""개발 환경과 PyInstaller 실행 파일의 리소스·쓰기 경로를 관리한다."""
 
 from __future__ import annotations
 
@@ -20,21 +20,21 @@ def is_frozen() -> bool:
 
 
 def repo_root() -> Path:
-    """Bundled UI (screen/, table/, admin/) and server templates."""
+    """번들 UI와 서버 템플릿의 루트 경로를 반환한다."""
     if is_frozen():
         return Path(sys._MEIPASS)
     return Path(__file__).resolve().parent.parent
 
 
 def data_dir() -> Path:
-    """Writable JSON + user data (server/ in dev, exe folder when frozen)."""
+    """쓰기 가능한 JSON·사용자 데이터 경로를 반환한다."""
     if is_frozen():
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent
 
 
 def server_bundle_dir() -> Path:
-    """Bundled server defaults (config templates, stage_data seed)."""
+    """번들에 포함된 서버 기본 파일 경로를 반환한다."""
     if is_frozen():
         return Path(sys._MEIPASS) / "server"
     return Path(__file__).resolve().parent
@@ -48,7 +48,7 @@ def sounds_dir() -> Path:
 
 
 def melodies_dir() -> Path:
-    """Writable melodies (exe folder when frozen, screen/melodies in dev)."""
+    """쓰기 가능한 멜로디 경로를 반환한다."""
     if is_frozen():
         return data_dir() / "melodies"
     return repo_root() / "screen" / "melodies"
@@ -59,7 +59,7 @@ def bundled_melodies_dir() -> Path:
 
 
 def ensure_data_files() -> None:
-    """Copy default JSON into data_dir on first run (frozen) or create missing files."""
+    """첫 실행 때 기본 JSON을 복사하거나 누락 파일을 생성한다."""
     dest = data_dir()
     dest.mkdir(parents=True, exist_ok=True)
     bundle = server_bundle_dir()

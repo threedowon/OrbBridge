@@ -11,10 +11,10 @@ import { playTone, isMidiMode } from './audio.js';
 import { draw } from './staff.js';
 
 /**
- * Browser-side presentation model.
+ * 브라우저 표시 모델이다.
  *
- * M3 deliberately keeps no playback timers here. Python emits each scheduled
- * beat, and this object only updates the staff highlight and placed-orb grid.
+ * 재생 타이머는 Python에만 두며, 이 객체는 서버가 보낸 beat에 맞춰
+ * 오선 하이라이트와 오브 배치 화면만 갱신한다.
  */
 export function createEngine() {
   let melody = null;
@@ -22,7 +22,7 @@ export function createEngine() {
   let grid = [];
   let locked = [];
   let beat = -1;
-  let phase = 'idle';
+  let playbackState = 'idle';
   let hintOn = false;
   let previewStep = -1;
   let playbackMode = null;
@@ -58,10 +58,7 @@ export function createEngine() {
     grid[col][row] = -1;
   }
 
-  /**
-   * Derive correct-column locks from the server-fed grid.
-   * Python owns the actual completion decision; these locks are visual only.
-   */
+  /** 서버가 보낸 grid로 시각 표시용 정답 열 lock을 계산한다. */
   function syncLockedFromGrid() {
     if (!melody) return;
     for (let col = 0; col < beats(); col++) {
@@ -89,8 +86,8 @@ export function createEngine() {
     },
 
     /**
-     * Reset the presentation model when a new server game is prepared.
-     * ``autoStart`` remains accepted for compatibility with older callers.
+     * 서버에서 새 게임을 준비하면 표시 모델을 초기화한다.
+     * 이전 호출부 호환을 위해 ``autoStart`` 인자는 계속 받는다.
      */
     load(nextMelody, nextVoice = 0, _opts = {}) {
       melody = nextMelody;
@@ -98,12 +95,12 @@ export function createEngine() {
       grid = emptyGrid();
       locked = new Array(beats()).fill(false);
       orbPositions = new Map();
-      phase = 'idle';
+      playbackState = 'idle';
       hintOn = false;
       clearPlaybackHighlight();
       syncLockedFromGrid();
       redraw();
-      emit('phase', 'idle');
+      emit('playbackState', 'idle');
       emit('hint', false);
     },
 
@@ -122,10 +119,7 @@ export function createEngine() {
       return hintOn;
     },
 
-    /**
-     * Development-only local placement. Real table placements use
-     * ``placeExternal`` after the Python server accepts the event.
-     */
+    /** 개발용 로컬 배치이며 실제 테이블 입력은 서버 승인 뒤 placeExternal을 사용한다. */
     place(col, row) {
       if (!melody || col < 0 || col >= gridCols() || row < 0 || row >= rows()) {
         return;
@@ -141,9 +135,8 @@ export function createEngine() {
     },
 
     /**
-     * Apply one accepted server placement and keep one location per orb UID.
-     * MIDI placement sound already came from Python, so the browser stays mute
-     * in MIDI mode and only uses Web Audio in the development fallback mode.
+     * 서버가 승인한 배치를 반영하고 orb UID마다 위치 하나만 유지한다.
+     * MIDI 모드에서는 Python이 이미 소리를 냈으므로 브라우저는 음소거한다.
      */
     placeExternal(col, row, voiceId = 0, orbId = null, { silent = false } = {}) {
       if (!melody || voiceId < 0) return;
@@ -161,15 +154,14 @@ export function createEngine() {
       const note = rowToNoteIn(row, melody.scale);
       playTone(note.freq, voiceId, 0.32, 0, {
         noteName: note.name,
-        // A reconnect snapshot reconstructs visual state and must never replay
-        // every placed orb through either the MIDI or Web Audio fallback.
+        // 재연결 snapshot은 화면만 복구하며 배치된 오브 소리를 다시 내지 않는다.
         silent: silent || isMidiMode(),
       });
       emit('gridChange');
       redraw();
     },
 
-    /** Remove one server-confirmed placement from the presentation grid. */
+    /** 서버가 확인한 배치 하나를 표시 grid에서 제거한다. */
     removeExternal(col, row, orbId = null) {
       if (!melody) return;
       if (col < 0 || col >= gridCols() || row < 0 || row >= rows()) return;
@@ -194,20 +186,17 @@ export function createEngine() {
       redraw();
     },
 
-    /** Mark the start of a Python-owned playback run. */
+    /** Python이 관리하는 재생 시작을 표시한다. */
     beginPlayback(mode) {
       playbackMode = mode;
-      phase = 'playing';
+      playbackState = 'playing';
       beat = -1;
       previewStep = -1;
       emit('playbackStart', mode);
       redraw();
     },
 
-    /**
-     * Render one beat that has already become due in Python.
-     * No browser timeout or duration calculation is performed here.
-     */
+    /** Python에서 시각이 도달한 beat 하나를 별도 브라우저 타이머 없이 표시한다. */
     showPlaybackBeat(mode, col) {
       if (!melody || col < 0 || col >= beats()) return;
       playbackMode = mode;
@@ -223,21 +212,21 @@ export function createEngine() {
       redraw();
     },
 
-    /** Clear the highlight after Python reports playback completion/cancel. */
+    /** Python이 재생 완료나 취소를 알리면 하이라이트를 지운다. */
     endPlayback(mode) {
       if (playbackMode && mode && playbackMode !== mode) return;
       clearPlaybackHighlight();
-      phase = 'idle';
+      playbackState = 'idle';
       emit('playbackEnd', mode);
       redraw();
     },
 
-    /** Stop only visual playback state; the caller separately cancels Python. */
+    /** 화면의 재생 상태만 멈추며 Python 취소는 호출부가 별도로 처리한다. */
     stop() {
       clearPlaybackHighlight();
-      phase = 'idle';
+      playbackState = 'idle';
       redraw();
-      emit('phase', 'idle');
+      emit('playbackState', 'idle');
     },
 
     reset() {
@@ -245,8 +234,8 @@ export function createEngine() {
     },
 
     redraw,
-    get phase() {
-      return phase;
+    get playbackState() {
+      return playbackState;
     },
     get beat() {
       return beat;

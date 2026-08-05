@@ -2,12 +2,13 @@
  * OrbBridge — Master ESP32-S3  (이벤트 방식 — 듣기만 + 바이너리 수신)
  *
  * RS485: slave 들의 바이너리 프레임(13B + CRC8)을 듣기만 한다(송신 안 함 → 단방향).
- *   - CRC 검증 후 JSON 으로 변환해 PC USB Serial 로 relay (PC 포맷 무변경)
- *   - 깨진 프레임은 CRC 불일치로 버림 + 다음 STX 로 resync.
- * USB Serial → PC (main.py), 115200
+ *   - CRC 검증 후 JSON으로 변환해 PC USB Serial로 전달한다.
+ *   - 깨진 프레임은 버리고 다음 STX부터 다시 동기화한다.
+ * USB Serial 115200bps로 PC의 main.py에 전달한다.
  * 버튼: 다시듣기 / 재생 (INPUT_PULLUP)
  *
- * 프레임(13B): [STX=0x02][TYPE][SLAVE][CELL][UID 8B][CRC8]  (heartbeat 는 UID 첫 2B=state)
+ * 프레임(13B): [STX=0x02][TYPE][SLAVE][CELL][UID 8B][CRC8]
+ * heartbeat는 UID의 첫 2바이트를 점유 마스크로 사용한다.
  * RS485 핀·속도: TX=20, RX=21, 9600 8N1  (master 는 RS485 송신 안 함)
  */
 
@@ -41,7 +42,7 @@ unsigned long ledOffAt = 0;
 
 // 진단
 unsigned long lastDebugMs = 0;
-unsigned long relayCount = 0;   // 유효 프레임 relay 수
+unsigned long relayCount = 0;   // PC로 전달한 유효 프레임 수
 unsigned long badCount = 0;     // CRC 불일치(깨진 프레임) 수
 
 // 바이너리 프레임 조립 버퍼
@@ -100,15 +101,16 @@ void pollButtons() {
   pollButton(PIN_BTN_PLAY, playWasDown, lastPlayMs, "play");
 }
 
-// 유효 프레임 → JSON 변환해 PC 로 relay
+// 유효 프레임을 JSON으로 변환해 PC로 전달한다.
 void emitFrame(const uint8_t* f) {
   uint8_t type  = f[1];
   uint8_t slave = f[2];
   uint8_t cell  = f[3];
   String json;
   if (type == T_HEART) {
-    uint16_t state = (uint16_t)f[4] | ((uint16_t)f[5] << 8);
-    json = String("{\"type\":\"heartbeat\",\"slave\":") + slave + ",\"state\":" + state + "}";
+    uint16_t occupancyMask = (uint16_t)f[4] | ((uint16_t)f[5] << 8);
+    json = String("{\"type\":\"heartbeat\",\"slave\":") + slave +
+           ",\"occupancy_mask\":" + occupancyMask + "}";
     pcSendLine(json);
   } else if (type == T_ADDED || type == T_REMOVED) {
     const char* HX = "0123456789ABCDEF";
@@ -128,7 +130,7 @@ void emitFrame(const uint8_t* f) {
   relayCount++;
 }
 
-// 바이너리 스트림 파서 (STX 동기 + CRC 검증 + resync)
+// STX 동기와 CRC 검증을 수행하는 바이너리 스트림 파서다.
 void feedByte(uint8_t b) {
   if (frameLen == 0) {
     if (b == STX) { frame[frameLen++] = b; }
@@ -143,7 +145,7 @@ void feedByte(uint8_t b) {
     frameLen = 0;
   } else {
     badCount++;
-    // 깨진 프레임 → 버퍼 안에서 다음 STX 를 찾아 그 지점부터 재조립(resync)
+    // 깨진 프레임은 버퍼의 다음 STX부터 다시 조립한다.
     int start = -1;
     for (int i = 1; i < FRAME_LEN; i++) { if (frame[i] == STX) { start = i; break; } }
     if (start < 0) { frameLen = 0; return; }

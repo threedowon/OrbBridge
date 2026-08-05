@@ -1,4 +1,4 @@
-"""Run Melody Register — edit screen/melodies/*.json (BPM, note, duration)."""
+"""screen/melodies의 BPM·음표·길이 등록 도구를 실행한다."""
 
 import argparse
 

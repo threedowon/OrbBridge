@@ -1,4 +1,4 @@
-"""Run orb registration tool — DS2431 serial detect + desktop GUI."""
+"""DS2431 시리얼 감지와 데스크톱 오브 등록 도구를 실행한다."""
 
 import argparse
 import json

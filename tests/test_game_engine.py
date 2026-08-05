@@ -4,9 +4,9 @@ import pytest
 
 from server.game_engine import (
     CellAddress,
-    FinishReason,
+    EndReason,
     GameEngine,
-    GamePhase,
+    GameState,
     InvalidTransition,
     PlacementResult,
     TableNotEmpty,
@@ -30,133 +30,102 @@ def make_engine(
     clock: FakeClock,
     answers=None,
     *,
-    total_timeout_s=60,
-    idle_timeout_s=10,
-    dispensa_presses_required=1,
+    time_over_s=60,
+    idle_s=10,
+    dfesta_presses_required=1,
 ) -> GameEngine:
     return GameEngine(
         answers or {"1": "C", "2": "D", "3": "R"},
-        total_timeout_s=total_timeout_s,
-        idle_timeout_s=idle_timeout_s,
-        dispensa_presses_required=dispensa_presses_required,
+        time_over_s=time_over_s,
+        idle_s=idle_s,
+        dfesta_presses_required=dfesta_presses_required,
         clock=clock,
     )
 
 
 def start_running(engine: GameEngine) -> None:
-    assert engine.start() is GamePhase.STARTING
-    assert engine.complete_start() is GamePhase.RUNNING
+    assert engine.start() is GameState.RUNNING
 
 
 def test_initial_state_is_ready_and_empty():
-    clock = FakeClock()
-    engine = make_engine(clock)
+    engine = make_engine(FakeClock())
 
     snapshot = engine.snapshot()
 
-    assert snapshot["phase"] == "READY"
-    assert snapshot["finish_reason"] is None
+    assert snapshot["state"] == "READY"
+    assert snapshot["end_reason"] is None
     assert snapshot["cell_count"] == 0
+    assert snapshot["conditions"]["check_start"] is True
+    assert snapshot["conditions"]["table_is_clear"] is True
     assert snapshot["timers"]["elapsed_s"] == 0
 
 
+def test_state_enum_contains_only_the_three_diagram_states():
+    assert {state.value for state in GameState} == {
+        "READY",
+        "RUNNING",
+        "RESETTING",
+    }
+
+
 def test_answer_normalization_accepts_string_positions_and_rest():
-    clock = FakeClock()
-    engine = make_engine(clock, {"01": "c", 2: "rest", "3": "D"})
+    engine = make_engine(FakeClock(), {"01": "c", 2: "rest", "3": "D"})
 
     assert engine.answers == {1: "C", 2: "R", 3: "D"}
 
 
 @pytest.mark.parametrize(
     "answers",
-    [
-        {},
-        {"1": "R"},
-        {"0": "C"},
-        {"x": "C"},
-        {"1": ""},
-    ],
+    [{}, {"1": "R"}, {"0": "C"}, {"x": "C"}, {"1": ""}],
 )
 def test_invalid_answer_configuration_is_rejected(answers):
     with pytest.raises(ValueError):
-        GameEngine(
-            answers,
-            total_timeout_s=60,
-            idle_timeout_s=10,
-        )
+        GameEngine(answers, time_over_s=60, idle_s=10)
 
 
 @pytest.mark.parametrize("value", [0, -1, float("inf"), True, "bad"])
 def test_invalid_timeout_is_rejected(value):
     with pytest.raises(ValueError):
-        GameEngine(
-            {"1": "C"},
-            total_timeout_s=value,
-            idle_timeout_s=10,
-        )
+        GameEngine({"1": "C"}, time_over_s=value, idle_s=10)
 
 
 @pytest.mark.parametrize("value", [0, -1, True, 1.5, "2"])
-def test_invalid_dispensa_press_count_is_rejected(value):
-    with pytest.raises(ValueError, match="dispensa_presses_required"):
+def test_invalid_dfesta_press_count_is_rejected(value):
+    with pytest.raises(ValueError, match="dfesta_presses_required"):
         GameEngine(
             {"1": "C"},
-            total_timeout_s=60,
-            idle_timeout_s=10,
-            dispensa_presses_required=value,
+            time_over_s=60,
+            idle_s=10,
+            dfesta_presses_required=value,
         )
 
 
-def test_start_has_a_distinct_starting_phase_and_does_not_start_timers():
+def test_start_enters_running_and_starts_both_timers():
     clock = FakeClock(100)
     engine = make_engine(clock)
 
-    engine.start()
-    clock.advance(25)
-    snapshot = engine.snapshot()
-
-    assert snapshot["phase"] == "STARTING"
-    assert snapshot["timers"]["elapsed_s"] == 0
-
-
-def test_start_complete_enters_running_and_starts_timers():
-    clock = FakeClock(100)
-    engine = make_engine(clock)
-    engine.start()
-    clock.advance(25)
-
-    engine.complete_start()
+    assert engine.start() is GameState.RUNNING
     clock.advance(3)
     snapshot = engine.snapshot()
 
-    assert snapshot["phase"] == "RUNNING"
+    assert snapshot["state"] == "RUNNING"
     assert snapshot["timers"]["elapsed_s"] == 3
-    assert snapshot["timers"]["remaining_total_s"] == 57
+    assert snapshot["timers"]["remaining_time_over_s"] == 57
     assert snapshot["timers"]["remaining_idle_s"] == 7
+    assert snapshot["conditions"]["check_start"] is False
 
 
-def test_invalid_lifecycle_events_raise():
+def test_start_requires_ready_state_and_empty_table():
     clock = FakeClock()
     engine = make_engine(clock)
+    engine.add_orb(orb_id="orb-a", slave=1, cell=1)
 
-    with pytest.raises(InvalidTransition):
-        engine.complete_start()
-    engine.start()
-    with pytest.raises(InvalidTransition):
-        engine.start()
-
-
-def test_start_requires_an_empty_table():
-    clock = FakeClock()
-    engine = make_engine(clock)
-
-    result = engine.add_orb(orb_id="orb-a", slave=1, cell=1)
-
-    assert result is PlacementResult.INACTIVE
     with pytest.raises(TableNotEmpty):
         engine.start()
     assert engine.remove_orb(orb_id="orb-a", slave=1, cell=1)
-    assert engine.start() is GamePhase.STARTING
+    assert engine.start() is GameState.RUNNING
+    with pytest.raises(InvalidTransition):
+        engine.start()
 
 
 @pytest.mark.parametrize(
@@ -183,8 +152,7 @@ def test_cell_address_maps_to_global_position_and_note(
 
 
 def test_running_placement_is_judged_correct_wrong_rest_or_unknown():
-    clock = FakeClock()
-    engine = make_engine(clock)
+    engine = make_engine(FakeClock())
     start_running(engine)
 
     assert (
@@ -205,140 +173,112 @@ def test_running_placement_is_judged_correct_wrong_rest_or_unknown():
     )
 
 
-def test_all_required_positions_wait_for_dispensa_before_completion():
-    clock = FakeClock()
-    engine = make_engine(clock)
+def test_correct_answer_waits_for_dfesta_before_resetting():
+    engine = make_engine(FakeClock())
     start_running(engine)
 
     engine.add_orb(orb_id="orb-c", slave=1, cell=1)
-    result = engine.add_orb(orb_id="orb-d", slave=1, cell=10)
-
-    assert result is PlacementResult.CORRECT
-    assert engine.phase is GamePhase.RUNNING
+    engine.add_orb(orb_id="orb-d", slave=1, cell=10)
     snapshot = engine.snapshot()
-    assert snapshot["solved"] is True
+
+    assert snapshot["state"] == "RUNNING"
+    assert snapshot["is_correct"] is True
+    assert snapshot["conditions"]["is_correct"] is True
     assert snapshot["completion"] == {
-        "waiting_for_dispensa": True,
-        "dispensa_presses": 0,
-        "dispensa_presses_required": 1,
-        "dispensa_presses_remaining": 1,
+        "waiting_for_dfesta": True,
+        "dfesta_presses": 0,
+        "dfesta_presses_required": 1,
+        "dfesta_presses_remaining": 1,
     }
 
-    assert engine.press_dispensa() is True
-    assert engine.phase is GamePhase.FINISHED
-    assert engine.finish_reason is FinishReason.COMPLETE
+    assert engine.press_dfesta() is True
+    assert engine.state is GameState.RESETTING
+    assert engine.end_reason is EndReason.COMPLETE
 
 
-def test_extra_wrong_orb_blocks_dispensa_completion_until_removed():
-    clock = FakeClock()
-    engine = make_engine(clock)
+def test_extra_wrong_orb_blocks_dfesta_completion_until_removed():
+    engine = make_engine(FakeClock())
     start_running(engine)
-
     engine.add_orb(orb_id="wrong", slave=1, cell=2)
     engine.add_orb(orb_id="orb-c", slave=1, cell=1)
     engine.add_orb(orb_id="orb-d", slave=1, cell=10)
 
-    assert engine.phase is GamePhase.RUNNING
+    assert engine.press_dfesta() is False
     assert engine.remove_orb(orb_id="wrong", slave=1, cell=2)
-    assert engine.phase is GamePhase.RUNNING
-    assert engine.press_dispensa() is True
-    assert engine.phase is GamePhase.FINISHED
-    assert engine.finish_reason is FinishReason.COMPLETE
+    assert engine.press_dfesta() is True
+    assert engine.state is GameState.RESETTING
+    assert engine.end_reason is EndReason.COMPLETE
 
 
-def test_configured_dispensa_count_requires_every_press():
-    clock = FakeClock()
+def test_configured_dfesta_count_requires_every_press():
     engine = make_engine(
-        clock,
+        FakeClock(),
         {"1": "C"},
-        dispensa_presses_required=2,
+        dfesta_presses_required=2,
     )
     start_running(engine)
     engine.add_orb(orb_id="orb-c", slave=1, cell=1)
 
-    assert engine.press_dispensa() is True
+    assert engine.press_dfesta() is True
     first = engine.snapshot()
-    assert first["phase"] == "RUNNING"
-    assert first["completion"]["dispensa_presses"] == 1
-    assert first["completion"]["dispensa_presses_remaining"] == 1
+    assert first["state"] == "RUNNING"
+    assert first["completion"]["dfesta_presses"] == 1
+    assert first["completion"]["dfesta_presses_remaining"] == 1
 
-    assert engine.press_dispensa() is True
-    assert engine.phase is GamePhase.FINISHED
-    assert engine.finish_reason is FinishReason.COMPLETE
+    assert engine.press_dfesta() is True
+    assert engine.state is GameState.RESETTING
+    assert engine.end_reason is EndReason.COMPLETE
 
 
-def test_dispensa_before_solution_does_not_count():
+def test_dfesta_before_solution_does_not_count_but_refreshes_idle():
     clock = FakeClock()
     engine = make_engine(clock, {"1": "C"})
     start_running(engine)
+    clock.advance(9)
 
-    assert engine.press_dispensa() is False
-    assert engine.snapshot()["completion"]["dispensa_presses"] == 0
-    assert engine.phase is GamePhase.RUNNING
+    assert engine.press_dfesta() is False
+    clock.advance(9)
+    engine.tick()
+
+    assert engine.snapshot()["completion"]["dfesta_presses"] == 0
+    assert engine.state is GameState.RUNNING
+    assert engine.snapshot()["timers"]["remaining_idle_s"] == 1
 
 
-def test_breaking_solution_resets_partial_dispensa_progress():
-    clock = FakeClock()
+def test_breaking_solution_resets_partial_dfesta_progress():
     engine = make_engine(
-        clock,
+        FakeClock(),
         {"1": "C"},
-        dispensa_presses_required=2,
+        dfesta_presses_required=2,
     )
     start_running(engine)
     engine.add_orb(orb_id="orb-c", slave=1, cell=1)
-    engine.press_dispensa()
-
+    engine.press_dfesta()
     engine.add_orb(orb_id="wrong", slave=1, cell=2)
 
     snapshot = engine.snapshot()
-    assert snapshot["solved"] is False
-    assert snapshot["completion"]["dispensa_presses"] == 0
+    assert snapshot["is_correct"] is False
+    assert snapshot["completion"]["dfesta_presses"] == 0
 
 
-def test_unknown_orb_on_correct_cell_blocks_completion():
-    clock = FakeClock()
-    engine = make_engine(clock, {"1": "C"})
-    start_running(engine)
-
-    engine.add_orb(orb_id="unknown", slave=1, cell=1, known=False)
-
-    assert engine.phase is GamePhase.RUNNING
-    assert engine.result_for_cell(slave=1, cell=1) is PlacementResult.UNKNOWN
-
-
-def test_same_orb_moves_instead_of_occupying_two_cells():
-    clock = FakeClock()
-    engine = make_engine(clock)
+def test_same_orb_moves_and_new_orb_replaces_previous_cell_occupant():
+    engine = make_engine(FakeClock())
     start_running(engine)
 
     engine.add_orb(orb_id="orb-a", slave=1, cell=1)
     engine.add_orb(orb_id="orb-a", slave=1, cell=2)
+    engine.add_orb(orb_id="orb-b", slave=1, cell=2)
+    engine.add_orb(orb_id="orb-a", slave=1, cell=3)
     snapshot = engine.snapshot()
 
-    assert snapshot["cell_count"] == 1
-    assert "1:1" not in snapshot["cells"]
-    assert snapshot["cells"]["1:2"]["orb_id"] == "orb-a"
-
-
-def test_new_orb_replaces_the_previous_occupant_of_a_cell():
-    clock = FakeClock()
-    engine = make_engine(clock)
-    start_running(engine)
-
-    engine.add_orb(orb_id="orb-a", slave=1, cell=1)
-    engine.add_orb(orb_id="orb-b", slave=1, cell=1)
-    engine.add_orb(orb_id="orb-a", slave=1, cell=2)
-    snapshot = engine.snapshot()
-
-    assert snapshot["cells"]["1:1"]["orb_id"] == "orb-b"
-    assert snapshot["cells"]["1:2"]["orb_id"] == "orb-a"
+    assert snapshot["cell_count"] == 2
+    assert snapshot["cells"]["1:2"]["orb_id"] == "orb-b"
+    assert snapshot["cells"]["1:3"]["orb_id"] == "orb-a"
 
 
 def test_stale_remove_does_not_remove_a_different_orb():
-    clock = FakeClock()
-    engine = make_engine(clock)
+    engine = make_engine(FakeClock())
     start_running(engine)
-
     engine.add_orb(orb_id="orb-b", slave=1, cell=1)
 
     assert not engine.remove_orb(orb_id="orb-a", slave=1, cell=1)
@@ -347,59 +287,55 @@ def test_stale_remove_does_not_remove_a_different_orb():
 
 @pytest.mark.parametrize("orb_id", [None, "", "   "])
 def test_empty_orb_id_is_rejected(orb_id):
-    clock = FakeClock()
-    engine = make_engine(clock)
+    engine = make_engine(FakeClock())
 
     with pytest.raises(ValueError):
         engine.add_orb(orb_id=orb_id, slave=1, cell=1)
 
 
-def test_duplicate_add_is_idempotent_and_does_not_refresh_idle_timer():
+def test_duplicate_add_does_not_refresh_idle_timer():
     clock = FakeClock()
     engine = make_engine(clock, {"1": "D"})
     start_running(engine)
     engine.add_orb(orb_id="orb-a", slave=1, cell=1)
     clock.advance(9)
-
     engine.add_orb(orb_id="orb-a", slave=1, cell=1)
     clock.advance(1)
     engine.tick()
 
-    assert engine.phase is GamePhase.FINISHED
-    assert engine.finish_reason is FinishReason.IDLE_TIMEOUT
+    assert engine.state is GameState.RESETTING
+    assert engine.end_reason is EndReason.IDLE
+    assert engine.snapshot()["conditions"]["is_idle"] is True
 
 
-def test_total_timeout_finishes_the_game():
+def test_time_over_enters_resetting_directly():
     clock = FakeClock()
-    engine = make_engine(clock, idle_timeout_s=None)
+    engine = make_engine(clock, idle_s=None)
     start_running(engine)
-
     clock.advance(60)
-    engine.tick()
 
-    assert engine.phase is GamePhase.FINISHED
-    assert engine.finish_reason is FinishReason.TOTAL_TIMEOUT
+    assert engine.tick() is GameState.RESETTING
+    assert engine.end_reason is EndReason.TIME_OVER
+    assert engine.snapshot()["conditions"]["is_time_over"] is True
 
 
-def test_idle_timeout_finishes_the_game():
+def test_idle_enters_resetting_directly():
     clock = FakeClock()
-    engine = make_engine(clock, total_timeout_s=None)
+    engine = make_engine(clock, time_over_s=None)
     start_running(engine)
-
     clock.advance(10)
-    engine.tick()
 
-    assert engine.phase is GamePhase.FINISHED
-    assert engine.finish_reason is FinishReason.IDLE_TIMEOUT
+    assert engine.tick() is GameState.RESETTING
+    assert engine.end_reason is EndReason.IDLE
 
 
-def test_timers_continue_while_waiting_for_dispensa():
+def test_timers_continue_while_waiting_for_dfesta():
     clock = FakeClock()
     engine = make_engine(
         clock,
         {"1": "C"},
-        total_timeout_s=120,
-        idle_timeout_s=30,
+        time_over_s=120,
+        idle_s=30,
     )
     start_running(engine)
     engine.add_orb(orb_id="orb-c", slave=1, cell=1)
@@ -407,156 +343,138 @@ def test_timers_continue_while_waiting_for_dispensa():
 
     snapshot = engine.snapshot()
 
-    assert snapshot["phase"] == "RUNNING"
-    assert snapshot["solved"] is True
+    assert snapshot["state"] == "RUNNING"
+    assert snapshot["is_correct"] is True
     assert snapshot["timers"] == {
         "elapsed_s": 5,
-        "total_limit_s": 120.0,
+        "time_over_limit_s": 120.0,
         "idle_limit_s": 30.0,
-        "remaining_total_s": 115,
+        "remaining_time_over_s": 115,
         "remaining_idle_s": 25,
     }
 
 
-def test_real_add_and_remove_changes_refresh_idle_timer():
+def test_real_add_remove_listen_and_play_activity_refresh_idle_timer():
     clock = FakeClock()
     engine = make_engine(clock, {"1": "C", "2": "D", "3": "E"})
     start_running(engine)
     clock.advance(9)
     engine.add_orb(orb_id="orb-a", slave=1, cell=1)
     clock.advance(9)
-    assert engine.remove_orb(orb_id="orb-a", slave=1, cell=1)
+    engine.remove_orb(orb_id="orb-a", slave=1, cell=1)
     clock.advance(9)
-
-    engine.tick()
-
-    assert engine.phase is GamePhase.RUNNING
-
-
-@pytest.mark.parametrize("activity", ["listen", "play"])
-def test_non_cell_playback_activity_refreshes_idle_timer(activity):
-    """Listen and Play share GameEngine.record_activity at runtime."""
-    clock = FakeClock()
-    engine = make_engine(clock, {"1": "C"}, total_timeout_s=60, idle_timeout_s=10)
-    start_running(engine)
+    assert engine.record_activity() is True
     clock.advance(9)
-
     assert engine.record_activity() is True
     clock.advance(9)
     engine.tick()
 
-    assert engine.phase is GamePhase.RUNNING
+    assert engine.state is GameState.RUNNING
     assert engine.snapshot()["timers"]["remaining_idle_s"] == 1
 
 
 def test_activity_at_exact_idle_deadline_is_too_late():
     clock = FakeClock()
-    engine = make_engine(clock, total_timeout_s=None, idle_timeout_s=10)
+    engine = make_engine(clock, time_over_s=None, idle_s=10)
     start_running(engine)
     clock.advance(10)
 
     assert engine.record_activity() is False
-    assert engine.phase is GamePhase.FINISHED
-    assert engine.finish_reason is FinishReason.IDLE_TIMEOUT
+    assert engine.state is GameState.RESETTING
+    assert engine.end_reason is EndReason.IDLE
 
 
-def test_earliest_expired_deadline_determines_reason():
+def test_reset_at_exact_time_over_deadline_keeps_timer_reason():
     clock = FakeClock()
-    engine = make_engine(clock, total_timeout_s=60, idle_timeout_s=10)
+    engine = make_engine(clock, time_over_s=10, idle_s=None)
     start_running(engine)
-
-    clock.advance(100)
-    engine.tick()
-
-    assert engine.finish_reason is FinishReason.IDLE_TIMEOUT
-
-
-def test_equal_deadlines_prefer_total_timeout():
-    clock = FakeClock()
-    engine = make_engine(clock, total_timeout_s=10, idle_timeout_s=10)
-    start_running(engine)
-
     clock.advance(10)
-    engine.tick()
 
-    assert engine.finish_reason is FinishReason.TOTAL_TIMEOUT
+    assert engine.reset() is GameState.RESETTING
+    assert engine.end_reason is EndReason.TIME_OVER
 
 
-def test_input_at_exact_deadline_is_too_late_to_complete():
+def test_earliest_deadline_determines_reason_and_tie_prefers_time_over():
+    first_clock = FakeClock()
+    first = make_engine(first_clock, time_over_s=60, idle_s=10)
+    start_running(first)
+    first_clock.advance(100)
+    first.tick()
+    assert first.end_reason is EndReason.IDLE
+
+    tie_clock = FakeClock()
+    tie = make_engine(tie_clock, time_over_s=10, idle_s=10)
+    start_running(tie)
+    tie_clock.advance(10)
+    tie.tick()
+    assert tie.end_reason is EndReason.TIME_OVER
+
+
+def test_input_at_exact_deadline_is_tracked_but_cannot_complete():
     clock = FakeClock()
-    engine = make_engine(
-        clock,
-        {"1": "C"},
-        total_timeout_s=10,
-        idle_timeout_s=None,
-    )
+    engine = make_engine(clock, {"1": "C"}, time_over_s=10, idle_s=None)
     start_running(engine)
     clock.advance(10)
 
     engine.add_orb(orb_id="orb-a", slave=1, cell=1)
 
-    assert engine.phase is GamePhase.FINISHED
-    assert engine.finish_reason is FinishReason.TOTAL_TIMEOUT
+    assert engine.state is GameState.RESETTING
+    assert engine.end_reason is EndReason.TIME_OVER
     assert engine.cell_count == 1
 
 
-def test_manual_finish_freezes_elapsed_time():
+def test_manual_end_enters_resetting_and_freezes_elapsed_time():
     clock = FakeClock()
     engine = make_engine(clock)
     start_running(engine)
     clock.advance(4)
 
-    engine.finish()
+    assert engine.end() is GameState.RESETTING
     clock.advance(20)
 
     assert engine.snapshot()["timers"]["elapsed_s"] == 4
-    assert engine.finish_reason is FinishReason.MANUAL
+    assert engine.end_reason is EndReason.MANUAL
 
 
-def test_reset_with_orbs_waits_in_resetting_until_last_orb_is_removed():
-    clock = FakeClock()
-    engine = make_engine(clock)
+def test_reset_with_orbs_waits_until_last_orb_is_removed():
+    engine = make_engine(FakeClock())
     start_running(engine)
     engine.add_orb(orb_id="wrong", slave=1, cell=2)
 
-    assert engine.reset() is GamePhase.RESETTING
+    assert engine.reset() is GameState.RESETTING
     assert engine.remove_orb(orb_id="wrong", slave=1, cell=2)
-    assert engine.phase is GamePhase.READY
-    assert engine.finish_reason is None
+    assert engine.state is GameState.READY
+    assert engine.end_reason is None
 
 
-def test_reset_with_empty_table_exposes_resetting_before_ready():
-    clock = FakeClock()
-    engine = make_engine(clock)
+def test_reset_with_empty_table_exposes_resetting_for_one_tick():
+    engine = make_engine(FakeClock())
     start_running(engine)
 
-    assert engine.reset() is GamePhase.RESETTING
-    assert engine.tick() is GamePhase.READY
+    assert engine.reset() is GameState.RESETTING
+    assert engine.tick() is GameState.READY
 
 
-def test_add_during_resetting_keeps_engine_in_resetting():
-    clock = FakeClock()
-    engine = make_engine(clock)
+def test_add_during_resetting_keeps_resetting_until_table_is_clear():
+    engine = make_engine(FakeClock())
     start_running(engine)
     engine.add_orb(orb_id="orb-a", slave=1, cell=2)
     engine.reset()
-
     engine.add_orb(orb_id="orb-b", slave=1, cell=3)
     engine.remove_orb(orb_id="orb-a", slave=1, cell=2)
 
-    assert engine.phase is GamePhase.RESETTING
+    assert engine.state is GameState.RESETTING
     assert engine.cell_count == 1
 
 
 def test_snapshot_is_json_serializable():
-    clock = FakeClock()
-    engine = make_engine(clock)
+    engine = make_engine(FakeClock())
     start_running(engine)
     engine.add_orb(orb_id="orb-a", slave=1, cell=2, voice="aespa_1")
 
     encoded = json.dumps(engine.snapshot())
 
-    assert '"phase": "RUNNING"' in encoded
+    assert '"state": "RUNNING"' in encoded
     assert '"voice": "aespa_1"' in encoded
 
 
@@ -567,4 +485,4 @@ def test_backwards_clock_is_rejected():
     clock.value = 9
 
     with pytest.raises(RuntimeError, match="backwards"):
-        engine.complete_start()
+        engine.snapshot()

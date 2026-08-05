@@ -1,4 +1,4 @@
-"""Voice timbre + sample catalog — synced with orb_mapping.json."""
+"""orb_mapping.json과 동기화되는 voice 음색·샘플 목록이다."""
 
 from __future__ import annotations
 
@@ -80,7 +80,7 @@ def load_voice_catalog() -> dict:
     voices = data.get("voices")
     if not isinstance(voices, dict):
         return {"voices": _seed_catalog()}
-    # legacy label_kr/label_en → labels 로 정리해 파일에 다시 씀
+    # 이전 label_kr·label_en 형식을 labels로 정리해 파일에 다시 쓴다.
     needs_rewrite = any(
         "label_kr" in p or "label_en" in p for p in voices.values() if isinstance(p, dict)
     )
@@ -112,7 +112,7 @@ def save_voice_catalog(catalog: dict) -> None:
 
 
 def _read_labels(profile: dict) -> dict[str, str]:
-    """labels.kr/en — legacy label_kr/label_en 도 읽음."""
+    """labels.kr·labels.en과 이전 label_kr·label_en 형식을 함께 읽는다."""
     labels = profile.get("labels")
     if isinstance(labels, dict):
         kr = str(labels.get("kr", "") or "").strip()
@@ -232,7 +232,7 @@ def resolve_media_path(stored: str) -> Path | None:
 
 
 def ingest_sample_file(voice: str, note_key: str, src: Path) -> str:
-    """Copy sample into sounds/{voice}/ and return stored relative path."""
+    """샘플을 sounds/{voice}/에 복사하고 저장된 상대 경로를 반환한다."""
     src = src.resolve()
     if not src.is_file():
         raise FileError(f"not found: {src}")
@@ -255,7 +255,7 @@ def save_voice_notes(
     copy_into_sounds: bool = True,
     preserve_notes: bool = False,
 ) -> dict:
-    """Persist note → file paths for a voice key (e.g. ive_1)."""
+    """voice 키의 음표별 파일 경로를 저장한다."""
     voice = voice.strip()
     if not voice:
         raise ValueError("voice required")
@@ -311,7 +311,7 @@ def sample_path_for(voice: str, note: str, row: int | None = None) -> Path | Non
 
 
 def sync_mapping_voices_to_catalog(mapping: dict | None = None) -> None:
-    """Ensure every mapped voice has a catalog profile (write path only)."""
+    """매핑된 모든 voice에 목록 프로필이 있는지 저장 경로에서 보장한다."""
     mapping = mapping or load_mapping()
     catalog = load_voice_catalog()
     profiles: dict[str, dict] = catalog.setdefault("voices", {})

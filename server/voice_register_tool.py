@@ -1,4 +1,4 @@
-"""Run Voice Register — assign 8 note samples per voice key."""
+"""voice 키마다 8개 음원 샘플을 지정하는 도구를 실행한다."""
 
 import argparse
 

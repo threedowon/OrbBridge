@@ -16,9 +16,9 @@
         "11": "R",
         "12": "R"
       },
-      "time_limit": 120,
-      "idle_time_limit": 30,
-      "dispensa_presses_required": 1
+      "time_over_s": 120,
+      "idle_s": 30,
+      "dfesta_presses_required": 1
     }
   ]
 }

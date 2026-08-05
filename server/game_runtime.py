@@ -1,8 +1,7 @@
-"""Single-writer runtime adapter for :mod:`game_engine`.
+"""GameEngine을 단일 writer로 보호하는 런타임 어댑터이다.
 
-Serial and HTTP producers may run on different threads.  This adapter funnels
-every state mutation through one worker queue, advances timers, and exposes a
-thread-safe cached snapshot for HTTP/UI readers.
+서로 다른 스레드에서 실행되는 시리얼·HTTP 입력을 하나의 Queue로 모으고,
+타이머를 갱신하며, HTTP·UI가 읽을 수 있는 thread-safe snapshot을 제공한다.
 """
 
 from __future__ import annotations
@@ -17,29 +16,29 @@ from typing import Any, Callable
 
 try:
     from .game_engine import GameEngine
-except ImportError:  # ``python server/main.py`` script context
+except ImportError:  # ``python server/main.py``로 직접 실행하는 경우이다.
     from game_engine import GameEngine
 
 
-PhaseCallback = Callable[[str, str, dict], None]
+StateCallback = Callable[[str, str, dict], None]
 LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class RuntimeResult:
-    """Result of one queued engine command."""
+    """Queue에서 처리된 엔진 명령 한 건의 결과이다."""
 
     value: Any
-    previous_phase: str
+    previous_state: str
     snapshot: dict
 
     @property
-    def phase(self) -> str:
-        return str(self.snapshot["phase"])
+    def state(self) -> str:
+        return str(self.snapshot["state"])
 
     @property
-    def phase_changed(self) -> bool:
-        return self.previous_phase != self.phase
+    def state_changed(self) -> bool:
+        return self.previous_state != self.state
 
 
 @dataclass
@@ -50,29 +49,25 @@ class _Command:
 
 
 class GameRuntime:
-    """Own a ``GameEngine`` and mutate it only from one worker thread."""
+    """GameEngine의 모든 변경을 하나의 worker 스레드에서 처리한다."""
 
     def __init__(
         self,
         engine: GameEngine,
         *,
         tick_interval_s: float = 0.05,
-        on_phase_change: PhaseCallback | None = None,
-        auto_reset_timeouts: bool = False,
+        on_state_change: StateCallback | None = None,
     ) -> None:
         if not isinstance(engine, GameEngine):
             raise TypeError("engine must be a GameEngine")
         if isinstance(tick_interval_s, bool) or float(tick_interval_s) <= 0:
             raise ValueError("tick_interval_s must be positive")
-        if on_phase_change is not None and not callable(on_phase_change):
-            raise TypeError("on_phase_change must be callable")
-        if not isinstance(auto_reset_timeouts, bool):
-            raise TypeError("auto_reset_timeouts must be a boolean")
+        if on_state_change is not None and not callable(on_state_change):
+            raise TypeError("on_state_change must be callable")
 
         self._engine = engine
         self._tick_interval_s = float(tick_interval_s)
-        self._on_phase_change = on_phase_change
-        self._auto_reset_timeouts = auto_reset_timeouts
+        self._on_state_change = on_state_change
         self._queue: Queue[_Command] = Queue()
         self._snapshot_lock = threading.Lock()
         self._snapshot = engine.snapshot()
@@ -87,7 +82,8 @@ class GameRuntime:
         return bool(thread and thread.is_alive())
 
     def start(self) -> None:
-        """Start the worker. Calling this repeatedly is safe."""
+        """worker를 시작하며 중복 호출은 무시한다."""
+
         with self._lifecycle_lock:
             if self._closed:
                 raise RuntimeError("runtime is closed")
@@ -101,7 +97,8 @@ class GameRuntime:
             self._thread.start()
 
     def close(self, timeout: float = 2.0) -> None:
-        """Stop the worker after all earlier queued commands."""
+        """앞서 등록된 명령을 처리한 뒤 worker를 종료한다."""
+
         with self._lifecycle_lock:
             if self._closed:
                 return
@@ -118,12 +115,19 @@ class GameRuntime:
             thread.join(timeout=max(0.0, timeout))
 
     def snapshot(self) -> dict:
-        """Return a detached copy of the most recently processed snapshot."""
+        """마지막으로 처리된 snapshot의 독립 복사본을 반환한다."""
+
         with self._snapshot_lock:
             return deepcopy(self._snapshot)
 
-    def replace_engine(self, engine: GameEngine, *, timeout: float = 2.0) -> RuntimeResult:
-        """Replace configuration while the current engine is READY and empty."""
+    def replace_engine(
+        self,
+        engine: GameEngine,
+        *,
+        timeout: float = 2.0,
+    ) -> RuntimeResult:
+        """READY이면서 테이블이 비었을 때 설정이 다른 엔진으로 교체한다."""
+
         if not isinstance(engine, GameEngine):
             raise TypeError("engine must be a GameEngine")
         return self._submit("replace_engine", timeout=timeout, engine=engine)
@@ -131,18 +135,17 @@ class GameRuntime:
     def start_game(self, *, timeout: float = 2.0) -> RuntimeResult:
         return self._submit("start", timeout=timeout)
 
-    def complete_start(self, *, timeout: float = 2.0) -> RuntimeResult:
-        return self._submit("complete_start", timeout=timeout)
+    def end_game(self, reason="manual", *, timeout: float = 2.0) -> RuntimeResult:
+        return self._submit("end", timeout=timeout, reason=reason)
 
-    def finish_game(self, reason="manual", *, timeout: float = 2.0) -> RuntimeResult:
-        return self._submit("finish", timeout=timeout, reason=reason)
+    def press_dfesta(self, *, timeout: float = 2.0) -> RuntimeResult:
+        """DFestaPress 한 건을 단일 writer Queue에 등록한다."""
 
-    def press_dispensa(self, *, timeout: float = 2.0) -> RuntimeResult:
-        """Queue one DFesta button press through the single engine writer."""
-        return self._submit("press_dispensa", timeout=timeout)
+        return self._submit("dfesta", timeout=timeout)
 
     def record_activity(self, *, timeout: float = 2.0) -> RuntimeResult:
-        """Queue a non-cell interaction that refreshes the idle deadline."""
+        """셀 변경이 없는 입력을 Idle 타이머 활동으로 등록한다."""
+
         return self._submit("record_activity", timeout=timeout)
 
     def reset_game(self, *, timeout: float = 2.0) -> RuntimeResult:
@@ -185,21 +188,22 @@ class GameRuntime:
         )
 
     def barrier(self, *, timeout: float = 2.0) -> RuntimeResult:
-        """Wait until all commands queued before this call have completed."""
+        """이 호출보다 먼저 등록된 모든 명령이 끝날 때까지 기다린다."""
+
         return self._submit("snapshot", timeout=timeout)
 
-    def publish_phase_change(self, result: RuntimeResult) -> None:
-        """Publish a command transition after its caller emits related output.
+    def publish_state_change(self, result: RuntimeResult) -> None:
+        """명령으로 발생한 상태 전이를 관련 출력 뒤에 발행한다.
 
-        Background timer transitions are published automatically.  Command
-        transitions are explicit so an ``/orb/added`` message can be emitted
-        before the resulting ``/game/end`` message.
+        백그라운드 tick의 전이는 자동 발행한다. 명령 전이는 호출자가 명시적으로
+        발행해 `/orb/added`와 `/game/state`의 순서를 결정할 수 있게 한다.
         """
-        if not result.phase_changed or self._on_phase_change is None:
+
+        if not result.state_changed or self._on_state_change is None:
             return
-        self._on_phase_change(
-            result.previous_phase,
-            result.phase,
+        self._on_state_change(
+            result.previous_state,
+            result.state,
             deepcopy(result.snapshot),
         )
 
@@ -244,44 +248,26 @@ class GameRuntime:
     def _tick(self) -> None:
         try:
             result = self._execute("tick", {})
-            should_reset = (
-                self._auto_reset_timeouts
-                and result.phase_changed
-                and result.phase == "FINISHED"
-                and result.snapshot.get("finish_reason")
-                in {"total_timeout", "idle_timeout"}
-            )
-            try:
-                self.publish_phase_change(result)
-            finally:
-                if should_reset:
-                    # Background ticks have no HTTP/Serial caller that can
-                    # request RESETTING. Do it even if a display callback fails;
-                    # UI delivery must never hold the state machine in FINISHED.
-                    resetting = self._execute("reset", {})
-                    self.publish_phase_change(resetting)
+            self.publish_state_change(result)
         except Exception:
-            # A clock/configuration failure must not silently kill the runtime
-            # thread. A later explicit command will surface the same error.
+            # 시계·설정 오류가 발생해도 worker가 조용히 종료되지 않게 기록한다.
             LOGGER.exception("game runtime tick failed")
 
     def _execute(self, action: str, payload: dict) -> RuntimeResult:
-        previous_phase = self._engine.phase.value
+        previous_state = self._engine.state.value
 
         if action == "replace_engine":
             current = self._engine.snapshot()
-            if current["phase"] != "READY" or current["cell_count"]:
+            if current["state"] != "READY" or current["cell_count"]:
                 raise RuntimeError("engine can only be replaced while READY and empty")
             self._engine = payload["engine"]
             value = None
         elif action == "start":
             value = self._engine.start()
-        elif action == "complete_start":
-            value = self._engine.complete_start()
-        elif action == "finish":
-            value = self._engine.finish(payload["reason"])
-        elif action == "press_dispensa":
-            value = self._engine.press_dispensa()
+        elif action == "end":
+            value = self._engine.end(payload["reason"])
+        elif action == "dfesta":
+            value = self._engine.press_dfesta()
         elif action == "record_activity":
             value = self._engine.record_activity()
         elif action == "reset":
@@ -302,6 +288,6 @@ class GameRuntime:
             self._snapshot = snapshot
         return RuntimeResult(
             value=value,
-            previous_phase=previous_phase,
+            previous_state=previous_state,
             snapshot=deepcopy(snapshot),
         )

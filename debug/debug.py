@@ -1,5 +1,5 @@
 """
-OrbBridge 진단 도구 (Diagnostics)
+OrbBridge 진단 도구
 
 마스터 COM 포트를 직접 열어 RS485 → USB 로 들어오는 JSON 을 모니터링하고,
 웹 대시보드로 다음을 보여준다.
@@ -50,17 +50,17 @@ HTTP_HOST = "127.0.0.1"
 HTTP_PORT = 8090
 # 슬레이브를 "최근 활동"으로 볼 시간 창(초). 이 안에 신호가 왔으면 최근 활동.
 RECENT_WINDOW_S = 10.0
-# 하트비트 기반 online/offline 판정 창(초). 슬레이브 하트비트 주기(3초)의 2~3배.
-# 이 시간 안에 하트비트가 없으면 offline 으로 표시.
+# 하트비트 기반 연결 여부 판정 창(초)이며 슬레이브 주기의 2~3배다.
+# 이 시간 안에 하트비트가 없으면 연결 끊김으로 표시한다.
 ONLINE_TIMEOUT_S = 8.0
 RAW_LOG_LIMIT = 300
 
 # Espressif 등 ESP32-S3 로 흔히 잡히는 USB-Serial 칩 VID
 ESP_LIKELY_VIDS = {
-    0x303A,  # Espressif (S2/S3 native USB CDC)
-    0x1A86,  # QinHeng CH340/CH9102
-    0x10C4,  # Silicon Labs CP210x
-    0x0403,  # FTDI
+    0x303A,  # Espressif S2/S3 내장 USB CDC
+    0x1A86,  # QinHeng CH340/CH9102 USB 시리얼
+    0x10C4,  # Silicon Labs CP210x USB 시리얼
+    0x0403,  # FTDI USB 시리얼
 }
 
 
@@ -83,9 +83,9 @@ _master = {
     "started_ms": now_ms(),
 }
 
-# slave_id -> stats
+# 슬레이브 ID별 통계를 보관한다.
 _slaves: dict[int, dict] = {}
-# "slave:cell" -> cell info
+# "슬레이브:셀" 키별 셀 정보를 보관한다.
 _cells: dict[str, dict] = {}
 _raw_log: list[dict] = []
 
@@ -149,7 +149,7 @@ def _handle_line(line: str) -> None:
         s = _touch_slave(slave_id)
         s["last_seen_ms"] = now_ms()
 
-        # 하트비트: 생존 신호 — 이벤트 카운터는 건드리지 않고 online 판정만 갱신
+        # 하트비트는 이벤트 수를 바꾸지 않고 연결 여부만 갱신한다.
         if t == "heartbeat":
             s["last_heartbeat_ms"] = now_ms()
             s["heartbeat_count"] += 1

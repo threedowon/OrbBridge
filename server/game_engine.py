@@ -1,7 +1,7 @@
-"""Pure game-state model for the OrbBridge Python-engine refactor.
+"""OrbBridge의 순수 게임 상태 모델이다.
 
-This module intentionally has no Serial, MIDI, HTTP, WebSocket, file, or thread
-dependencies. Runtime adapters are kept outside the state model.
+시리얼, MIDI, HTTP, WebSocket, 파일, 스레드 의존성은 이 모듈 밖의
+런타임 어댑터가 담당한다.
 """
 
 from __future__ import annotations
@@ -17,18 +17,20 @@ REST = "R"
 ROW_NOTES = ("C", "D", "E", "F", "G", "A", "B", "C")
 
 
-class GamePhase(str, Enum):
+class GameState(str, Enum):
+    """다이어그램에서 사용하는 세 가지 게임 상태이다."""
+
     READY = "READY"
-    STARTING = "STARTING"
     RUNNING = "RUNNING"
-    FINISHED = "FINISHED"
     RESETTING = "RESETTING"
 
 
-class FinishReason(str, Enum):
+class EndReason(str, Enum):
+    """RUNNING에서 RESETTING으로 전이된 이유이다."""
+
     COMPLETE = "complete"
-    TOTAL_TIMEOUT = "total_timeout"
-    IDLE_TIMEOUT = "idle_timeout"
+    IDLE = "idle"
+    TIME_OVER = "time_over"
     MANUAL = "manual"
 
 
@@ -40,11 +42,11 @@ class PlacementResult(str, Enum):
 
 
 class InvalidTransition(RuntimeError):
-    """Raised when an event is not valid for the current game phase."""
+    """현재 상태에서 허용되지 않는 이벤트가 들어오면 발생한다."""
 
 
 class TableNotEmpty(InvalidTransition):
-    """Raised when START is requested while at least one orb is present."""
+    """오브가 남은 상태에서 start 이벤트가 들어오면 발생한다."""
 
 
 @dataclass(frozen=True, order=True)
@@ -64,7 +66,8 @@ class CellAddress:
 
     @property
     def position(self) -> int:
-        """Global melody position: two 8-row columns per slave."""
+        """슬레이브당 두 열을 반영한 전체 멜로디 위치를 반환한다."""
+
         local_column = 1 if self.cell <= 8 else 2
         return local_column + (self.slave - 1) * 2
 
@@ -86,15 +89,15 @@ class Placement:
 
 
 class GameEngine:
-    """Deterministic OrbBridge state machine with an injectable clock."""
+    """외부에서 주입한 시계를 사용하는 결정적 상태 머신이다."""
 
     def __init__(
         self,
         answers: Mapping[int | str, str],
         *,
-        total_timeout_s: float | None,
-        idle_timeout_s: float | None,
-        dispensa_presses_required: int = 1,
+        time_over_s: float | None,
+        idle_s: float | None,
+        dfesta_presses_required: int = 1,
         clock: Callable[[], float] = monotonic,
     ) -> None:
         self._answers = self._normalize_answers(answers)
@@ -104,28 +107,24 @@ class GameEngine:
         if not self._required_positions:
             raise ValueError("answers must contain at least one non-REST position")
 
-        self.total_timeout_s = self._normalize_timeout(
-            total_timeout_s, "total_timeout_s"
-        )
-        self.idle_timeout_s = self._normalize_timeout(
-            idle_timeout_s, "idle_timeout_s"
-        )
-        self.dispensa_presses_required = self._normalize_press_count(
-            dispensa_presses_required
+        self.time_over_s = self._normalize_timeout(time_over_s, "time_over_s")
+        self.idle_s = self._normalize_timeout(idle_s, "idle_s")
+        self.dfesta_presses_required = self._normalize_press_count(
+            dfesta_presses_required
         )
         if not callable(clock):
             raise TypeError("clock must be callable")
         self._clock = clock
         self._last_clock_value: float | None = None
 
-        self.phase = GamePhase.READY
-        self.finish_reason: FinishReason | None = None
+        self.state = GameState.READY
+        self.end_reason: EndReason | None = None
         self._cells: dict[CellAddress, Placement] = {}
         self._orb_locations: dict[str, CellAddress] = {}
         self._started_at: float | None = None
         self._last_activity_at: float | None = None
-        self._finished_at: float | None = None
-        self._dispensa_presses = 0
+        self._ended_at: float | None = None
+        self._dfesta_presses = 0
         self._revision = 0
 
     @staticmethod
@@ -179,9 +178,10 @@ class GameEngine:
 
     @staticmethod
     def _normalize_press_count(value: int) -> int:
-        """Require an explicit positive whole-number completion threshold."""
+        """DFesta 완료 기준이 양의 정수인지 검증한다."""
+
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-            raise ValueError("dispensa_presses_required must be a positive integer")
+            raise ValueError("dfesta_presses_required must be a positive integer")
         return value
 
     def _now(self) -> float:
@@ -204,117 +204,90 @@ class GameEngine:
     def cell_count(self) -> int:
         return len(self._cells)
 
-    def start(self) -> GamePhase:
-        """Handle START: READY -> STARTING. Timers do not start yet."""
-        self._now()
-        if self.phase is not GamePhase.READY:
-            raise InvalidTransition(f"START is invalid from {self.phase.value}")
-        if self._cells:
-            raise TableNotEmpty("START requires an empty table")
-        self.finish_reason = None
-        self._started_at = None
-        self._last_activity_at = None
-        self._finished_at = None
-        self._dispensa_presses = 0
-        self._set_phase(GamePhase.STARTING)
-        return self.phase
+    def start(self) -> GameState:
+        """start 이벤트를 처리하고 READY에서 RUNNING으로 전이한다."""
 
-    def complete_start(self) -> GamePhase:
-        """Handle START_COMPLETE: STARTING -> RUNNING and start both timers."""
         now = self._now()
-        if self.phase is not GamePhase.STARTING:
-            raise InvalidTransition(
-                f"START_COMPLETE is invalid from {self.phase.value}"
-            )
+        self._check_start()
+        self.end_reason = None
         self._started_at = now
         self._last_activity_at = now
-        self._finished_at = None
-        self.finish_reason = None
-        self._set_phase(GamePhase.RUNNING)
-        return self.phase
+        self._ended_at = None
+        self._dfesta_presses = 0
+        self._set_state(GameState.RUNNING)
+        return self.state
 
-    def finish(self, reason: FinishReason | str = FinishReason.MANUAL) -> GamePhase:
-        """Finish a running game explicitly, unless a timer already expired."""
+    def end(self, reason: EndReason | str = EndReason.MANUAL) -> GameState:
+        """end 이벤트를 처리하고 RUNNING에서 RESETTING으로 전이한다."""
+
         now = self._now()
-        if self.phase is not GamePhase.RUNNING:
-            raise InvalidTransition(f"FINISH is invalid from {self.phase.value}")
-        if self._expire_if_needed(now):
-            return self.phase
+        if self.state is not GameState.RUNNING:
+            raise InvalidTransition(f"END is invalid from {self.state.value}")
+        if self._end_if_needed(now):
+            return self.state
         try:
-            normalized_reason = FinishReason(reason)
+            normalized_reason = EndReason(reason)
         except ValueError as exc:
-            raise ValueError(f"unknown finish reason: {reason}") from exc
-        self._enter_finished(normalized_reason, now)
-        return self.phase
+            raise ValueError(f"unknown end reason: {reason}") from exc
+        self._enter_resetting(normalized_reason, now)
+        return self.state
 
-    def reset(self) -> GamePhase:
-        """Enter RESETTING; removal or the next tick completes an empty reset."""
+    def reset(self) -> GameState:
+        """reset 이벤트를 처리하고 필요한 경우 RESETTING으로 전이한다."""
+
         now = self._now()
-        if self.phase is GamePhase.READY and not self._cells:
-            return self.phase
+        if self.state is GameState.READY and self._table_is_clear():
+            return self.state
+        if self.state is GameState.RUNNING and self._end_if_needed(now):
+            return self.state
+        reason = EndReason.MANUAL if self.state is GameState.RUNNING else None
+        self._enter_resetting(reason, now)
+        return self.state
 
-        if self._started_at is not None and self._finished_at is None:
-            self._finished_at = now
-        self._set_phase(GamePhase.RESETTING)
-        return self.phase
+    def tick(self) -> GameState:
+        """타이머와 TableIsClear 조건을 현재 시각 기준으로 검사한다."""
 
-    def tick(self) -> GamePhase:
-        """Advance timeout checks using the injected clock."""
         now = self._now()
-        if self.phase is GamePhase.RUNNING:
-            self._expire_if_needed(now)
-        elif self.phase is GamePhase.RESETTING and not self._cells:
-            # Keep RESETTING observable for one runtime turn even when no orb
-            # needs removal, then complete the reset without browser input.
+        if self.state is GameState.RUNNING:
+            self._end_if_needed(now)
+        elif self.state is GameState.RESETTING and self._table_is_clear():
+            # 빈 테이블에서도 RESETTING을 한 런타임 tick 동안 노출한 뒤 READY로 간다.
             self._enter_ready()
-        return self.phase
+        return self.state
 
     def record_activity(self) -> bool:
-        """Refresh the idle deadline for a real RUNNING-phase interaction.
+        """Listen·Play 입력을 실제 활동으로 기록해 Idle 타이머를 초기화한다."""
 
-        Listen and Play do not mutate a cell, so their callers use this method
-        to count those button presses as activity. An expired deadline always
-        wins over an input received at the same instant.
-        """
         now = self._now()
-        if self.phase is not GamePhase.RUNNING:
-            raise InvalidTransition(
-                f"ACTIVITY is invalid from {self.phase.value}"
-            )
-        if self._expire_if_needed(now):
+        if self.state is not GameState.RUNNING:
+            raise InvalidTransition(f"ACTIVITY is invalid from {self.state.value}")
+        if self._end_if_needed(now):
             return False
         self._last_activity_at = now
         self._revision += 1
         return True
 
-    def press_dispensa(self) -> bool:
-        """Count one DFesta button press only while the current answer is solved.
+    def press_dfesta(self) -> bool:
+        """정답 상태에서 들어온 DFestaPress를 완료 횟수에 반영한다."""
 
-        The button remains usable as a playback command before the answer is
-        correct, but those presses do not advance game completion. Timeout
-        deadlines win when a press lands exactly on an expired deadline.
-        """
         now = self._now()
-        if self.phase is not GamePhase.RUNNING:
-            raise InvalidTransition(
-                f"DISPENSA is invalid from {self.phase.value}"
-            )
-        if self._expire_if_needed(now):
+        if self.state is not GameState.RUNNING:
+            raise InvalidTransition(f"DFESTA is invalid from {self.state.value}")
+        if self._end_if_needed(now):
             return False
 
-        # A real button press is user activity even when the answer is not yet
-        # correct, so it refreshes the idle deadline.
+        # 정답 여부와 관계없이 실제 버튼 입력이므로 Idle 타이머를 초기화한다.
         self._last_activity_at = now
-        if not self._is_solved():
-            if self._dispensa_presses:
-                self._dispensa_presses = 0
+        if not self._is_correct():
+            if self._dfesta_presses:
+                self._dfesta_presses = 0
             self._revision += 1
             return False
 
-        self._dispensa_presses += 1
+        self._dfesta_presses += 1
         self._revision += 1
-        if self._dispensa_presses >= self.dispensa_presses_required:
-            self._enter_finished(FinishReason.COMPLETE, now)
+        if self._dfesta_presses >= self.dfesta_presses_required:
+            self._enter_resetting(EndReason.COMPLETE, now)
         return True
 
     def add_orb(
@@ -326,7 +299,8 @@ class GameEngine:
         voice: str | None = None,
         known: bool = True,
     ) -> PlacementResult:
-        """Track an orb in every phase; judge it only while RUNNING."""
+        """모든 상태에서 오브를 추적하고 RUNNING에서만 정답을 판정한다."""
+
         address = CellAddress(slave, cell)
         normalized_orb_id = self._normalize_orb_id(orb_id)
         if not isinstance(known, bool):
@@ -335,15 +309,12 @@ class GameEngine:
         placement = Placement(normalized_orb_id, normalized_voice, known)
 
         now = self._now()
-        self._expire_if_needed(now)
-        running = self.phase is GamePhase.RUNNING
+        self._end_if_needed(now)
+        running = self.state is GameState.RUNNING
 
         previous_address = self._orb_locations.get(normalized_orb_id)
         current_at_target = self._cells.get(address)
-        unchanged = (
-            previous_address == address
-            and current_at_target == placement
-        )
+        unchanged = previous_address == address and current_at_target == placement
         if unchanged:
             return (
                 self._result_for(address, placement)
@@ -365,7 +336,7 @@ class GameEngine:
         if running:
             self._last_activity_at = now
             result = self._result_for(address, placement)
-            self._reset_completion_progress_if_unsolved()
+            self._reset_completion_progress_if_incorrect()
             return result
         return PlacementResult.INACTIVE
 
@@ -376,14 +347,15 @@ class GameEngine:
         cell: int,
         orb_id: str | None = None,
     ) -> bool:
-        """Remove the current occupant. A mismatched orb_id is a stale no-op."""
+        """현재 오브를 제거하고 오래된 orb_id 입력은 무시한다."""
+
         address = CellAddress(slave, cell)
         normalized_orb_id = (
             None if orb_id is None else self._normalize_orb_id(orb_id)
         )
 
         now = self._now()
-        self._expire_if_needed(now)
+        self._end_if_needed(now)
         placement = self._cells.get(address)
         if placement is None:
             return False
@@ -395,10 +367,10 @@ class GameEngine:
             del self._orb_locations[placement.orb_id]
         self._revision += 1
 
-        if self.phase is GamePhase.RUNNING:
+        if self.state is GameState.RUNNING:
             self._last_activity_at = now
-            self._reset_completion_progress_if_unsolved()
-        elif self.phase is GamePhase.RESETTING and not self._cells:
+            self._reset_completion_progress_if_incorrect()
+        elif self.state is GameState.RESETTING and self._table_is_clear():
             self._enter_ready()
         return True
 
@@ -415,16 +387,18 @@ class GameEngine:
         return self._result_for(address, placement)
 
     def snapshot(self) -> dict:
-        """Return a JSON-serializable, current-state snapshot."""
+        """현재 상태를 JSON 직렬화 가능한 독립 snapshot으로 반환한다."""
+
         now = self._now()
-        if self.phase is GamePhase.RUNNING:
-            self._expire_if_needed(now)
+        if self.state is GameState.RUNNING:
+            self._end_if_needed(now)
 
         correct_positions, wrong_cells = self._solution_state()
-        solved = (
+        is_correct = (
             not wrong_cells
             and self._required_positions.issubset(correct_positions)
         )
+        table_is_clear = self._table_is_clear()
         cells = {}
         for address in sorted(self._cells):
             placement = self._cells[address]
@@ -441,30 +415,32 @@ class GameEngine:
 
         elapsed_s = 0.0
         if self._started_at is not None:
-            end = self._finished_at if self._finished_at is not None else now
+            end = self._ended_at if self._ended_at is not None else now
             elapsed_s = max(0.0, end - self._started_at)
 
-        remaining_total_s = None
+        remaining_time_over_s = None
         remaining_idle_s = None
-        if self.phase is GamePhase.RUNNING:
-            if self.total_timeout_s is not None and self._started_at is not None:
-                remaining_total_s = max(
-                    0.0, self._started_at + self.total_timeout_s - now
+        if self.state is GameState.RUNNING:
+            if self.time_over_s is not None and self._started_at is not None:
+                remaining_time_over_s = max(
+                    0.0,
+                    self._started_at + self.time_over_s - now,
                 )
-            if self.idle_timeout_s is not None and self._last_activity_at is not None:
+            if self.idle_s is not None and self._last_activity_at is not None:
                 remaining_idle_s = max(
-                    0.0, self._last_activity_at + self.idle_timeout_s - now
+                    0.0,
+                    self._last_activity_at + self.idle_s - now,
                 )
 
         presses_remaining = max(
             0,
-            self.dispensa_presses_required - self._dispensa_presses,
+            self.dfesta_presses_required - self._dfesta_presses,
         )
 
         return {
-            "phase": self.phase.value,
-            "finish_reason": (
-                self.finish_reason.value if self.finish_reason is not None else None
+            "state": self.state.value,
+            "end_reason": (
+                self.end_reason.value if self.end_reason is not None else None
             ),
             "revision": self._revision,
             "answers": {
@@ -474,22 +450,31 @@ class GameEngine:
             "required_positions": sorted(self._required_positions),
             "correct_positions": sorted(correct_positions),
             "wrong_cells": sorted(wrong_cells),
-            "solved": solved,
-            "completion": {
-                "waiting_for_dispensa": (
-                    self.phase is GamePhase.RUNNING and solved
+            "is_correct": is_correct,
+            "conditions": {
+                "check_start": (
+                    self.state is GameState.READY and table_is_clear
                 ),
-                "dispensa_presses": self._dispensa_presses,
-                "dispensa_presses_required": self.dispensa_presses_required,
-                "dispensa_presses_remaining": presses_remaining,
+                "is_correct": is_correct,
+                "is_idle": self.end_reason is EndReason.IDLE,
+                "is_time_over": self.end_reason is EndReason.TIME_OVER,
+                "table_is_clear": table_is_clear,
+            },
+            "completion": {
+                "waiting_for_dfesta": (
+                    self.state is GameState.RUNNING and is_correct
+                ),
+                "dfesta_presses": self._dfesta_presses,
+                "dfesta_presses_required": self.dfesta_presses_required,
+                "dfesta_presses_remaining": presses_remaining,
             },
             "cell_count": len(self._cells),
             "cells": cells,
             "timers": {
                 "elapsed_s": elapsed_s,
-                "total_limit_s": self.total_timeout_s,
-                "idle_limit_s": self.idle_timeout_s,
-                "remaining_total_s": remaining_total_s,
+                "time_over_limit_s": self.time_over_s,
+                "idle_limit_s": self.idle_s,
+                "remaining_time_over_s": remaining_time_over_s,
                 "remaining_idle_s": remaining_idle_s,
             },
         }
@@ -503,46 +488,62 @@ class GameEngine:
             raise ValueError("orb_id must not be empty")
         return normalized
 
-    def _set_phase(self, phase: GamePhase) -> None:
-        if self.phase is phase:
+    def _check_start(self) -> None:
+        """CheckStart 조건을 검사한다."""
+
+        if self.state is not GameState.READY:
+            raise InvalidTransition(f"START is invalid from {self.state.value}")
+        if not self._table_is_clear():
+            raise TableNotEmpty("START requires an empty table")
+
+    def _set_state(self, state: GameState) -> None:
+        if self.state is state:
             return
-        self.phase = phase
+        self.state = state
         self._revision += 1
 
-    def _enter_finished(self, reason: FinishReason, now: float) -> None:
-        self.finish_reason = reason
-        self._finished_at = now
-        self._set_phase(GamePhase.FINISHED)
+    def _enter_resetting(
+        self,
+        reason: EndReason | None,
+        now: float,
+    ) -> None:
+        if reason is not None:
+            self.end_reason = reason
+        if self._started_at is not None and self._ended_at is None:
+            self._ended_at = now
+        self._set_state(GameState.RESETTING)
 
     def _enter_ready(self) -> None:
-        if self._cells:
+        if not self._table_is_clear():
             raise RuntimeError("cannot enter READY while the table is occupied")
-        self.finish_reason = None
+        self.end_reason = None
         self._started_at = None
         self._last_activity_at = None
-        self._finished_at = None
-        self._dispensa_presses = 0
-        self._set_phase(GamePhase.READY)
+        self._ended_at = None
+        self._dfesta_presses = 0
+        self._set_state(GameState.READY)
 
-    def _expire_if_needed(self, now: float) -> bool:
-        if self.phase is not GamePhase.RUNNING:
+    def _end_if_needed(self, now: float) -> bool:
+        """IsTimeOver와 IsIdle을 검사하고 RESETTING으로 직접 전이한다."""
+
+        if self.state is not GameState.RUNNING:
             return False
 
-        deadlines: list[tuple[float, int, FinishReason]] = []
-        if self.total_timeout_s is not None and self._started_at is not None:
+        deadlines: list[tuple[float, int, EndReason]] = []
+        if self.time_over_s is not None and self._started_at is not None:
             deadlines.append(
                 (
-                    self._started_at + self.total_timeout_s,
+                    self._started_at + self.time_over_s,
                     0,
-                    FinishReason.TOTAL_TIMEOUT,
+                    EndReason.TIME_OVER,
                 )
             )
-        if self.idle_timeout_s is not None and self._last_activity_at is not None:
+        if self.idle_s is not None and self._last_activity_at is not None:
             deadlines.append(
                 (
-                    self._last_activity_at + self.idle_timeout_s,
+                    self._last_activity_at + self.idle_s,
                     1,
-                    FinishReason.IDLE_TIMEOUT,
+                    EndReason.IDLE,
                 )
             )
         expired = [deadline for deadline in deadlines if now >= deadline[0]]
@@ -550,13 +551,14 @@ class GameEngine:
             return False
 
         _, _, reason = min(expired)
-        self._enter_finished(reason, now)
+        self._enter_resetting(reason, now)
         return True
 
-    def _reset_completion_progress_if_unsolved(self) -> None:
-        """Invalidate partial DFesta progress when the answer stops matching."""
-        if not self._is_solved():
-            self._dispensa_presses = 0
+    def _reset_completion_progress_if_incorrect(self) -> None:
+        """정답 상태가 깨지면 누적된 DFestaPress 횟수를 초기화한다."""
+
+        if not self._is_correct():
+            self._dfesta_presses = 0
 
     def _result_for(
         self,
@@ -583,9 +585,12 @@ class GameEngine:
                 wrong_cells.append(address.key)
         return correct_positions, wrong_cells
 
-    def _is_solved(self) -> bool:
+    def _is_correct(self) -> bool:
         correct_positions, wrong_cells = self._solution_state()
         return (
             not wrong_cells
             and self._required_positions.issubset(correct_positions)
         )
+
+    def _table_is_clear(self) -> bool:
+        return not self._cells

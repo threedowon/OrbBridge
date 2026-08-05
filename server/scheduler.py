@@ -1,9 +1,8 @@
-"""Python-owned timing for Listen, Play, and Dispensa playback.
+"""Listen·Play·DFesta 재생 시각을 Python에서 관리한다.
 
-The browser used to own a set of ``setTimeout`` calls for these three modes.
-That made playback depend on browser load and made MIDI timing differ between
-screen tabs.  ``PlaybackScheduler`` builds an immutable cue list, then executes
-it from one cancellable worker using absolute monotonic deadlines.
+브라우저의 여러 ``setTimeout``에 분산돼 있던 재생 시각을 하나의
+``PlaybackScheduler``로 모은다. 변경 불가능한 cue 목록을 만든 뒤,
+취소 가능한 worker 하나가 monotonic 절대시각 기준으로 실행한다.
 """
 
 from __future__ import annotations
@@ -35,16 +34,16 @@ PLAYBACK_LEAD_S = 0.25
 
 
 class PlaybackMode(str, Enum):
-    """The three hardware playback commands supported by OrbBridge."""
+    """OrbBridge가 지원하는 세 가지 하드웨어 재생 명령이다."""
 
     LISTEN = "listen"
     PLAY = "play"
-    DISPENSA = "dispensa"
+    DFESTA = "dfesta"
 
 
 @dataclass(frozen=True)
 class MelodyStep:
-    """One melody slot normalized for the scheduler."""
+    """Scheduler 형식으로 정규화한 멜로디 한 칸이다."""
 
     index: int
     pitch: int | None
@@ -53,7 +52,7 @@ class MelodyStep:
 
 @dataclass(frozen=True)
 class Melody:
-    """Validated BPM and ordered steps loaded from a melody JSON file."""
+    """멜로디 JSON에서 읽고 검증한 BPM과 순서가 있는 step이다."""
 
     bpm: float
     steps: tuple[MelodyStep, ...]
@@ -65,7 +64,7 @@ class Melody:
 
 @dataclass(frozen=True)
 class PlaybackCue:
-    """One absolute-offset beat and the MIDI notes due at that beat."""
+    """절대 offset과 해당 시각에 출력할 MIDI 음표 묶음이다."""
 
     step: int
     offset_s: float
@@ -75,7 +74,7 @@ class PlaybackCue:
 
 @dataclass(frozen=True)
 class PlaybackPlan:
-    """Immutable input consumed by a scheduler worker."""
+    """Scheduler worker가 소비하는 변경 불가능한 입력이다."""
 
     mode: PlaybackMode
     cues: tuple[PlaybackCue, ...]
@@ -83,7 +82,7 @@ class PlaybackPlan:
 
 
 def _positive_number(value, label: str) -> float:
-    """Convert a JSON number and reject booleans, NaN, and non-positive data."""
+    """JSON 숫자를 변환하고 bool·NaN·0 이하 값을 거부한다."""
 
     if isinstance(value, bool):
         raise ValueError(f"{label} must be a positive number")
@@ -97,7 +96,7 @@ def _positive_number(value, label: str) -> float:
 
 
 def _pitch_from_name(value) -> int | None:
-    """Map C4..C5 to the eight Ableton pitch indices; rests return ``None``."""
+    """C4~C5를 Ableton pitch index 8개로 바꾸고 쉼표는 ``None``으로 반환한다."""
 
     name = str(value or "").strip().upper()
     if name in REST_NAMES:
@@ -108,7 +107,7 @@ def _pitch_from_name(value) -> int | None:
 
 
 def parse_melody(raw: Mapping) -> Melody:
-    """Normalize the Melody Editor JSON shape into scheduler data."""
+    """Melody Editor JSON을 Scheduler 데이터로 정규화한다."""
 
     if not isinstance(raw, Mapping):
         raise ValueError("melody must be an object")
@@ -138,14 +137,14 @@ def parse_melody(raw: Mapping) -> Melody:
 
 
 def load_melody(path: Path) -> Melody:
-    """Read and validate one UTF-8 melody file."""
+    """UTF-8 멜로디 파일 하나를 읽고 검증한다."""
 
     with Path(path).open(encoding="utf-8") as source:
         return parse_melody(json.load(source))
 
 
 def _cell_pitch(cell: Mapping) -> int | None:
-    """Resolve the placed row pitch from a GameEngine cell snapshot."""
+    """GameEngine 셀 snapshot에서 배치된 행의 pitch를 구한다."""
 
     raw_cell = cell.get("cell")
     if raw_cell is not None:
@@ -154,14 +153,13 @@ def _cell_pitch(cell: Mapping) -> int | None:
         except (TypeError, ValueError):
             return None
     note = str(cell.get("note") or "").strip().upper()
-    # GameEngine cell notes omit the octave; the final C is still pitch 7
-    # when the physical cell number is available. This fallback maps plain C
-    # to the lower C because no row identity remains.
+    # GameEngine 음표에는 octave가 없다. 실제 cell 번호가 있으면 마지막 C는
+    # pitch 7이지만, 행 정보가 없는 fallback에서는 C를 낮은 C로 처리한다.
     return {"C": 0, "D": 1, "E": 2, "F": 3, "G": 4, "A": 5, "B": 6}.get(note)
 
 
 def _ordered_cells(cells: Mapping[str, Mapping]) -> list[Mapping]:
-    """Return stable physical order so MIDI batches are reproducible."""
+    """MIDI 묶음의 순서가 재현되도록 셀을 물리적 순서로 정렬한다."""
 
     def key(cell: Mapping) -> tuple[int, int]:
         try:
@@ -180,11 +178,11 @@ def build_plan(
     melody: Melody,
     cells: Mapping[str, Mapping] | None = None,
 ) -> PlaybackPlan:
-    """Build all notes and absolute offsets before starting a worker.
+    """worker 시작 전에 모든 음표와 절대 offset을 계산한다.
 
-    Listen uses the dedicated ``_listen`` route and starts immediately.
-    Play reproduces each placed orb at its physical column and pitch.
-    Dispensa makes every unique placed voice sing the target melody together.
+    Listen은 전용 ``_listen`` 경로로 즉시 시작한다.
+    Play는 배치된 오브를 실제 열과 pitch로 재생한다.
+    DFesta는 배치된 고유 voice가 목표 멜로디를 함께 재생하게 한다.
     """
 
     mode = PlaybackMode(mode)
@@ -194,15 +192,15 @@ def build_plan(
     beat_s = melody.beat_seconds
     offset_s = lead_s
 
-    # Dispensa uses each voice once even if one orb appears more than once.
-    dispensa_voices = []
+    # 같은 voice의 오브가 여러 번 있어도 DFesta에서는 한 번만 사용한다.
+    dfesta_voices = []
     seen_voices = set()
     for cell in ordered_cells:
         voice = str(cell.get("voice") or "").strip()
         if not voice or voice == "unknown" or voice in seen_voices:
             continue
         seen_voices.add(voice)
-        dispensa_voices.append(voice)
+        dfesta_voices.append(voice)
 
     cues = []
     for step in melody.steps:
@@ -211,8 +209,8 @@ def build_plan(
         notes = []
 
         if mode is PlaybackMode.LISTEN and step.pitch is not None:
-            # Match the former browser preview envelope: slightly shorter than
-            # its slot and capped so long notes do not blur into the next cue.
+            # 기존 브라우저 미리듣기처럼 칸보다 조금 짧게 재생하고,
+            # 긴 음이 다음 cue와 겹치지 않도록 최대 길이를 제한한다.
             preview_ms = max(40, round(min(slot_s * 0.92, 0.9) * 1000))
             notes.append(
                 {
@@ -242,14 +240,14 @@ def build_plan(
                     }
                 )
             duration_ms = full_duration_ms
-        elif mode is PlaybackMode.DISPENSA and step.pitch is not None:
+        elif mode is PlaybackMode.DFESTA and step.pitch is not None:
             notes.extend(
                 {
                     "voice": voice,
                     "pitch": step.pitch,
                     "duration_ms": full_duration_ms,
                 }
-                for voice in dispensa_voices
+                for voice in dfesta_voices
             )
             duration_ms = full_duration_ms
         else:
@@ -269,7 +267,7 @@ def build_plan(
 
 
 class PlaybackScheduler:
-    """Run one playback plan at a time on a cancellable background thread."""
+    """취소 가능한 백그라운드 스레드에서 재생 plan 하나만 실행한다."""
 
     def __init__(
         self,
@@ -293,7 +291,7 @@ class PlaybackScheduler:
         self._closed = False
 
     def snapshot(self) -> dict:
-        """Return current playback identity without exposing thread objects."""
+        """스레드 객체를 노출하지 않고 현재 재생 식별자를 반환한다."""
 
         with self._lock:
             thread = self._thread
@@ -309,7 +307,7 @@ class PlaybackScheduler:
         melody: Melody,
         cells: Mapping[str, Mapping] | None = None,
     ) -> dict:
-        """Cancel the previous run and start a newly snapshotted plan."""
+        """이전 재생을 취소하고 새 snapshot으로 만든 plan을 시작한다."""
 
         plan = build_plan(mode, melody, cells)
         with self._lock:
@@ -337,14 +335,14 @@ class PlaybackScheduler:
         }
 
     def cancel(self) -> None:
-        """Request cancellation without blocking the caller's runtime thread."""
+        """호출한 런타임 스레드를 막지 않고 취소를 요청한다."""
 
         with self._lock:
             if self._cancel is not None:
                 self._cancel.set()
 
     def close(self, timeout: float = 2.0) -> None:
-        """Stop playback and reject later starts. Repeated calls are safe."""
+        """재생을 멈추고 이후 시작을 거부하며 중복 호출은 무시한다."""
 
         with self._lock:
             if self._closed:
@@ -369,7 +367,7 @@ class PlaybackScheduler:
         try:
             self._send_notes([dict(note) for note in notes])
         except Exception:
-            # MIDI failure must not kill timing or suppress later beat events.
+            # MIDI 오류가 Scheduler 시각 처리와 다음 beat 이벤트를 중단하지 않게 한다.
             LOGGER.exception("scheduler MIDI send failed")
 
     def _run(
@@ -398,8 +396,8 @@ class PlaybackScheduler:
                 cancelled = True
                 break
 
-            # Publish and MIDI belong to one Python-owned beat. The screen only
-            # renders this event; it does not calculate a future timeout.
+            # 이벤트 발행과 MIDI 출력은 같은 Python beat에 속한다.
+            # screen은 이 이벤트를 표시할 뿐 다음 시각을 계산하지 않는다.
             event = {
                 "type": "beat",
                 "run_id": run_id,

@@ -14,25 +14,25 @@ from websocket_service import WebSocketService, event_message, snapshot_message
 
 
 def test_wire_messages_validate_and_preserve_the_browser_event_shape():
-    """Browser event names and argument order remain stable."""
+    """브라우저 이벤트 이름과 인자 순서를 그대로 유지한다."""
 
     assert event_message("/game/state", ("RUNNING", 4)) == {
         "type": "event",
         "address": "/game/state",
         "args": ["RUNNING", 4],
     }
-    assert snapshot_message({"schema_version": 1}) == {
+    assert snapshot_message({"schema_version": 2}) == {
         "type": "snapshot",
-        "snapshot": {"schema_version": 1},
+        "snapshot": {"schema_version": 2},
     }
 
 
 def test_each_connection_receives_a_fresh_snapshot_before_live_events():
-    """A reconnect must recover state that changed while the client was away."""
+    """재연결하면 연결이 끊긴 동안 바뀐 상태를 복구한다."""
 
     state = {
-        "schema_version": 1,
-        "game": {"phase": "READY", "revision": 0},
+        "schema_version": 2,
+        "game": {"state": "READY", "revision": 0},
         "cells": {},
     }
     service = WebSocketService(lambda: state, host="127.0.0.1", port=0)
@@ -56,8 +56,8 @@ def test_each_connection_receives_a_fresh_snapshot_before_live_events():
                 "args": ["RUNNING", "", 1],
             }
 
-        # This mutation represents state changes missed while disconnected.
-        state["game"] = {"phase": "RESETTING", "revision": 2}
+        # 연결이 끊긴 동안 놓친 상태 변경을 재현한다.
+        state["game"] = {"state": "RESETTING", "revision": 2}
         state["cells"] = {"1:1": {"id": "ORB-1", "voice": "aespa_1"}}
 
         async with websockets.connect(uri) as reconnected:
