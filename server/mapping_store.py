@@ -4,26 +4,20 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from pathlib import Path
+
+from app_paths import data_dir
 
 VOICE_RE = re.compile(r"^([a-z0-9]+)_(\d+)$", re.I)
 
-
-def app_dir() -> Path:
-    """쓰기 가능한 앱 데이터 경로를 반환한다."""
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parent
-
-
-BACKEND_DIR = app_dir()
+BACKEND_DIR = data_dir()
 MAPPING_PATH = BACKEND_DIR / "orb_mapping.json"
 REGISTER_CONFIG_PATH = BACKEND_DIR / "config.json"
 
 
 def ensure_register_data() -> None:
-    """앱 옆에 누락된 orb_mapping.json과 config.json을 생성한다."""
+    """data에 누락된 orb_mapping.json과 config.json을 생성한다."""
+    BACKEND_DIR.mkdir(parents=True, exist_ok=True)
     if not MAPPING_PATH.exists():
         MAPPING_PATH.write_text("{}\n", encoding="utf-8")
 

@@ -1,9 +1,9 @@
 import json
 import os
-from pathlib import Path
 import serial
 import threading
 import time
+from copy import deepcopy
 
 from game_engine import (
     EndReason,
@@ -13,35 +13,34 @@ from game_engine import (
     PlacementResult,
 )
 from game_runtime import GameRuntime, RuntimeResult
-from scheduler import PlaybackMode, PlaybackScheduler, load_melody
+from melody_store import (
+    answer_sequence_from_melody,
+    game_rules_from_melody,
+    load_melody_document,
+)
+from scheduler import PlaybackMode, PlaybackScheduler, parse_melody
 from mapping_store import find_orb, load_mapping
 
-from app_paths import data_dir, ensure_data_files, melodies_dir, repo_root
+from app_paths import data_dir, ensure_data_files, melodies_dir
 
 ensure_data_files()
 SERVER_DIR = data_dir()
 os.chdir(SERVER_DIR)
 
-# stage_data.json에 규칙 값이 없을 때 사용하는 기본값이다.
-DEFAULT_TIME_OVER_S = 120
-DEFAULT_IDLE_S = 30
-DEFAULT_DFESTA_PRESSES_REQUIRED = 1
-
 # ── 설정 로드 ──────────────────────────────────────────
 with open(SERVER_DIR / "config.json")      as f: config      = json.load(f)
 with open(SERVER_DIR / "orb_mapping.json") as f: orb_mapping = json.load(f)
-with open(SERVER_DIR / "stage_data.json")  as f: stage_data  = json.load(f)
 
-current_stage   = config["current_stage"]
-stage           = next(s for s in stage_data["stages"] if s["stage"] == current_stage)
-answer_sequence = stage["sequence"]
-time_over_s      = stage.get("time_over_s", DEFAULT_TIME_OVER_S)
-idle_s = stage.get("idle_s", DEFAULT_IDLE_S)
-dfesta_presses_required = stage.get(
-    "dfesta_presses_required",
-    DEFAULT_DFESTA_PRESSES_REQUIRED,
-)
+current_stage   = int(config.get("current_stage", 1))
 melody_id       = config.get("melody", "biplane")
+melody_path     = melodies_dir() / f"{melody_id}.json"
+melody_document = load_melody_document(melody_path)
+playback_melody = parse_melody(melody_document)
+answer_sequence = answer_sequence_from_melody(melody_document)
+game_rules      = game_rules_from_melody(melody_document)
+time_over_s     = game_rules["time_over_s"]
+idle_s          = game_rules["idle_s"]
+dfesta_presses_required = game_rules["dfesta_presses_required"]
 _raw_input_mode = config.get("input_mode", "table")
 # 이전 설정값인 "mock"은 웹 /table 입력을 뜻하는 "table"로 바꾼다.
 input_mode      = "table" if _raw_input_mode == "mock" else _raw_input_mode
@@ -225,23 +224,10 @@ def _cancel_playback() -> None:
         scheduler.cancel()
 
 
-def _melody_path() -> Path:
-    """편집 가능한 사용자 파일을 우선하고 번들 파일을 fallback으로 찾는다."""
-    filename = f"{melody_id}.json"
-    user_path = melodies_dir() / filename
-    if user_path.is_file():
-        return user_path
-    bundled_path = repo_root() / "screen" / "melodies" / filename
-    if bundled_path.is_file():
-        return bundled_path
-    raise FileNotFoundError(f"melody not found: {filename}")
-
-
 def _start_playback(mode: PlaybackMode) -> dict:
-    """멜로디와 셀을 snapshot한 뒤 변경 불가능한 plan을 Scheduler에 넘긴다."""
-    melody = load_melody(_melody_path())
+    """게임 시작 때 고정한 멜로디와 현재 셀로 재생 plan을 만든다."""
     cells = get_game_state().get("cells") or {}
-    return get_playback_scheduler().start(mode, melody, cells)
+    return get_playback_scheduler().start(mode, playback_melody, cells)
 
 
 def _publish_web_event(address: str, args) -> None:
@@ -332,6 +318,11 @@ def get_game_state() -> dict:
     return get_game_runtime().snapshot()
 
 
+def get_active_melody() -> dict:
+    """현재 게임이 사용하는 멜로디 문서의 복사본을 반환한다."""
+    return deepcopy(melody_document)
+
+
 def get_status() -> dict:
     game = get_game_state()
     now = time.time() * 1000
@@ -386,8 +377,9 @@ def get_web_snapshot() -> dict:
     status["game"] = game
     status["cell_count"] = game["cell_count"]
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "game": game,
+        "melody": get_active_melody(),
         "cells": get_cells(game),
         "status": status,
         "events": get_events(),
@@ -444,28 +436,26 @@ def parse_cell(cell: int):
     return q, note
 
 # ── 게임 상태 전이 ──────────────────────────────────────
-def reload_stage_data() -> None:
-    """재시작 없이 Melody Editor가 저장한 설정을 다시 읽는다."""
-    global stage_data, stage, answer_sequence, time_over_s, idle_s
-    global dfesta_presses_required
-    global melody_id, config, current_stage, input_mode
+def reload_melody_data() -> None:
+    """config와 활성 멜로디 단일 원본을 다시 읽어 게임 입력을 고정한다."""
+    global answer_sequence, time_over_s, idle_s, dfesta_presses_required
+    global melody_id, melody_path, melody_document, playback_melody, game_rules
+    global config, current_stage, input_mode
     with open(SERVER_DIR / "config.json", encoding="utf-8") as f:
         config = json.load(f)
-    current_stage = config["current_stage"]
+    current_stage = int(config.get("current_stage", 1))
     melody_id = config.get("melody", "biplane")
     raw_mode = config.get("input_mode", "table")
     input_mode = "table" if raw_mode == "mock" else raw_mode
-    with open(SERVER_DIR / "stage_data.json", encoding="utf-8") as f:
-        stage_data = json.load(f)
-    stage = next(s for s in stage_data["stages"] if s["stage"] == current_stage)
-    answer_sequence = stage["sequence"]
-    time_over_s = stage.get("time_over_s", DEFAULT_TIME_OVER_S)
-    idle_s = stage.get("idle_s", DEFAULT_IDLE_S)
-    dfesta_presses_required = stage.get(
-        "dfesta_presses_required",
-        DEFAULT_DFESTA_PRESSES_REQUIRED,
-    )
-    print(f"[stage] 재로드 — melody={melody_id}, 정답 시퀀스: {answer_sequence}")
+    melody_path = melodies_dir() / f"{melody_id}.json"
+    melody_document = load_melody_document(melody_path)
+    playback_melody = parse_melody(melody_document)
+    answer_sequence = answer_sequence_from_melody(melody_document)
+    game_rules = game_rules_from_melody(melody_document)
+    time_over_s = game_rules["time_over_s"]
+    idle_s = game_rules["idle_s"]
+    dfesta_presses_required = game_rules["dfesta_presses_required"]
+    print(f"[melody] 재로드 — {melody_id}, 정답 시퀀스: {answer_sequence}")
 
 
 def _publish_transition(result: RuntimeResult) -> dict:
@@ -478,7 +468,7 @@ def _publish_transition(result: RuntimeResult) -> dict:
 def start_game() -> dict:
     runtime = get_game_runtime()
     _cancel_playback()
-    reload_stage_data()
+    reload_melody_data()
 
     current = runtime.snapshot()
     if current["state"] != GameState.READY.value:
@@ -489,6 +479,8 @@ def start_game() -> dict:
         raise InvalidTransition("START requires an empty table")
 
     runtime.replace_engine(_new_game_engine())
+    # 브라우저가 판정·재생과 같은 문서를 먼저 적용한 뒤 RUNNING을 받게 한다.
+    _publish_web_event("/game/melody", [get_active_melody()])
     started = runtime.start_game()
     _publish_transition(started)
 
@@ -902,6 +894,7 @@ def run_main() -> None:
         orb_mapping,
         get_status=get_status,
         get_game_state=get_game_state,
+        get_melody=get_active_melody,
         get_cells=get_cells,
         get_events=get_events,
         on_game_start=start_game,

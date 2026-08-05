@@ -10,7 +10,7 @@ from pathlib import Path
 from socketserver import ThreadingMixIn
 from typing import Callable
 
-from app_paths import melodies_dir, repo_root, sounds_dir
+from app_paths import repo_root, sounds_dir
 
 ROOT = repo_root()
 SERVER_DIR = Path(__file__).resolve().parent
@@ -55,6 +55,7 @@ def start_http_server(
     *,
     get_status: Callable[[], dict] | None = None,
     get_game_state: Callable[[], dict] | None = None,
+    get_melody: Callable[[], dict] | None = None,
     get_cells: Callable[[], dict] | None = None,
     get_events: Callable[[], list] | None = None,
     on_game_start=None,
@@ -108,15 +109,6 @@ def start_http_server(
             self._send(200, body, MIME.get(path.suffix, "application/octet-stream"))
 
         def _serve_screen_asset(self, subpath: str) -> None:
-            if subpath.startswith("melodies/"):
-                name = subpath[len("melodies/") :]
-                user = melodies_dir() / name
-                if user.is_file():
-                    self._serve_file(user)
-                    return
-                bundled = repo_root() / "screen" / "melodies" / name
-                self._serve_file(bundled)
-                return
             self._serve_file(GAME_UI / subpath)
 
         def do_OPTIONS(self):
@@ -167,6 +159,10 @@ def start_http_server(
 
             if path == "/api/game/state" and get_game_state:
                 self._json(200, get_game_state())
+                return
+
+            if path == "/api/melody" and get_melody:
+                self._json(200, get_melody())
                 return
 
             if path == "/api/cells" and get_cells:

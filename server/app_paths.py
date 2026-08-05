@@ -9,7 +9,6 @@ from pathlib import Path
 _SEED_FILES = (
     "config.json",
     "orb_mapping.json",
-    "stage_data.json",
     "voice_catalog.json",
     "portmapping.json",
 )
@@ -27,10 +26,15 @@ def repo_root() -> Path:
 
 
 def data_dir() -> Path:
-    """쓰기 가능한 JSON·사용자 데이터 경로를 반환한다."""
+    """모든 JSON과 사용자 데이터를 보관하는 data 경로를 반환한다."""
     if is_frozen():
-        return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parent
+        return Path(sys.executable).resolve().parent / "data"
+    return repo_root() / "data"
+
+
+def bundled_data_dir() -> Path:
+    """실행 파일에 포함된 기본 data 경로를 반환한다."""
+    return repo_root() / "data"
 
 
 def server_bundle_dir() -> Path:
@@ -48,21 +52,19 @@ def sounds_dir() -> Path:
 
 
 def melodies_dir() -> Path:
-    """쓰기 가능한 멜로디 경로를 반환한다."""
-    if is_frozen():
-        return data_dir() / "melodies"
-    return repo_root() / "screen" / "melodies"
+    """판정·화면·재생이 함께 사용하는 멜로디 단일 원본 경로다."""
+    return data_dir() / "melodies"
 
 
 def bundled_melodies_dir() -> Path:
-    return repo_root() / "screen" / "melodies"
+    return bundled_data_dir() / "melodies"
 
 
 def ensure_data_files() -> None:
     """첫 실행 때 기본 JSON을 복사하거나 누락 파일을 생성한다."""
     dest = data_dir()
     dest.mkdir(parents=True, exist_ok=True)
-    bundle = server_bundle_dir()
+    bundle = bundled_data_dir()
 
     for name in _SEED_FILES:
         target = dest / name
@@ -74,7 +76,7 @@ def ensure_data_files() -> None:
         elif name == "orb_mapping.json":
             target.write_text("{}\n", encoding="utf-8")
         elif name == "config.json":
-            table_cfg = bundle / "config.table.json"
+            table_cfg = bundled_data_dir() / "config.table.json"
             if table_cfg.is_file():
                 shutil.copy2(table_cfg, target)
             else:

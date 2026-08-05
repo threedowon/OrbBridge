@@ -28,17 +28,13 @@ BIPLANE_TAIL_STEPS: tuple[dict[str, Any], ...] = (
 )
 
 
-def melodies_config_path() -> Path:
-    return melodies_dir() / "config.json"
-
-
 def active_melody_id() -> str:
-    path = melodies_config_path()
+    path = data_dir() / "config.json"
     if path.is_file():
         try:
             with path.open(encoding="utf-8") as f:
                 doc = json.load(f)
-            active = str(doc.get("active", "")).strip()
+            active = str(doc.get("melody", "")).strip()
             if active:
                 return active
         except (OSError, json.JSONDecodeError):
@@ -84,12 +80,6 @@ def set_active_melody(file_id: str) -> None:
     file_id = file_id.strip()
     if not file_id:
         raise ValueError("songId가 비어 있습니다.")
-    melodies_config_path().parent.mkdir(parents=True, exist_ok=True)
-    melodies_config_path().write_text(
-        json.dumps({"active": file_id}, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-
     server_config = data_dir() / "config.json"
     if server_config.is_file():
         try:
@@ -115,7 +105,7 @@ def create_melody(file_id: str) -> tuple[str, dict[str, Any]]:
         raise ValueError(f"{safe}.json 이 이미 있습니다.")
     data = new_melody_template(safe)
     data["steps"] = normalize_beat_steps(data.get("steps") or [], file_id=safe)
-    save_melody(data, file_id=safe, sync_stage=False)
+    save_melody(data, file_id=safe)
     set_active_melody(safe)
     return safe, data
 
@@ -125,14 +115,13 @@ def save_melody_editor(
     *,
     file_id: str,
     old_file_id: str | None = None,
-    sync_stage: bool = True,
     set_active: bool = True,
 ) -> Path:
     target = (file_id or old_file_id or active_melody_id()).strip()
     errors = validate_melody(data)
     if errors:
         raise ValueError("\n".join(errors))
-    path = save_melody(data, file_id=target, sync_stage=sync_stage, state=None)
+    path = save_melody(data, file_id=target, state=None)
     if old_file_id and old_file_id.strip() != target:
         old_path = melody_path(old_file_id.strip())
         if old_path != path and old_path.is_file():
@@ -162,14 +151,12 @@ def save_active_melody(
     data: dict[str, Any],
     *,
     file_id: str | None = None,
-    sync_stage: bool = True,
 ) -> Path:
     target = file_id or data.get("_file_id") or active_melody_id()
     return save_melody_editor(
         data,
         file_id=target,
         old_file_id=data.get("_file_id"),
-        sync_stage=sync_stage,
         set_active=True,
     )
 

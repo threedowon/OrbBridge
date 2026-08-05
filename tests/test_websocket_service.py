@@ -21,9 +21,9 @@ def test_wire_messages_validate_and_preserve_the_browser_event_shape():
         "address": "/game/state",
         "args": ["RUNNING", 4],
     }
-    assert snapshot_message({"schema_version": 2}) == {
+    assert snapshot_message({"schema_version": 3}) == {
         "type": "snapshot",
-        "snapshot": {"schema_version": 2},
+        "snapshot": {"schema_version": 3},
     }
 
 
@@ -31,7 +31,7 @@ def test_each_connection_receives_a_fresh_snapshot_before_live_events():
     """재연결하면 연결이 끊긴 동안 바뀐 상태를 복구한다."""
 
     state = {
-        "schema_version": 2,
+        "schema_version": 3,
         "game": {"state": "READY", "revision": 0},
         "cells": {},
     }

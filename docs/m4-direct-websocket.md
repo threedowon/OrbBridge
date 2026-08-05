@@ -31,8 +31,9 @@ Serial / HTTP
 {
   "type": "snapshot",
   "snapshot": {
-    "schema_version": 2,
+    "schema_version": 3,
     "game": {},
+    "melody": {},
     "cells": {},
     "status": {},
     "events": []
@@ -40,8 +41,8 @@ Serial / HTTP
 }
 ```
 
-snapshot은 현재 상태, 배치된 오브, admin 상태, 최근 이벤트 로그, 활성 재생
-식별자를 복구하는 기준 데이터다.
+snapshot은 현재 상태, 활성 멜로디, 배치된 오브, admin 상태, 최근 이벤트 로그,
+활성 재생 식별자를 복구하는 기준 데이터다.
 
 ## 브라우저 복구
 
@@ -54,5 +55,5 @@ snapshot은 현재 상태, 배치된 오브, admin 상태, 최근 이벤트 로�
 ## 설정
 
 세 브라우저의 WebSocket 포트는 모두 `8765`다. 수신 host는 HTTP host를
-기본값으로 사용하며 `config.json`의 `websocket.host`로 바인딩 주소만 바꿀 수
+기본값으로 사용하며 `data/config.json`의 `websocket.host`로 바인딩 주소만 바꿀 수
 있다.

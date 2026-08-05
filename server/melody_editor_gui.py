@@ -420,6 +420,7 @@ class MelodyEditorApp:
             "title": str(self._data.get("title") or song_id),
             "artist": str(self._data.get("artist") or ""),
             "range": list(self._data.get("range") or ["C4", "C5"]),
+            "game_rules": dict(self._data.get("game_rules") or {}),
             "_file_id": self._file_id,
         }
         try:
@@ -476,7 +477,6 @@ class MelodyEditorApp:
                 data,
                 file_id=new_id,
                 old_file_id=old_id,
-                sync_stage=True,
                 set_active=True,
             )
         except (OSError, ValueError) as exc:

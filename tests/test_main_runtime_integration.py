@@ -325,11 +325,12 @@ def test_heartbeat_uses_occupancy_mask_instead_of_game_state_field():
             sys.modules.pop(name, None)
 
 
-def test_admin_controls_display_the_same_serial_action_literals():
+def test_admin_keeps_start_and_reset_but_hides_manual_end():
     html = (ROOT / "admin" / "index.html").read_text(encoding="utf-8")
 
-    for action in ("start", "end", "reset"):
+    for action in ("start", "reset"):
         assert f'data-game-action="{action}">{action}</button>' in html
+    assert 'data-game-action="end"' not in html
 
 
 def test_state_log_uses_authoritative_state_names_only():
@@ -357,7 +358,7 @@ def test_state_log_uses_authoritative_state_names_only():
 
 def test_idle_transition_log_matches_runtime_until_reset_is_complete():
     main = _load_main_module()
-    main.reload_stage_data = lambda: None
+    main.reload_melody_data = lambda: None
     main.answer_sequence = {"1": "C"}
     main.time_over_s = None
     main.idle_s = 0.02
@@ -404,7 +405,7 @@ def test_idle_transition_log_matches_runtime_until_reset_is_complete():
             sys.modules.pop(name, None)
 
 
-def test_stage_rules_expose_120_second_time_over_and_30_second_idle_timers():
+def test_melody_rules_expose_120_second_time_over_and_30_second_idle_timers():
     main = _load_main_module()
 
     try:
@@ -474,14 +475,41 @@ def test_main_fans_out_events_and_builds_complete_web_snapshot():
         assert websocket.messages == [("/game/example", [7, "value"])]
 
         snapshot = main.get_web_snapshot()
-        assert snapshot["schema_version"] == 2
+        assert snapshot["schema_version"] == 3
         assert snapshot["game"]["state"] == "READY"
+        assert snapshot["melody"]["songId"] == "dynamite"
+        assert snapshot["melody"]["steps"]
         assert snapshot["status"]["game"] == snapshot["game"]
         assert snapshot["status"]["cell_count"] == snapshot["game"]["cell_count"]
         assert snapshot["cells"] == {}
         assert snapshot["events"] == []
     finally:
         main._websocket_service = None
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
+        for name in ("main", "serial"):
+            sys.modules.pop(name, None)
+
+
+def test_start_publishes_the_active_melody_before_running_state():
+    main = _load_main_module()
+
+    try:
+        main.start_game()
+        messages = main._websocket_service.messages
+        melody_index = next(
+            i for i, (address, _args) in enumerate(messages)
+            if address == "/game/melody"
+        )
+        running_index = next(
+            i for i, (address, args) in enumerate(messages)
+            if address == "/game/state" and args[0] == "RUNNING"
+        )
+
+        assert melody_index < running_index
+        assert messages[melody_index][1][0]["songId"] == "dynamite"
+    finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]

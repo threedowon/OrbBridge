@@ -7,7 +7,7 @@
 
 ```
 OrbBridge/
-├── server/                Python 서버 + 설정·데이터
+├── server/                Python 서버
 │   ├── main.py            Serial/HTTP 어댑터, WebSocket·MIDI 출력
 │   ├── game_engine.py     상태·판정·완료·timeout 순수 로직
 │   ├── game_runtime.py    입력 Queue·단일 writer·tick·snapshot
@@ -19,19 +19,22 @@ OrbBridge/
 │   ├── voice_register_tool.py  보이스 샘플 등록 GUI
 │   ├── melody_register_tool.py 멜로디 JSON 편집 GUI (전체 관리)
 │   ├── melody_editor_tool.py   Melody Editor — BPM·note·duration 간편 편집
-│   ├── config.json        실행 설정
+│   └── melody_store.py    멜로디 정답·게임 규칙 변환
+│
+├── data/                  모든 JSON의 단일 저장 위치
+│   ├── config.json        실행 설정·활성 멜로디
 │   ├── orb_mapping.json   오브 ID → voice 매핑
-│   ├── stage_data.json    스테이지 정답 시퀀스
-│   └── voice_catalog.json 보이스 timbre·샘플 카탈로그
+│   ├── portmapping.json   voice → MIDI 포트·채널
+│   ├── voice_catalog.json 보이스 timbre·샘플 카탈로그
+│   └── melodies/          판정·화면·재생 공용 멜로디 원본
 │
 ├── table/
 │   └── index.html         테이블 UI  →  /table
 │
 ├── screen/
 │   ├── index.html         멜로디 UI  →  /screen
-│   ├── js/                게임 엔진, 악보, 오디오
-│   ├── css/
-│   └── melodies/          멜로디 JSON
+│   ├── js/                렌더링, WebSocket 수신, 오디오
+│   └── css/
 │
 ├── admin/
 │   └── index.html         관리 UI  →  /admin
@@ -127,7 +130,7 @@ python3 main.py
 | http://127.0.0.1:8080/table | 오브 테이블 |
 | http://127.0.0.1:8080/admin | 관리·디버그 |
 
-웹 mock 테스트 시 `server/config.json`에서 `"input_mode": "table"` 로 설정하세요.
+웹 mock 테스트 시 `data/config.json`에서 `"input_mode": "table"`로 설정하세요.
 
 | 실행 방식 | 명령 | 비고 |
 |----------|------|------|
@@ -185,14 +188,14 @@ kill <PID>
 
 PC와 같은 Wi-Fi에 연결한 뒤:
 
-1. `server/config.json` → `mock.host`를 `"0.0.0.0"`으로 변경
+1. `data/config.json` → `mock.host`를 `"0.0.0.0"`으로 변경
 2. 필요하면 `config.json`에 `"websocket": {"host": "0.0.0.0"}` 추가
 3. 방화벽에서 포트 **8080**, **8765** 허용
 4. 아이패드 Safari: `http://<PC-IP>:8080/table`
 
 ## DS2431 오브 등록
 
-새 오브 칩 UID를 `orb_mapping.json`에 등록할 때 사용합니다.
+새 오브 칩 UID를 `data/orb_mapping.json`에 등록할 때 사용합니다.
 
 ```bash
 cd server
@@ -219,8 +222,8 @@ voice 이름 규칙: `그룹_번호` (예: `aspa_1`, `ive_2`, `cortis_1`)
 
 ## Melody Register
 
-`screen/melodies/*.json` 의 BPM, step별 `note`·`duration`·`lyric` 을 편집합니다.  
-저장 시 **stage_data.json** 정답 시퀀스를 자동 동기화할 수 있습니다 (오브 정답 판정용).
+`data/melodies/*.json`의 BPM, 게임 규칙, step별 `note`·`duration`·`lyric`을 편집합니다.  
+이 파일 하나를 Python 판정·Scheduler·screen·table이 함께 사용합니다.
 
 ```bash
 # Windows
@@ -238,11 +241,11 @@ python melody_register_tool.py --list
 | BPM | 40–240, 1박 길이(ms)·총 재생 시간 표시 |
 | Steps | note (C4–C5 또는 `?`), duration(박), lyric |
 | 미리듣기 | step 하이라이트 + 비프음 (Windows) |
-| 저장 | JSON 저장 + 선택 시 `stage_data.json` 동기화 |
+| 저장 | 멜로디 단일 원본 저장 |
 
 ## Melody Editor
 
-지금 쓰는 멜로디(`screen/melodies/config.json` → `active`, 기본 `biplane`)의 **BPM · note · duration** 만 빠르게 조절하는 간단 창입니다.  
+지금 쓰는 멜로디(`data/config.json` → `melody`)의 **BPM · note · duration**만 빠르게 조절하는 간단 창입니다.  
 가사·제목·다른 멜로디 관리는 **Melody Register**를 사용하세요.
 
 ```bash
@@ -251,12 +254,12 @@ melody_editor.bat
 cd server && python melody_editor_tool.py
 ```
 
-저장 시 `stage_data.json` 은 자동 동기화됩니다.
+저장한 멜로디는 다음 게임 시작 때 판정·화면·재생에 함께 반영됩니다.
 
 **OrbBridge.exe 배포판:** `release/build_release.bat` 빌드 시 `MelodyEditor.exe`가 함께 포함됩니다.  
-두 exe는 같은 폴더의 `melodies/`·`stage_data.json`을 사용합니다 — Melody Editor로 저장 → Screen 새로고침 → start 시 정답 반영.
+두 exe는 같은 `data/melodies/`를 사용합니다 — Melody Editor로 저장 → start 시 정답·화면·재생 반영.
 
-## 설정 (`server/config.json`)
+## 설정 (`data/config.json`)
 
 ```json
 {
@@ -277,7 +280,7 @@ cd server && python melody_editor_tool.py
 | 항목 | 설명 |
 |------|------|
 | `input_mode` | `table` — 웹 `/table` UI 입력 / `serial` — ESP32 USB 시리얼 |
-| `melody` | `screen/melodies/` 안 멜로디 ID (`biplane` 등) |
+| `melody` | `data/melodies/` 안 멜로디 ID (`biplane` 등) |
 | `mock.host` / `mock.port` | table·screen·admin HTTP 서버 |
 | `serial.port` | ESP / DS2431 리더 COM 포트 (macOS: `/dev/tty.usbserial-...`) |
 
@@ -285,10 +288,11 @@ cd server && python melody_editor_tool.py
 
 | 파일 | 설명 |
 |------|------|
+| `config.json` | 실행 설정과 활성 멜로디 ID |
 | `orb_mapping.json` | 오브 UID → `{ "voice": "aspa_1" }` |
-| `stage_data.json` | 스테이지별 정답 음표 시퀀스 |
+| `portmapping.json` | voice 그룹 → MIDI 포트·채널 |
 | `voice_catalog.json` | 보이스 timbre·샘플 경로 |
-| `sounds/` | 보이스 샘플 mp3/wav (없어도 Web Audio 톤으로 동작) |
+| `melodies/*.json` | BPM·게임 규칙·정답 step·재생 duration의 단일 원본 |
 
 ## 포트 정리
 
@@ -302,6 +306,7 @@ cd server && python melody_editor_tool.py
 | 주소 | 설명 |
 |------|------|
 | `/game/state` | 실제 상태·종료 이유·revision·남은 시간·이전 상태 |
+| `/game/melody` | 게임 시작에 적용된 멜로디 단일 원본 |
 | `/game/playback/start` | Listen·Play·DFesta 재생 시작 |
 | `/game/playback/beat` | 현재 beat와 브라우저 오디오 fallback 정보 |
 | `/game/playback/end` | 재생 종료 |
@@ -321,4 +326,5 @@ cd server && python melody_editor_tool.py
 | POST | `/api/game/play` | 재생 |
 | POST | `/api/game/dfesta` | DFesta 버튼 입력 |
 | GET | `/api/game/state` | Python 게임 snapshot |
+| GET | `/api/melody` | 현재 게임의 멜로디 단일 원본 |
 | GET | `/api/orbs` | 등록된 오브 목록 |

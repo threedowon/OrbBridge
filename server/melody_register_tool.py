@@ -1,4 +1,4 @@
-"""screen/melodies의 BPM·음표·길이 등록 도구를 실행한다."""
+"""data/melodies의 BPM·음표·길이 등록 도구를 실행한다."""
 
 import argparse
 
@@ -41,8 +41,7 @@ def main() -> None:
         print_melody_list()
         return
 
-    print("[melody-register] screen/melodies/*.json 편집")
-    print("[melody-register] 저장 시 stage_data.json 동기화 옵션 사용 가능")
+    print("[melody-register] data/melodies/*.json 단일 원본 편집")
 
     from melody_register_gui import run_gui
 

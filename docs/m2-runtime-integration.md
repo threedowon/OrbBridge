@@ -47,4 +47,4 @@ HTTP ───┴─→ GameRuntime Queue → GameEngine
 
 - Listen·Play·DFesta Python Scheduler 이관: M3
 - Python 직접 WebSocket 전송과 재접속 snapshot: M4
-- melody 데이터 단일 원본 통합: M5
+- melody 데이터 단일 원본 통합: M5 완료

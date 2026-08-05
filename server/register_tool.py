@@ -51,7 +51,7 @@ def main() -> None:
     port = serial_cfg.get("port", "COM13")
     baudrate = int(serial_cfg.get("baudrate", 115200))
 
-    print(f"[register] mapping file: {MAPPING_PATH}")
+    print(f"[register] mapping data: {MAPPING_PATH}")
     print(f"[register] serial port: {port} @ {baudrate}")
     print('[register] ESP JSON: {"type":"ds2431","id":"2D:E8:B1:9F:24:00:00:AC"}')
 

@@ -62,9 +62,9 @@ export function parseMelodyJson(raw, fileId = 'custom') {
   };
 }
 
-export async function loadMelodyFile(name) {
-  const res = await fetch(`/screen/melodies/${name}.json`);
-  if (!res.ok) throw new Error(`melodies/${name}.json 을 불러올 수 없습니다.`);
+export async function loadActiveMelody() {
+  const res = await fetch('/api/melody', { cache: 'no-store' });
+  if (!res.ok) throw new Error('활성 멜로디를 불러올 수 없습니다.');
   const raw = await res.json();
-  return parseMelodyJson(raw, name);
+  return parseMelodyJson(raw, raw.songId ?? 'custom');
 }

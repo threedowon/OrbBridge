@@ -10,7 +10,7 @@ import {
 import { initStaff } from './staff.js';
 import { createEngine } from './engine.js';
 import { initConfetti, burst } from './confetti.js';
-import { loadMelodyFile } from './melody-loader.js';
+import { loadActiveMelody, parseMelodyJson } from './melody-loader.js';
 import { setVoiceIndex, tableToStaff, voiceToIndex } from './mapping.js';
 import { setVoiceLabels } from './voice-labels.js';
 import { showOrbPlaced } from './orb-toast.js';
@@ -78,21 +78,16 @@ function claimAudio(force = false) {
   }
 }
 
-async function prepareMelody(melodyId) {
-  currentMelody = await loadMelodyFile(melodyId);
-}
-
-async function fetchActiveMelodyId() {
-  try {
-    const response = await fetch('/screen/melodies/config.json');
-    if (response.ok) {
-      const config = await response.json();
-      return config.active ?? 'biplane';
-    }
-  } catch {
-    // 서버 시작 중에도 screen을 열 수 있도록 번들 기본값을 사용한다.
+function prepareMelody(document) {
+  currentMelody = parseMelodyJson(
+    document,
+    document?.songId ?? 'custom',
+  );
+  if (staffApi) {
+    engine.load(currentMelody, 0, { autoStart: false });
+    staffApi.resize();
+    engine.redraw();
   }
-  return 'biplane';
 }
 
 async function apiPost(path, body) {
@@ -248,6 +243,7 @@ async function syncGameState() {
 async function applyWebSocketSnapshot(snapshot) {
   if (!snapshot || typeof snapshot !== 'object') return;
 
+  if (snapshot.melody) prepareMelody(snapshot.melody);
   const game = snapshot.game;
   if (game) applyGameSnapshot(game, false);
   if (!currentMelody || !staffApi) return;
@@ -349,6 +345,9 @@ async function handleWsMessage(message) {
     case '/game/state':
       applyGameState(args[0], args[1] || null, args[2] ?? null);
       break;
+    case '/game/melody':
+      if (args[0]) prepareMelody(args[0]);
+      break;
     case '/game/playback/start':
       beginPlayback(args[0], args[1]);
       break;
@@ -443,8 +442,7 @@ connectWs();
   await loadVoiceCatalog();
   await loadAudioOutputMode();
   try {
-    const melodyId = await fetchActiveMelodyId();
-    await prepareMelody(melodyId);
+    currentMelody = await loadActiveMelody();
   } catch (error) {
     console.error(error);
     document.getElementById('btn-enter').disabled = true;

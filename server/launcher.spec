@@ -1,5 +1,5 @@
-# PyInstaller spec — OrbBridge launcher (Python runtime + web interfaces)
-# Build: server/build_launcher.bat
+# PyInstaller 설정 — Python 런타임과 세 웹 인터페이스를 묶는다.
+# 빌드: server/build_launcher.bat
 
 import sys
 from pathlib import Path
@@ -17,17 +17,9 @@ def _collect_datas():
         (str(root_dir / "screen"), "screen"),
         (str(root_dir / "admin"), "admin"),
     ]
-    for name in (
-        "config.json",
-        "config.table.json",
-        "orb_mapping.json",
-        "portmapping.json",
-        "stage_data.json",
-        "voice_catalog.json",
-    ):
-        path = server_dir / name
-        if path.is_file():
-            datas.append((str(path), "server"))
+    data = root_dir / "data"
+    if data.is_dir():
+        datas.append((str(data), "data"))
     sounds = server_dir / "sounds"
     if sounds.is_dir():
         datas.append((str(sounds), "server/sounds"))

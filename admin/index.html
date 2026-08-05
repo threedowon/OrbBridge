@@ -430,7 +430,6 @@
         <div class="section-title">게임 제어</div>
         <div class="toolbar">
           <button class="primary" data-game-action="start">start</button>
-          <button data-game-action="end">end</button>
           <button data-game-action="reset">reset</button>
           <button id="btn-clear">그리드 초기화</button>
         </div>
@@ -795,7 +794,7 @@
       if (!res.ok) addLog('error', await res.text(), 'log-warn');
     }
 
-    // UI, HTTP 경로, Serial JSON이 같은 start·end·reset 문자열을 사용한다.
+    // Admin은 시작과 강제 초기화만 제공하고 정상 종료 판단은 게임에 맡긴다.
     document.querySelectorAll('[data-game-action]').forEach(button => {
       button.addEventListener('click', () => {
         const action = button.dataset.gameAction;

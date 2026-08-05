@@ -40,12 +40,12 @@ import serial
 import serial.tools.list_ports
 
 HERE = Path(__file__).resolve().parent
-CONFIG_PATH = HERE.parent / "server" / "config.json"
+CONFIG_PATH = HERE.parent / "data" / "config.json"
 INDEX_HTML = HERE / "index.html"
 
 HTTP_HOST = "127.0.0.1"
 
-# ── 기본값 (server/config.json 의 "debug" 섹션으로 덮어쓸 수 있음) ──
+# ── 기본값 (data/config.json 의 "debug" 섹션으로 덮어쓸 수 있음) ──
 # 우선순위: CLI 인자 > config.json 의 "debug" > 아래 기본값
 HTTP_PORT = 8090
 # 슬레이브를 "최근 활동"으로 볼 시간 창(초). 이 안에 신호가 왔으면 최근 활동.

@@ -441,6 +441,7 @@
     let wsSnapshotReceived = false;
     // snapshot 복구가 비동기여도 이후 실시간 이벤트의 전송 순서를 유지한다.
     let wsMessageChain = Promise.resolve();
+    let activeMelodyDocument = null;
     let dragPayload = null;
     let dropTarget = null;
 
@@ -621,13 +622,14 @@
       refreshDFestaState();
     }
 
-    async function loadAnswerMap() {
+    async function loadAnswerMap(document = null) {
       answerNotes = Array(BEAT_COLS).fill('');
       restColumns = Array(BEAT_COLS).fill(false);
       try {
-        const status = await fetch(`${API}/api/status`).then(r => r.json());
-        const melodyId = status.melody || 'biplane';
-        const melody = await fetch(`${API}/screen/melodies/${melodyId}.json`).then(r => r.json());
+        const melody = document
+          || activeMelodyDocument
+          || await fetch(`${API}/api/melody`, { cache: 'no-store' }).then(r => r.json());
+        activeMelodyDocument = melody;
         const steps = melody.steps || [];
         steps.forEach((step, col) => {
           if (col >= BEAT_COLS) return;
@@ -786,6 +788,7 @@
 
     async function applyWebSocketSnapshot(snapshot) {
       if (!snapshot?.game) return;
+      if (snapshot.melody) activeMelodyDocument = snapshot.melody;
       const game = snapshot.game;
       const nextState = String(game.state || 'READY').toUpperCase();
       await setGameState(nextState, snapshot.cells || {});
@@ -1209,6 +1212,9 @@
 
       const args = Array.isArray(msg?.args) ? msg.args : [];
       // 게임 상태는 /game/state 이벤트 하나만 기준으로 사용한다.
+      if (msg.address === '/game/melody' && args[0]) {
+        await loadAnswerMap(args[0]);
+      }
       if (msg.address === '/game/state') await setGameState(args[0]);
       if (msg.address === '/orb/added') {
         const [slave, cell, voice, , , orbId] = args;

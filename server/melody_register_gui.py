@@ -1,4 +1,4 @@
-"""screen/melodies JSON을 편집하는 Melody Register 화면이다."""
+"""data/melodies JSON 단일 원본을 편집하는 Melody Register 화면이다."""
 
 from __future__ import annotations
 
@@ -21,7 +21,6 @@ from melody_register_core import (
     melodies_dir,
     new_melody_template,
     save_melody,
-    stage_data_path,
     validate_melody,
 )
 
@@ -86,7 +85,6 @@ class MelodyRegisterApp:
         self.bpm_var = tk.StringVar(master=self.root, value="120")
         self.range_low_var = tk.StringVar(master=self.root, value="C4")
         self.range_high_var = tk.StringVar(master=self.root, value="C5")
-        self.sync_stage_var = tk.BooleanVar(master=self.root, value=True)
         self.summary_var = tk.StringVar(master=self.root, value="")
         self.step_note_var = tk.StringVar(master=self.root, value="C4")
         self.step_dur_var = tk.StringVar(master=self.root, value="1")
@@ -271,16 +269,6 @@ class MelodyRegisterApp:
             state="readonly",
         ).grid(row=0, column=5, sticky="w", padx=(0, 16))
 
-        tk.Checkbutton(
-            row2,
-            text="저장 시 stage_data.json 동기화",
-            variable=self.sync_stage_var,
-            font=self._fonts["body"],
-            bg=C["canvas"],
-            fg=C["body"],
-            activebackground=C["canvas"],
-        ).grid(row=0, column=6, sticky="w")
-
         actions = tk.Frame(meta, bg=C["canvas"])
         actions.pack(fill="x", pady=(10, 4))
         self._btn(actions, "미리듣기", self._preview).pack(side="left", padx=(0, 8))
@@ -366,7 +354,7 @@ class MelodyRegisterApp:
 
         hint = tk.Label(
             outer,
-            text=f"stage_data: {stage_data_path()}",
+            text=f"melodies: {melodies_dir()}",
             font=self._fonts["mono"],
             bg=C["canvas_soft"],
             fg=C["mute"],
@@ -622,7 +610,6 @@ class MelodyRegisterApp:
             save_melody(
                 data,
                 file_id=new_id,
-                sync_stage=self.sync_stage_var.get(),
                 state=self.state,
             )
             if new_id != old_id:
@@ -658,7 +645,7 @@ class MelodyRegisterApp:
                 messagebox.showerror("Melody Register", f"{name}.json 이 이미 있습니다.")
                 return
             data = new_melody_template(name)
-            save_melody(data, file_id=name, sync_stage=False, state=self.state)
+            save_melody(data, file_id=name, state=self.state)
         except (OSError, ValueError) as exc:
             messagebox.showerror("Melody Register", str(exc))
             return

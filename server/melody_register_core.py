@@ -1,4 +1,4 @@
-"""screen/melodies/*.json을 읽고 저장하며 stage_data를 선택적으로 동기화한다."""
+"""data/melodies/*.json 단일 원본을 읽고 저장한다."""
 
 from __future__ import annotations
 
@@ -8,7 +8,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from app_paths import data_dir, melodies_dir
+from app_paths import melodies_dir
+from melody_store import game_rules_from_melody
 
 NOTE_CHOICES = ("C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5")
 NOTE_REST = "REST"
@@ -19,13 +20,6 @@ DEFAULT_RANGE = ["C4", "C5"]
 BEAT_COLS = 12
 LOG_LIMIT = 80
 SKIP_FILES = {"config.json"}
-DEFAULT_STAGE_TIME_OVER_S = 120
-DEFAULT_STAGE_IDLE_S = 30
-DEFAULT_STAGE_DFESTA_PRESSES_REQUIRED = 1
-
-
-def stage_data_path() -> Path:
-    return data_dir() / "stage_data.json"
 
 
 def melody_path(file_id: str) -> Path:
@@ -83,15 +77,17 @@ def normalize_melody(raw: dict[str, Any], file_id: str = "") -> dict[str, Any]:
     if not isinstance(range_vals, list) or len(range_vals) != 2:
         range_vals = list(DEFAULT_RANGE)
 
-    return {
+    normalized = {
         "songId": str(raw.get("songId") or file_id or "custom"),
         "title": str(raw.get("title") or "Untitled"),
         "artist": str(raw.get("artist") or ""),
         "bpm": int(raw.get("bpm") or 120),
         "range": [str(range_vals[0]), str(range_vals[1])],
+        "game_rules": game_rules_from_melody(raw),
         "steps": steps,
         "_file_id": file_id or str(raw.get("songId") or "custom"),
     }
+    return normalized
 
 
 def validate_melody(data: dict[str, Any]) -> list[str]:
@@ -104,6 +100,11 @@ def validate_melody(data: dict[str, Any]) -> list[str]:
             errors.append("BPM은 20–300 사이여야 합니다.")
     except (TypeError, ValueError):
         errors.append("BPM이 올바르지 않습니다.")
+
+    try:
+        game_rules_from_melody(data)
+    except ValueError as exc:
+        errors.append(str(exc))
 
     steps = data.get("steps") or []
     if not steps:
@@ -141,22 +142,6 @@ def is_allowed_step_note(note: str) -> bool:
     return note in NOTE_CHOICES or note == NOTE_REST
 
 
-def note_to_stage_key(note: str) -> str:
-    note = normalize_step_note(note)
-    if note == NOTE_REST:
-        return "R"
-    return note[0].upper()
-
-
-def build_stage_sequence(steps: list[dict[str, Any]]) -> dict[str, str]:
-    seq: dict[str, str] = {}
-    for i, step in enumerate(steps, start=1):
-        key = note_to_stage_key(step.get("note", ""))
-        if key:
-            seq[str(i)] = key
-    return seq
-
-
 def melody_duration_sec(data: dict[str, Any]) -> float:
     bpm = max(1, int(data.get("bpm") or 120))
     beat_ms = 60_000 / bpm
@@ -183,6 +168,7 @@ def to_save_payload(data: dict[str, Any]) -> dict[str, Any]:
         "artist": data.get("artist", "").strip(),
         "bpm": int(data.get("bpm") or 120),
         "range": list(data.get("range") or DEFAULT_RANGE),
+        "game_rules": game_rules_from_melody(data),
         "steps": steps_out,
     }
 
@@ -191,8 +177,6 @@ def save_melody(
     data: dict[str, Any],
     *,
     file_id: str | None = None,
-    sync_stage: bool = False,
-    stage_number: int = 1,
     state: MelodyRegisterState | None = None,
 ) -> Path:
     payload = to_save_payload(data)
@@ -208,53 +192,10 @@ def save_melody(
         encoding="utf-8",
     )
 
-    stage_msg = ""
-    if sync_stage:
-        stage_msg = sync_stage_data(payload["steps"], stage_number=stage_number)
-
     msg = f"저장 · {path.name}"
-    if stage_msg:
-        msg += f" · {stage_msg}"
     if state:
         state.push_log("ok", msg)
     return path
-
-
-def sync_stage_data(
-    steps: list[dict[str, Any]],
-    *,
-    stage_number: int = 1,
-) -> str:
-    path = stage_data_path()
-    if path.is_file():
-        with path.open(encoding="utf-8") as f:
-            doc = json.load(f)
-    else:
-        doc = {"stages": []}
-
-    stages = doc.setdefault("stages", [])
-    stage = next((s for s in stages if s.get("stage") == stage_number), None)
-    if stage is None:
-        # 새 stage에는 런타임과 같은 기본 게임 규칙을 넣는다.
-        stage = {
-            "stage": stage_number,
-            "sequence": {},
-            "time_over_s": DEFAULT_STAGE_TIME_OVER_S,
-            "idle_s": DEFAULT_STAGE_IDLE_S,
-            "dfesta_presses_required": (
-                DEFAULT_STAGE_DFESTA_PRESSES_REQUIRED
-            ),
-        }
-        stages.append(stage)
-        stages.sort(key=lambda s: int(s.get("stage", 0)))
-
-    stage["sequence"] = build_stage_sequence(steps)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(doc, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    return f"stage_data stage {stage_number} 동기화"
 
 
 def new_melody_template(file_id: str) -> dict[str, Any]:

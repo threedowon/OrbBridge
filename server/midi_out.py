@@ -13,8 +13,9 @@ import threading
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-PORTMAPPING_PATH = HERE / "portmapping.json"
+from app_paths import data_dir
+
+PORTMAPPING_PATH = data_dir() / "portmapping.json"
 NOTE_BASE = 36  # 기준 음은 C1이다.
 LISTEN_VOICE = "_listen"
 
