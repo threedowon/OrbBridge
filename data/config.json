@@ -1,6 +1,14 @@
 {
   "current_stage": 1,
   "melody": "dynamite",
+  "melody_rotation": {
+    "mode": "sequence",
+    "playlist": [
+      "dynamite",
+      "Iam",
+      "biplane"
+    ]
+  },
   "input_mode": "table",
   "audio_output": "midi",
   "web": {

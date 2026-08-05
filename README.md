@@ -19,6 +19,7 @@ OrbBridge/
 │   ├── websocket_service.py 실시간 이벤트와 재접속 snapshot
 │   ├── data_store.py        설정·오브 매핑 입출력
 │   ├── melody_store.py      멜로디·게임 규칙 검증
+│   ├── melody_rotation.py   게임별 멜로디 순회
 │   ├── voice_store.py       voice 표시·MIDI 이름 메타데이터
 │   └── app_paths.py         개발판·배포판 경로 처리
 ├── web/
@@ -27,7 +28,8 @@ OrbBridge/
 │   └── admin/               운영 상태·로그·제어 화면
 ├── tools/
 │   ├── orb_register.py      DS2431 오브 등록
-│   └── melody_register.py   멜로디·게임 규칙 편집
+│   ├── melody_register.py   멜로디·게임 규칙·순서 편집
+│   └── debug/               마스터·슬레이브 심층 진단
 ├── data/                    실행 데이터의 단일 저장 위치
 │   ├── config.json
 │   ├── orb_mapping.json
@@ -35,6 +37,7 @@ OrbBridge/
 │   ├── voice_catalog.json
 │   └── melodies/
 ├── firmware/                ESP master·slave·등록기 펌웨어
+├── audioengine/             loopMIDI·Ableton 운영 파일
 ├── tests/                   자동 회귀 테스트
 ├── docs/                    M1–M6 설계 기록
 └── build/                   PyInstaller 설정
@@ -57,6 +60,7 @@ python -m app.launcher
 
 macOS에서는 프로젝트 루트의 `start.command`를 실행해도 된다. 실행 스크립트는
 의존성을 자동 설치하지 않으므로 처음 한 번은 위 설치 명령이 필요하다.
+Windows에서는 `start.bat`를 실행하면 서버와 세 웹 화면이 함께 열린다.
 
 ## 게임 계약
 
@@ -85,6 +89,10 @@ Admin에는 운영에 필요한 `start`, `reset`만 표시한다. `end`는 시�
 {
   "current_stage": 1,
   "melody": "dynamite",
+  "melody_rotation": {
+    "mode": "sequence",
+    "playlist": ["dynamite", "Iam", "biplane"]
+  },
   "input_mode": "table",
   "audio_output": "midi",
   "web": {
@@ -102,7 +110,9 @@ Admin에는 운영에 필요한 `start`, `reset`만 표시한다. `end`는 시�
 |---|---|
 | `input_mode` | `table` 또는 `serial` |
 | `audio_output` | 운영용 `midi` 또는 개발용 합성음 `web` |
-| `melody` | `data/melodies/{id}.json`의 ID |
+| `melody` | `fixed` 모드와 구버전 설정의 기본 멜로디 ID |
+| `melody_rotation.mode` | `sequence`: 게임마다 다음 곡, `fixed`: 첫 곡 고정 |
+| `melody_rotation.playlist` | Melody Register에서 관리하는 게임 순서 |
 | `web` | HTTP 바인딩 주소와 포트 |
 | `websocket.host` | 선택값이며 없으면 `web.host` 사용 |
 | `serial` | ESP 마스터 COM 포트와 baudrate |
@@ -116,8 +126,9 @@ Admin에는 운영에 필요한 `start`, `reset`만 표시한다. `end`는 시�
 - `data/portmapping.json`: voice 그룹 → MIDI 포트·채널
 - `data/voice_catalog.json`: 화면 표시색·합성음 fallback·멤버 이름
 
-서버는 게임 시작 직전에 설정과 멜로디를 다시 읽고 `/game/melody`를
-`RUNNING` 상태보다 먼저 전송한다.
+서버는 게임 시작 직전에 설정과 다음 멜로디를 다시 읽고 `/game/melody`를
+`RUNNING` 상태보다 먼저 전송한다. `sequence`는 성공한 start에만 순번을
+진행하며 마지막 곡 뒤에는 첫 곡으로 돌아간다.
 
 ## 등록 도구
 
@@ -130,7 +141,18 @@ python -m tools.melody_register --list
 ```
 
 Orb Register는 `data/orb_mapping.json`을 관리한다. Melody Register는
-`data/melodies/*.json`의 BPM, 음표, duration, 가사, 게임 규칙을 함께 관리한다.
+`data/melodies/*.json`의 BPM, 음표, duration, 가사, 게임 규칙과 게임별 재생
+순서를 함께 관리한다. Windows 실행 파일은 `tools\*.bat`에 있다.
+
+## 하드웨어 진단과 MIDI 준비
+
+```cmd
+py -m tools.debug
+```
+
+심층 시리얼 진단은 `tools/debug/`에서 실행한다. 게임 런타임과 같은 COM 포트를
+동시에 열 수 없으므로 둘 중 하나만 실행해야 한다. loopMIDI 포트 복구 파일은
+`audioengine/loopmidi_portsetup.reg`이다.
 
 ## 웹 동기화
 
@@ -164,6 +186,8 @@ pyinstaller build/orbbridge.spec --noconfirm
 pyinstaller build/orb_register.spec --noconfirm
 ```
 
+Windows에서는 `build\build_orbbridge.bat`와
+`build\build_orb_register.bat`를 사용할 수 있다.
+
 PyInstaller 실행 파일은 옆의 `data/`를 쓰며, 첫 실행에 번들 기본 데이터를
 복사한다.
-

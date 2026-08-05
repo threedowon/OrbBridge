@@ -9,6 +9,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 from app.app_paths import melodies_dir
+from app.data_store import load_config, save_config
+from app.melody_rotation import (
+    MODE_FIXED,
+    MODE_SEQUENCE,
+    rotation_plan_from_config,
+)
 from app.melody_store import game_rules_from_melody
 
 NOTE_CHOICES = ("C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5")
@@ -36,6 +42,55 @@ def list_melody_ids() -> list[str]:
             continue
         out.append(path.stem)
     return out
+
+
+def load_rotation_settings() -> dict[str, Any]:
+    """현재 멜로디 고정·순회 설정을 검증해 반환한다."""
+
+    plan = rotation_plan_from_config(load_config(), list_melody_ids())
+    return {
+        "mode": plan.mode,
+        "playlist": list(plan.playlist),
+        "fixed_id": plan.fixed_id,
+    }
+
+
+def save_rotation_settings(mode: str, playlist: list[str]) -> dict[str, Any]:
+    """Melody Register의 게임 순서를 config.json에 저장한다."""
+
+    normalized = [str(value or "").strip() for value in playlist]
+    if any(not value for value in normalized):
+        raise ValueError("게임 순서에 빈 멜로디 ID가 있습니다.")
+    if len(set(normalized)) != len(normalized):
+        raise ValueError("게임 순서에 중복된 멜로디가 있습니다.")
+    if not normalized:
+        raise ValueError("게임 순서에 멜로디가 최소 1개 필요합니다.")
+
+    normalized_mode = str(mode or "").lower().strip()
+    if normalized_mode not in {MODE_FIXED, MODE_SEQUENCE}:
+        raise ValueError("선택 방식은 fixed 또는 sequence여야 합니다.")
+
+    config = load_config()
+    config["melody"] = normalized[0]
+    config["melody_rotation"] = {
+        "mode": normalized_mode,
+        "playlist": normalized,
+    }
+    plan = rotation_plan_from_config(config, list_melody_ids())
+    save_config(config)
+    return {
+        "mode": plan.mode,
+        "playlist": list(plan.playlist),
+        "fixed_id": plan.fixed_id,
+    }
+
+
+def replace_melody_in_rotation(old_id: str, new_id: str) -> None:
+    """멜로디 파일명 변경을 게임 순서에도 함께 반영한다."""
+
+    settings = load_rotation_settings()
+    playlist = [new_id if value == old_id else value for value in settings["playlist"]]
+    save_rotation_settings(settings["mode"], playlist)
 
 
 def load_melody(file_id: str) -> dict[str, Any]:
@@ -216,6 +271,15 @@ def delete_melody(file_id: str, state: MelodyRegisterState | None = None) -> Non
     path = melody_path(file_id)
     if not path.is_file():
         raise FileNotFoundError(f"멜로디를 찾을 수 없습니다: {path}")
+    remaining = [value for value in list_melody_ids() if value != file_id]
+    if not remaining:
+        raise ValueError("최소 1개의 멜로디는 유지해야 합니다.")
+
+    settings = load_rotation_settings()
+    playlist = [value for value in settings["playlist"] if value != file_id]
+    if not playlist:
+        playlist = [remaining[0]]
+    save_rotation_settings(settings["mode"], playlist)
     path.unlink()
     msg = f"삭제 · {path.name}"
     if state:
@@ -255,4 +319,8 @@ class MelodyRegisterState:
                     "seconds": round(melody_duration_sec(data), 2),
                 }
             )
-        return {"melodies": items, "logs": list(self.logs)}
+        return {
+            "melodies": items,
+            "rotation": load_rotation_settings(),
+            "logs": list(self.logs),
+        }

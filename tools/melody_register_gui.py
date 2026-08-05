@@ -16,10 +16,13 @@ from tools.melody_register_core import (
     delete_melody,
     list_melody_ids,
     load_melody,
+    load_rotation_settings,
     melody_duration_sec,
     melodies_dir,
     new_melody_template,
+    replace_melody_in_rotation,
     save_melody,
+    save_rotation_settings,
     validate_melody,
 )
 
@@ -59,6 +62,7 @@ class MelodyRegisterApp:
         self._active_id = ""
         self._data: dict | None = None
         self._dirty = False
+        self._rotation_dirty = False
 
         self.root = tk.Tk()
         ui = _pick_font(self.root, UI_CANDIDATES, "TkDefaultFont")
@@ -88,11 +92,16 @@ class MelodyRegisterApp:
         self.step_note_var = tk.StringVar(master=self.root, value="C4")
         self.step_dur_var = tk.StringVar(master=self.root, value="1")
         self.step_lyric_var = tk.StringVar(master=self.root, value="")
+        self.time_over_var = tk.StringVar(master=self.root, value="120")
+        self.idle_var = tk.StringVar(master=self.root, value="30")
+        self.dfesta_var = tk.StringVar(master=self.root, value="1")
+        self.rotation_mode_var = tk.StringVar(master=self.root, value="sequence")
 
         self._setup_styles()
         self._build()
         state.add_log_listener(self._on_log)
         self._refresh_list()
+        self._refresh_rotation()
         self._load_logs()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -184,7 +193,7 @@ class MelodyRegisterApp:
         body = tk.Frame(outer, bg=C["canvas_soft"])
         body.pack(fill="both", expand=True)
 
-        left = tk.Frame(body, bg=C["canvas"], width=220)
+        left = tk.Frame(body, bg=C["canvas"], width=250)
         left.pack(side="left", fill="y", padx=(0, 10))
         left.pack_propagate(False)
         tk.Label(
@@ -219,6 +228,52 @@ class MelodyRegisterApp:
             side="left", padx=(0, 6)
         )
         self._btn(left_btns, "삭제", self._delete_melody, small=True).pack(side="left")
+
+        rotation = tk.Frame(left, bg=C["canvas"])
+        rotation.pack(fill="x", padx=8, pady=(0, 12))
+        tk.Label(
+            rotation,
+            text="게임 순서",
+            font=self._fonts["section"],
+            bg=C["canvas"],
+            fg=C["ink"],
+        ).pack(anchor="w", pady=(2, 6))
+        ttk.Combobox(
+            rotation,
+            textvariable=self.rotation_mode_var,
+            values=("sequence", "fixed"),
+            state="readonly",
+            width=12,
+        ).pack(anchor="w", pady=(0, 6))
+        self.playlistbox = tk.Listbox(
+            rotation,
+            height=6,
+            font=self._fonts["body"],
+            bg=C["canvas_soft"],
+            fg=C["ink"],
+            selectbackground=C["primary_pale"],
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground=C["primary_neutral"],
+        )
+        self.playlistbox.pack(fill="x", pady=(0, 6))
+        rotation_btns = tk.Frame(rotation, bg=C["canvas"])
+        rotation_btns.pack(fill="x")
+        self._btn(rotation_btns, "추가", self._add_to_rotation, small=True).pack(
+            side="left", padx=(0, 3)
+        )
+        self._btn(rotation_btns, "제외", self._remove_from_rotation, small=True).pack(
+            side="left", padx=(0, 3)
+        )
+        self._btn(rotation_btns, "▲", self._move_rotation_up, small=True).pack(
+            side="left", padx=(0, 3)
+        )
+        self._btn(rotation_btns, "▼", self._move_rotation_down, small=True).pack(
+            side="left", padx=(0, 3)
+        )
+        self._btn(rotation_btns, "순서 저장", self._save_rotation, primary=True, small=True).pack(
+            side="right"
+        )
 
         right = tk.Frame(body, bg=C["canvas"])
         right.pack(side="left", fill="both", expand=True)
@@ -267,6 +322,15 @@ class MelodyRegisterApp:
             width=5,
             state="readonly",
         ).grid(row=0, column=5, sticky="w", padx=(0, 16))
+
+        row3 = tk.Frame(meta, bg=C["canvas"])
+        row3.pack(fill="x", pady=4)
+        self._label(row3, "TimeOver(s)").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        self._entry(row3, self.time_over_var, 7).grid(row=0, column=1, sticky="w", padx=(0, 16))
+        self._label(row3, "Idle(s)").grid(row=0, column=2, sticky="w", padx=(0, 8))
+        self._entry(row3, self.idle_var, 7).grid(row=0, column=3, sticky="w", padx=(0, 16))
+        self._label(row3, "DFesta 횟수").grid(row=0, column=4, sticky="w", padx=(0, 8))
+        self._entry(row3, self.dfesta_var, 5).grid(row=0, column=5, sticky="w")
 
         actions = tk.Frame(meta, bg=C["canvas"])
         actions.pack(fill="x", pady=(10, 4))
@@ -367,8 +431,12 @@ class MelodyRegisterApp:
             self.bpm_var,
             self.range_low_var,
             self.range_high_var,
+            self.time_over_var,
+            self.idle_var,
+            self.dfesta_var,
         ):
             var.trace_add("write", lambda *_: self._mark_dirty_summary())
+        self.rotation_mode_var.trace_add("write", lambda *_: self._mark_rotation_dirty())
 
     def _collect_form(self) -> dict:
         if not self._data:
@@ -382,6 +450,11 @@ class MelodyRegisterApp:
         except ValueError:
             data["bpm"] = 120
         data["range"] = [self.range_low_var.get(), self.range_high_var.get()]
+        data["game_rules"] = {
+            "time_over_s": self.time_over_var.get().strip(),
+            "idle_s": self.idle_var.get().strip(),
+            "dfesta_presses_required": self.dfesta_var.get().strip(),
+        }
         data["_file_id"] = self._active_id or data.get("_file_id", data["songId"])
         return data
 
@@ -412,6 +485,74 @@ class MelodyRegisterApp:
             self.listbox.selection_set(idx)
             self.listbox.see(idx)
 
+    def _rotation_items(self) -> list[str]:
+        return list(self.playlistbox.get(0, "end"))
+
+    def _refresh_rotation(self) -> None:
+        settings = load_rotation_settings()
+        self.rotation_mode_var.set(settings["mode"])
+        self.playlistbox.delete(0, "end")
+        for melody_id in settings["playlist"]:
+            self.playlistbox.insert("end", melody_id)
+        self._rotation_dirty = False
+
+    def _mark_rotation_dirty(self) -> None:
+        self._rotation_dirty = True
+
+    def _add_to_rotation(self) -> None:
+        selected = self.listbox.curselection()
+        if not selected:
+            return
+        melody_id = self.listbox.get(selected[0])
+        if melody_id in self._rotation_items():
+            return
+        self.playlistbox.insert("end", melody_id)
+        self.playlistbox.selection_clear(0, "end")
+        self.playlistbox.selection_set("end")
+        self._mark_rotation_dirty()
+
+    def _remove_from_rotation(self) -> None:
+        selected = self.playlistbox.curselection()
+        if not selected:
+            return
+        if self.playlistbox.size() <= 1:
+            messagebox.showinfo("Melody Register", "게임 순서에는 최소 1곡이 필요합니다.")
+            return
+        self.playlistbox.delete(selected[0])
+        self._mark_rotation_dirty()
+
+    def _move_rotation(self, offset: int) -> None:
+        selected = self.playlistbox.curselection()
+        if not selected:
+            return
+        index = selected[0]
+        target = index + offset
+        if target < 0 or target >= self.playlistbox.size():
+            return
+        melody_id = self.playlistbox.get(index)
+        self.playlistbox.delete(index)
+        self.playlistbox.insert(target, melody_id)
+        self.playlistbox.selection_set(target)
+        self._mark_rotation_dirty()
+
+    def _move_rotation_up(self) -> None:
+        self._move_rotation(-1)
+
+    def _move_rotation_down(self) -> None:
+        self._move_rotation(1)
+
+    def _save_rotation(self) -> None:
+        try:
+            save_rotation_settings(
+                self.rotation_mode_var.get(),
+                self._rotation_items(),
+            )
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Melody Register", str(exc))
+            return
+        self._rotation_dirty = False
+        self.state.push_log("ok", "게임 순서 저장")
+
     def _load_melody(self, file_id: str) -> None:
         stop_preview()
         data = load_melody(file_id)
@@ -426,9 +567,14 @@ class MelodyRegisterApp:
         rng = data.get("range") or ["C4", "C5"]
         self.range_low_var.set(rng[0])
         self.range_high_var.set(rng[1])
+        rules = data.get("game_rules") or {}
+        self.time_over_var.set(str(rules.get("time_over_s", 120)))
+        self.idle_var.set(str(rules.get("idle_s", 30)))
+        self.dfesta_var.set(str(rules.get("dfesta_presses_required", 1)))
 
         self._rebuild_tree()
         self._refresh_summary(data)
+        self._dirty = False
         self.state.push_log("info", f"열기 · {file_id}.json")
 
     def _rebuild_tree(self, select_index: int = 0) -> None:
@@ -606,6 +752,11 @@ class MelodyRegisterApp:
         try:
             old_id = self._active_id
             new_id = data["songId"].strip() or old_id
+            if new_id != old_id:
+                from tools.melody_register_core import melody_path
+
+                if melody_path(new_id).exists():
+                    raise ValueError(f"{new_id}.json 이 이미 있습니다.")
             save_melody(
                 data,
                 file_id=new_id,
@@ -616,7 +767,13 @@ class MelodyRegisterApp:
 
                 old_path = melody_path(old_id)
                 new_path = melody_path(new_id)
-                if old_path != new_path and old_path.is_file():
+                try:
+                    replace_melody_in_rotation(old_id, new_id)
+                except (OSError, ValueError):
+                    if new_path.is_file():
+                        new_path.unlink()
+                    raise
+                if old_path.is_file():
                     old_path.unlink()
             self._active_id = new_id
         except (OSError, ValueError) as exc:
@@ -626,6 +783,7 @@ class MelodyRegisterApp:
         self._dirty = False
         self._data = load_melody(self._active_id)
         self._refresh_list(select=self._active_id)
+        self._refresh_rotation()
         messagebox.showinfo("Melody Register", f"{self._active_id}.json 저장됨")
 
     def _new_melody(self) -> None:
@@ -660,12 +818,13 @@ class MelodyRegisterApp:
             return
         try:
             delete_melody(self._active_id, self.state)
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             messagebox.showerror("Melody Register", str(exc))
             return
         self._active_id = ""
         self._data = None
         self._refresh_list()
+        self._refresh_rotation()
         ids = list_melody_ids()
         if ids:
             self._load_melody(ids[0])
@@ -684,6 +843,10 @@ class MelodyRegisterApp:
             self._on_log(entry)
 
     def _on_close(self) -> None:
+        if self._rotation_dirty and not messagebox.askyesno(
+            "Melody Register", "저장하지 않은 게임 순서가 있습니다. 종료할까요?"
+        ):
+            return
         self._closing = True
         stop_preview()
         try:
@@ -694,7 +857,8 @@ class MelodyRegisterApp:
     def run(self) -> None:
         ids = list_melody_ids()
         if ids:
-            self._load_melody(ids[0])
+            order = self._rotation_items()
+            self._load_melody(order[0] if order else ids[0])
         try:
             self.root.mainloop()
         except KeyboardInterrupt:

@@ -6,7 +6,7 @@ M5는 분리돼 있던 멜로디 표시·재생·정답 데이터를 하나의 J
 
 ```text
 data/config.json
-  └─ melody ID 선택
+  └─ melody_rotation 순서 선택
        └─ data/melodies/{id}.json
             ├─ GameEngine 정답 판정
             ├─ Python Scheduler 재생
@@ -19,13 +19,16 @@ data/config.json
 - 멜로디 `steps`가 정답 순서와 재생 순서의 공통 원본이다.
 - `game_rules`가 TimeOver·Idle·DFesta 입력 횟수를 함께 보관한다.
 - `current_stage`는 기존 운영 표시값으로 `data/config.json`에 유지한다.
+- 여러 멜로디는 `melody_rotation.playlist` 순서로 게임마다 순환한다.
 
 ## 런타임 갱신
 
-서버는 게임 시작 직전에 `data/config.json`과 활성 멜로디를 다시 읽는다.
+서버는 게임 시작 직전에 `data/config.json`과 다음 멜로디를 다시 읽는다.
 같은 메모리 snapshot에서 정답 시퀀스와 Scheduler 입력을 만들고,
 `/game/melody`를 `/game/state`보다 먼저 전송한다. 따라서 Melody Register 저장 후
 다음 start 한 번으로 세 웹 화면과 Python 판정·재생이 함께 갱신된다.
+성공한 start에서만 순번이 이동하므로 거부되거나 실패한 start는 곡을 건너뛰지
+않는다.
 
 연결 직후 WebSocket snapshot에도 전체 멜로디를 포함하며, HTTP 복구용
 `GET /api/melody`도 같은 메모리 snapshot을 반환한다.

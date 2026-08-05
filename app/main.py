@@ -18,6 +18,7 @@ from app.melody_store import (
     game_rules_from_melody,
     load_melody_document,
 )
+from app.melody_rotation import MelodyRotator, available_melody_ids
 from app.scheduler import PlaybackMode, PlaybackScheduler, parse_melody
 from app.serial_io import run_serial_loop
 
@@ -27,8 +28,13 @@ ensure_data_files()
 config = load_config()
 orb_mapping = load_mapping()
 
+_melody_rotator = MelodyRotator()
+
 current_stage   = int(config.get("current_stage", 1))
-melody_id       = config.get("melody", "dynamite")
+melody_id       = _melody_rotator.preview(
+    config,
+    available_melody_ids(melodies_dir()),
+)
 melody_path     = melodies_dir() / f"{melody_id}.json"
 melody_document = load_melody_document(melody_path)
 playback_melody = parse_melody(melody_document)
@@ -332,6 +338,7 @@ def get_status() -> dict:
             "game": game,
             "current_stage": current_stage,
             "melody": melody_id,
+            "melody_rotation": _melody_rotator.snapshot(),
             "audio_output": audio_output_mode(),
             "playback": get_playback_scheduler().snapshot(),
             "orb_count": len(orb_mapping),
@@ -435,21 +442,31 @@ def parse_cell(cell: int):
 
 # ── 게임 상태 전이 ──────────────────────────────────────
 def reload_melody_data() -> None:
-    """config와 활성 멜로디 단일 원본을 다시 읽어 게임 입력을 고정한다."""
+    """config를 다시 읽고 다음 게임용 멜로디와 규칙을 고정한다."""
     global answer_sequence, time_over_s, idle_s, dfesta_presses_required
     global melody_id, melody_path, melody_document, playback_melody, game_rules
     global config, current_stage, input_mode
     config = load_config()
     current_stage = int(config.get("current_stage", 1))
-    melody_id = config.get("melody", "dynamite")
     input_mode = str(config.get("input_mode", "table")).lower().strip()
     if input_mode not in ("table", "serial"):
         raise ValueError("input_mode must be table or serial")
-    melody_path = melodies_dir() / f"{melody_id}.json"
-    melody_document = load_melody_document(melody_path)
-    playback_melody = parse_melody(melody_document)
-    answer_sequence = answer_sequence_from_melody(melody_document)
-    game_rules = game_rules_from_melody(melody_document)
+    selected_id = _melody_rotator.reserve(
+        config,
+        available_melody_ids(melodies_dir()),
+    )
+    selected_path = melodies_dir() / f"{selected_id}.json"
+    selected_document = load_melody_document(selected_path)
+    selected_playback = parse_melody(selected_document)
+    selected_answers = answer_sequence_from_melody(selected_document)
+    selected_rules = game_rules_from_melody(selected_document)
+
+    melody_id = selected_id
+    melody_path = selected_path
+    melody_document = selected_document
+    playback_melody = selected_playback
+    answer_sequence = selected_answers
+    game_rules = selected_rules
     time_over_s = game_rules["time_over_s"]
     idle_s = game_rules["idle_s"]
     dfesta_presses_required = game_rules["dfesta_presses_required"]
@@ -466,7 +483,6 @@ def _publish_transition(result: RuntimeResult) -> dict:
 def start_game() -> dict:
     runtime = get_game_runtime()
     _cancel_playback()
-    reload_melody_data()
 
     current = runtime.snapshot()
     if current["state"] != GameState.READY.value:
@@ -476,10 +492,16 @@ def start_game() -> dict:
     if current["cell_count"]:
         raise InvalidTransition("START requires an empty table")
 
-    runtime.replace_engine(_new_game_engine())
-    # 브라우저가 판정·재생과 같은 문서를 먼저 적용한 뒤 RUNNING을 받게 한다.
-    _publish_web_event("/game/melody", [get_active_melody()])
-    started = runtime.start_game()
+    try:
+        reload_melody_data()
+        runtime.replace_engine(_new_game_engine())
+        # 브라우저가 판정·재생과 같은 문서를 먼저 적용한 뒤 RUNNING을 받게 한다.
+        _publish_web_event("/game/melody", [get_active_melody()])
+        started = runtime.start_game()
+    except Exception:
+        _melody_rotator.cancel()
+        raise
+    _melody_rotator.commit()
     _publish_transition(started)
 
     print(f"[game] 시작 — stage {current_stage}, melody={melody_id}")
@@ -860,6 +882,7 @@ def run_main() -> None:
     start_websocket_service()
     print(f"[stage {current_stage}] 정답 시퀀스: {answer_sequence}")
     print(f"[melody] {melody_id}")
+    print(f"[melody rotation] {_melody_rotator.snapshot()}")
     print(f"[input] {input_mode} mode")
     print(f"[audio] {audio_output_mode()}")
     print("screen에서 시작을 누르면 게임이 시작됩니다.")

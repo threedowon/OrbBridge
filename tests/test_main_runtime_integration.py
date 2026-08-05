@@ -129,6 +129,8 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
             "result": "correct",
         }
         assert status["game"] == game
+        assert status["melody"] == "dynamite"
+        assert status["melody_rotation"]["next_melody"] == "Iam"
 
         for orb_id, slave, cell, _voice in placements[1:]:
             completed = main.handle_event(
@@ -505,6 +507,35 @@ def test_start_publishes_the_active_melody_before_running_state():
 
         assert melody_index < running_index
         assert messages[melody_index][1][0]["songId"] == "dynamite"
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("app.main", "app.serial_io", "serial"):
+            sys.modules.pop(name, None)
+
+
+def test_successive_games_follow_the_configured_melody_sequence():
+    main = _load_main_module()
+
+    def wait_until_ready():
+        deadline = time.monotonic() + 1
+        while (
+            main.get_game_state()["state"] != "READY"
+            and time.monotonic() < deadline
+        ):
+            time.sleep(0.01)
+        assert main.get_game_state()["state"] == "READY"
+
+    try:
+        selected = []
+        for _ in range(4):
+            main.start_game()
+            selected.append(main.get_active_melody()["songId"])
+            main.end_game()
+            wait_until_ready()
+
+        assert selected == ["dynamite", "Iam", "biplane", "dynamite"]
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()

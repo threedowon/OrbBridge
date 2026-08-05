@@ -11,6 +11,7 @@ from app.melody_store import (
     load_melody_document,
 )
 from tools.melody_register_core import normalize_melody, to_save_payload
+import tools.melody_register_core as melody_register_core
 
 
 def test_all_project_json_lives_under_data():
@@ -52,6 +53,52 @@ def test_one_melody_document_drives_answer_playback_and_rules():
         "idle_s": 30.0,
         "dfesta_presses_required": 1,
     }
+
+
+def test_configured_playlist_points_to_valid_melody_documents():
+    config = json.loads((ROOT / "data" / "config.json").read_text(encoding="utf-8"))
+    rotation = config["melody_rotation"]
+
+    assert rotation["mode"] == "sequence"
+    assert rotation["playlist"] == ["dynamite", "Iam", "biplane"]
+    for melody_id in rotation["playlist"]:
+        document = load_melody_document(
+            ROOT / "data" / "melodies" / f"{melody_id}.json"
+        )
+        assert document["songId"] == melody_id
+        assert document["steps"]
+        assert len(answer_sequence_from_melody(document)) == len(document["steps"])
+        assert game_rules_from_melody(document)["dfesta_presses_required"] >= 1
+
+
+def test_melody_register_saves_sequence_without_overwriting_other_config(monkeypatch):
+    original = {
+        "melody": "dynamite",
+        "input_mode": "serial",
+        "audio_output": "midi",
+    }
+    saved = []
+    monkeypatch.setattr(melody_register_core, "load_config", lambda: dict(original))
+    monkeypatch.setattr(
+        melody_register_core,
+        "list_melody_ids",
+        lambda: ["dynamite", "Iam", "biplane"],
+    )
+    monkeypatch.setattr(melody_register_core, "save_config", saved.append)
+
+    result = melody_register_core.save_rotation_settings(
+        "sequence",
+        ["Iam", "biplane", "dynamite"],
+    )
+
+    assert result["playlist"] == ["Iam", "biplane", "dynamite"]
+    assert saved[0]["melody"] == "Iam"
+    assert saved[0]["melody_rotation"] == {
+        "mode": "sequence",
+        "playlist": ["Iam", "biplane", "dynamite"],
+    }
+    assert saved[0]["input_mode"] == "serial"
+    assert saved[0]["audio_output"] == "midi"
 
 
 def test_melody_register_round_trip_preserves_game_rules():

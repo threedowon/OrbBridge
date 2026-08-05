@@ -10,6 +10,7 @@ app/       공연 중 실행되는 Python 본체
 web/       screen·table·admin 정적 UI
 tools/     오브·멜로디 등록 도구
 data/      모든 실행 JSON
+audioengine/ loopMIDI·Ableton 운영 파일
 build/     PyInstaller 설정
 tests/     자동 검증
 ```
@@ -22,7 +23,7 @@ Python 코드는 `app.*`, `tools.*` 패키지 import를 사용한다. 실행 명
 
 - 실제 HTTP 서버가 된 뒤에도 남아 있던 `mock` 설정명과 `mock_server.py`
 - `config.json`과 값이 충돌하던 `config.table.json`
-- Admin 상태 화면과 기능이 겹치던 독립 `debug/` 서버
+- 루트에 섞여 있던 독립 `debug/` 경로
 - 전체 Melody Register와 기능이 겹치던 간이 Melody Editor
 - 삭제된 `sounds/`를 다시 만들던 경로와 Voice Sample Register
 - 사용되지 않는 `start_mock_server` 호환 별칭
@@ -34,14 +35,14 @@ Python 코드는 `app.*`, `tools.*` 패키지 import를 사용한다. 실행 명
 - Serial·HTTP 입력의 `GameRuntime` 단일 writer
 - Python Scheduler·MIDI·WebSocket snapshot
 - Orb Register와 전체 Melody Register
+- `tools/debug/`의 오프라인 심층 진단 도구
 - `audio_output: web`의 oscillator 기반 개발 fallback
 - PyInstaller용 data seed 복사
 
 ## 완료 기준
 
 - `server/`, 루트 `screen/`, `table/`, `admin/` 경로가 남지 않는다.
-- `config.table.json`, `debug/`, `sounds/` 및 관련 코드가 남지 않는다.
+- `config.table.json`, 루트 `debug/`, `sounds/` 경로가 남지 않는다.
 - 모든 Python import와 정적 파일 경로가 새 구조를 사용한다.
 - 세 웹 화면, 게임 상태, Scheduler, 재접속 snapshot 회귀 테스트가 통과한다.
 - README·M1–M5 문서가 새 경로를 가리킨다.
-

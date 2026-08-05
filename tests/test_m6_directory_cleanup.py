@@ -18,6 +18,8 @@ def test_m6_directories_match_runtime_roles():
     assert (ROOT / "web" / "admin" / "index.html").is_file()
     assert (ROOT / "tools" / "orb_register.py").is_file()
     assert (ROOT / "tools" / "melody_register.py").is_file()
+    assert (ROOT / "tools" / "debug" / "__main__.py").is_file()
+    assert (ROOT / "audioengine" / "loopmidi_portsetup.reg").is_file()
 
     for legacy in ("server", "screen", "table", "admin", "debug"):
         assert not (ROOT / legacy).exists()
@@ -67,6 +69,45 @@ def test_web_server_uses_the_m6_static_root():
     assert web_server.GAME_UI == ROOT / "web" / "screen"
     assert web_server.TABLE_UI == ROOT / "web" / "table"
     assert web_server.ADMIN_UI == ROOT / "web" / "admin"
+
+
+def test_windows_launchers_use_module_entrypoints_without_removed_paths():
+    scripts = [
+        ROOT / "start.bat",
+        ROOT / "tools" / "melody_register.bat",
+        ROOT / "tools" / "orb_register.bat",
+        ROOT / "tools" / "debug" / "debug.bat",
+        ROOT / "build" / "build_orbbridge.bat",
+        ROOT / "build" / "build_orb_register.bat",
+    ]
+
+    assert all(path.is_file() for path in scripts)
+    text = "\n".join(path.read_text(encoding="utf-8") for path in scripts).lower()
+    assert "bridge\\bridge.py" not in text
+    assert "python main.py" not in text
+    assert "melody_editor" not in text
+    assert "-m app.launcher" in text
+    assert "-m tools.melody_register" in text
+    assert "-m tools.debug" in text
+
+
+def test_loopmidi_registry_ports_match_portmapping():
+    mapping = json.loads(
+        (ROOT / "data" / "portmapping.json").read_text(encoding="utf-8")
+    )
+    expected = {entry["port"] for entry in mapping.values()}
+    registry = (
+        ROOT / "audioengine" / "loopmidi_portsetup.reg"
+    ).read_text(encoding="utf-8")
+    ports_section = registry.split("\\loopMIDI\\Ports]", 1)[1]
+    actual = {
+        line.split('"', 2)[1]
+        for line in ports_section.splitlines()
+        if line.startswith('"') and "=dword:00000001" in line
+    }
+
+    assert expected <= actual
+    assert actual - expected == {"event"}
 
 
 def test_serial_reader_forwards_json_and_reports_status(monkeypatch):

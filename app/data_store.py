@@ -30,6 +30,21 @@ def load_config(path: Path | None = None) -> dict:
     return document
 
 
+def save_config(config: dict, path: Path | None = None) -> None:
+    """실행 설정을 UTF-8 JSON으로 저장한다."""
+
+    if not isinstance(config, dict):
+        raise ValueError("config must be an object")
+    target = path or CONFIG_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_suffix(target.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(config, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(target)
+
+
 def normalize_id(raw: str) -> str:
     """DS2431·오브 ID를 대문자 `AA:BB:CC:...` 형식으로 정규화한다."""
     if not raw or not str(raw).strip():

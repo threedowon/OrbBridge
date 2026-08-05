@@ -16,8 +16,10 @@ _SEED_FILES = (
 _DEFAULT_DOCUMENTS = {
     "config.json": (
         '{"current_stage":1,"melody":"dynamite","input_mode":"table",'
-        '"audio_output":"midi","web":{"host":"127.0.0.1","port":8080},'
-        '"serial":{"port":"COM13","baudrate":115200}}\n'
+        '"melody_rotation":{"mode":"sequence","playlist":'
+        '["dynamite","Iam","biplane"]},"audio_output":"midi",'
+        '"web":{"host":"127.0.0.1","port":8080},'
+        '"serial":{"port":"COM5","baudrate":115200}}\n'
     ),
     "orb_mapping.json": "{}\n",
     "voice_catalog.json": '{"voices":{}}\n',

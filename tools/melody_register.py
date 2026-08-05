@@ -6,6 +6,7 @@ from tools.melody_register_core import (
     MelodyRegisterState,
     list_melody_ids,
     load_melody,
+    load_rotation_settings,
     melody_duration_sec,
 )
 
@@ -18,6 +19,11 @@ def print_melody_list() -> None:
     print(f"멜로디 {len(ids)}개\n")
     print(f"{'id':<14} {'title':<18} {'bpm':>4}  {'steps':>5}  {'sec':>6}")
     print(f"{'-' * 14} {'-' * 18} {'-' * 4}  {'-' * 5}  {'-' * 6}")
+    rotation = load_rotation_settings()
+    print(
+        f"[게임 순서] {rotation['mode']}: "
+        + " → ".join(rotation["playlist"])
+    )
     for file_id in ids:
         try:
             data = load_melody(file_id)

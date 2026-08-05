@@ -1,6 +1,39 @@
-__pycache__/
-.pytest_cache/
-*.py[cod]
-build/*/
-dist/
+# 운영체제
+.DS_Store
+Thumbs.db
+Desktop.ini
 
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 검사 도구
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 빌드 결과
+build/*/
+!build/*.spec
+!build/*.bat
+dist/
+*.manifest
+
+# 편집기와 로컬 설정
+.idea/
+.vscode/
+*.swp
+*.log
+*.tmp
+.env
+.env.*
+!.env.example
+
+# 배포 압축 파일
+*.zip
+*.7z
