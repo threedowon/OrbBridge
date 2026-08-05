@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from server.game_engine import (
+from app.game_engine import (
     CellAddress,
     EndReason,
     GameEngine,

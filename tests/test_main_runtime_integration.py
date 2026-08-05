@@ -1,5 +1,4 @@
 import importlib
-import os
 from pathlib import Path
 import sys
 import time
@@ -7,7 +6,7 @@ import types
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SERVER = ROOT / "server"
+PROJECT_ROOT = ROOT
 
 
 class FakeScheduler:
@@ -69,28 +68,25 @@ def _load_main_module():
     serial_module.Serial = lambda *args, **kwargs: None
 
     sys.modules["serial"] = serial_module
-    sys.path.insert(0, str(SERVER))
-    sys.modules.pop("main", None)
+    sys.path.insert(0, str(PROJECT_ROOT))
+    sys.modules.pop("app.main", None)
+    sys.modules.pop("app.serial_io", None)
 
-    previous_cwd = Path.cwd()
-    try:
-        module = importlib.import_module("main")
-        module._playback_scheduler = FakeScheduler()
-        module._websocket_service = FakeWebSocketService()
-        return module
-    finally:
-        os.chdir(previous_cwd)
+    module = importlib.import_module("app.main")
+    module._playback_scheduler = FakeScheduler()
+    module._websocket_service = FakeWebSocketService()
+    return module
 
 
 def test_main_routes_web_event_through_runtime_snapshot_and_midi():
     main = _load_main_module()
     midi_calls = []
-    midi_module = types.ModuleType("midi_out")
+    midi_module = types.ModuleType("app.midi_out")
     midi_module.cell_to_pitch = lambda cell: (int(cell) - 1) % 8
     midi_module.trigger = lambda voice, pitch, **kwargs: midi_calls.append(
         (voice, pitch, kwargs)
     ) or {"ok": True}
-    sys.modules["midi_out"] = midi_module
+    sys.modules["app.midi_out"] = midi_module
 
     placements = [
         ("AA:00:00:00:00:00:00:01", 1, 1, "aespa_1"),
@@ -189,8 +185,8 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
-        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
-        for name in ("main", "serial", "midi_out"):
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("app.main", "app.serial_io", "serial", "app.midi_out"):
             sys.modules.pop(name, None)
 
 
@@ -213,8 +209,8 @@ def test_manual_end_enters_resetting_directly():
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
-        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
-        for name in ("main", "serial"):
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("app.main", "app.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -257,8 +253,8 @@ def test_listen_play_and_dfesta_use_python_scheduler():
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
-        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
-        for name in ("main", "serial"):
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("app.main", "app.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -299,8 +295,8 @@ def test_serial_game_controls_use_the_canonical_action_literals():
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
-        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
-        for name in ("main", "serial"):
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("app.main", "app.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -320,13 +316,13 @@ def test_heartbeat_uses_occupancy_mask_instead_of_game_state_field():
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
-        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
-        for name in ("main", "serial"):
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("app.main", "app.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
 def test_admin_keeps_start_and_reset_but_hides_manual_end():
-    html = (ROOT / "admin" / "index.html").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "admin" / "index.html").read_text(encoding="utf-8")
 
     for action in ("start", "reset"):
         assert f'data-game-action="{action}">{action}</button>' in html
@@ -351,8 +347,8 @@ def test_state_log_uses_authoritative_state_names_only():
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
-        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
-        for name in ("main", "serial"):
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("app.main", "app.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -400,8 +396,8 @@ def test_idle_transition_log_matches_runtime_until_reset_is_complete():
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
-        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
-        for name in ("main", "serial"):
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("app.main", "app.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -420,8 +416,8 @@ def test_melody_rules_expose_120_second_time_over_and_30_second_idle_timers():
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
-        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
-        for name in ("main", "serial"):
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("app.main", "app.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -438,8 +434,8 @@ def test_playback_requests_are_ignored_outside_active_game_states():
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
-        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
-        for name in ("main", "serial"):
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("app.main", "app.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -457,8 +453,8 @@ def test_resetting_state_cancels_active_scheduler_without_blocking_runtime():
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
-        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
-        for name in ("main", "serial"):
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("app.main", "app.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -487,8 +483,8 @@ def test_main_fans_out_events_and_builds_complete_web_snapshot():
         main._websocket_service = None
         if main._game_runtime is not None:
             main._game_runtime.close()
-        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
-        for name in ("main", "serial"):
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("app.main", "app.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -512,6 +508,6 @@ def test_start_publishes_the_active_melody_before_running_state():
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
-        sys.path[:] = [entry for entry in sys.path if entry != str(SERVER)]
-        for name in ("main", "serial"):
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("app.main", "app.serial_io", "serial"):
             sys.modules.pop(name, None)

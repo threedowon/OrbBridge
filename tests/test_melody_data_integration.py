@@ -1,19 +1,16 @@
 import json
 from pathlib import Path
-import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SERVER = ROOT / "server"
-sys.path.insert(0, str(SERVER))
 
-from app_paths import data_dir, melodies_dir
-from melody_register_core import normalize_melody, to_save_payload
-from melody_store import (
+from app.app_paths import data_dir, melodies_dir
+from app.melody_store import (
     answer_sequence_from_melody,
     game_rules_from_melody,
     load_melody_document,
 )
+from tools.melody_register_core import normalize_melody, to_save_payload
 
 
 def test_all_project_json_lives_under_data():
@@ -27,7 +24,7 @@ def test_all_project_json_lives_under_data():
     assert all(path.is_relative_to(ROOT / "data") for path in json_files)
     assert data_dir() == ROOT / "data"
     assert melodies_dir() == ROOT / "data" / "melodies"
-    assert not (ROOT / "server" / "stage_data.json").exists()
+    assert not (ROOT / "app" / "stage_data.json").exists()
 
 
 def test_one_melody_document_drives_answer_playback_and_rules():
@@ -57,7 +54,7 @@ def test_one_melody_document_drives_answer_playback_and_rules():
     }
 
 
-def test_editor_round_trip_preserves_game_rules():
+def test_melody_register_round_trip_preserves_game_rules():
     source = {
         "songId": "test",
         "title": "Test",
@@ -83,10 +80,10 @@ def test_editor_round_trip_preserves_game_rules():
 
 
 def test_web_clients_load_the_server_melody_contract():
-    screen = (ROOT / "screen" / "js" / "melody-loader.js").read_text(
+    screen = (ROOT / "web" / "screen" / "js" / "melody-loader.js").read_text(
         encoding="utf-8"
     )
-    table = (ROOT / "table" / "index.html").read_text(encoding="utf-8")
+    table = (ROOT / "web" / "table" / "index.html").read_text(encoding="utf-8")
 
     assert "/api/melody" in screen
     assert "/api/melody" in table

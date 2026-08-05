@@ -3,14 +3,14 @@ import time
 
 import pytest
 
-from server.game_engine import (
+from app.game_engine import (
     EndReason,
     GameEngine,
     GameState,
     InvalidTransition,
     PlacementResult,
 )
-from server.game_runtime import GameRuntime
+from app.game_runtime import GameRuntime
 
 
 class FakeClock:

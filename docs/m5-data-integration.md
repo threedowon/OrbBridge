@@ -24,7 +24,7 @@ data/config.json
 
 서버는 게임 시작 직전에 `data/config.json`과 활성 멜로디를 다시 읽는다.
 같은 메모리 snapshot에서 정답 시퀀스와 Scheduler 입력을 만들고,
-`/game/melody`를 `/game/state`보다 먼저 전송한다. 따라서 Melody Editor 저장 후
+`/game/melody`를 `/game/state`보다 먼저 전송한다. 따라서 Melody Register 저장 후
 다음 start 한 번으로 세 웹 화면과 Python 판정·재생이 함께 갱신된다.
 
 연결 직후 WebSocket snapshot에도 전체 멜로디를 포함하며, HTTP 복구용

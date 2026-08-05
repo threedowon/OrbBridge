@@ -3,18 +3,12 @@
   "melody": "dynamite",
   "input_mode": "table",
   "audio_output": "midi",
-  "mock": {
+  "web": {
     "host": "127.0.0.1",
     "port": 8080
   },
   "serial": {
     "port": "COM5",
     "baudrate": 115200
-  },
-  "debug": {
-    "http_port": 8090,
-    "recent_window_s": 10.0,
-    "online_timeout_s": 8.0,
-    "raw_log_limit": 300
   }
 }

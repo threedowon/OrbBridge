@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from server.scheduler import (
+from app.scheduler import (
     PLAYBACK_LEAD_S,
     Melody,
     PlaybackMode,

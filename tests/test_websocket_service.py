@@ -1,16 +1,9 @@
 import asyncio
 import json
-from pathlib import Path
-import sys
 
 import websockets
 
-
-ROOT = Path(__file__).resolve().parents[1]
-SERVER = ROOT / "server"
-sys.path.insert(0, str(SERVER))
-
-from websocket_service import WebSocketService, event_message, snapshot_message
+from app.websocket_service import WebSocketService, event_message, snapshot_message
 
 
 def test_wire_messages_validate_and_preserve_the_browser_event_shape():

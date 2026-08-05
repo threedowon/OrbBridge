@@ -1,7 +1,7 @@
 /*
  * OrbBridge — 오브 등록기 (ESP32-S3)
  *
- * 16× OneWire → DS2431. USB Serial(115200) → PC 등록 도구(register_tool.py).
+ * 16× OneWire → DS2431. USB Serial(115200) → PC 등록 도구(tools.orb_register).
  * DS2431 오브를 셀에 올리면 한 번만 JSON 출력 + 온보드 RGB 빨강 깜빡.
  *   출력 형식: {"type":"ds2431","cell":n,"esp_gpio":g,"id":"AA:BB:CC:..."}
  *

@@ -5,16 +5,6 @@
       "wave": "sine",
       "filter": 900,
       "gain": 0.2,
-      "notes": {
-        "C4": "sounds/aespa_1/C4.mp3",
-        "D4": "sounds/aespa_1/D4.mp3",
-        "E4": "sounds/aespa_1/E4.mp3",
-        "F4": "sounds/aespa_1/F4.mp3",
-        "G4": "sounds/aespa_1/G4.mp3",
-        "A4": "sounds/aespa_1/A4.mp3",
-        "B4": "sounds/aespa_1/B4.mp3",
-        "C5": "sounds/aespa_1/C5.mp3"
-      },
       "labels": {
         "kr": "닝닝",
         "en": "NINGNING"
@@ -25,16 +15,6 @@
       "wave": "triangle",
       "filter": 2200,
       "gain": 0.18,
-      "notes": {
-        "C4": "sounds/aespa_2/C4.mp3",
-        "D4": "sounds/aespa_2/D4.mp3",
-        "E4": "sounds/aespa_2/E4.mp3",
-        "F4": "sounds/aespa_2/F4.mp3",
-        "G4": "sounds/aespa_2/G4.mp3",
-        "A4": "sounds/aespa_2/A4.mp3",
-        "B4": "sounds/aespa_2/B4.mp3",
-        "C5": "sounds/aespa_2/C5.mp3"
-      },
       "labels": {
         "kr": "윈터",
         "en": "WINTER"
@@ -45,16 +25,6 @@
       "wave": "sawtooth",
       "filter": 1100,
       "gain": 0.16,
-      "notes": {
-        "C4": "sounds/aespa_3/C4.mp3",
-        "D4": "sounds/aespa_3/D4.mp3",
-        "E4": "sounds/aespa_3/E4.mp3",
-        "F4": "sounds/aespa_3/F4.mp3",
-        "G4": "sounds/aespa_3/G4.mp3",
-        "A4": "sounds/aespa_3/A4.mp3",
-        "B4": "sounds/aespa_3/B4.mp3",
-        "C5": "sounds/aespa_3/C5.mp3"
-      },
       "labels": {
         "kr": "지젤",
         "en": "GISELLE"
@@ -65,16 +35,6 @@
       "wave": "sine",
       "filter": 2000,
       "gain": 0.19,
-      "notes": {
-        "C4": "sounds/aespa_4/C4.mp3",
-        "D4": "sounds/aespa_4/D4.mp3",
-        "E4": "sounds/aespa_4/E4.mp3",
-        "F4": "sounds/aespa_4/F4.mp3",
-        "G4": "sounds/aespa_4/G4.mp3",
-        "A4": "sounds/aespa_4/A4.mp3",
-        "B4": "sounds/aespa_4/B4.mp3",
-        "C5": "sounds/aespa_4/C5.mp3"
-      },
       "labels": {
         "kr": "카리나",
         "en": "KARINA"
@@ -85,16 +45,6 @@
       "wave": "sine",
       "filter": 1400,
       "gain": 0.17,
-      "notes": {
-        "C4": "sounds/bts_1/C4.mp3",
-        "D4": "sounds/bts_1/D4.mp3",
-        "E4": "sounds/bts_1/E4.mp3",
-        "F4": "sounds/bts_1/F4.mp3",
-        "G4": "sounds/bts_1/G4.mp3",
-        "A4": "sounds/bts_1/A4.mp3",
-        "B4": "sounds/bts_1/B4.mp3",
-        "C5": "sounds/bts_1/C5.mp3"
-      },
       "labels": {
         "kr": "뷔",
         "en": "V"
@@ -105,16 +55,6 @@
       "wave": "triangle",
       "filter": 1600,
       "gain": 0.19,
-      "notes": {
-        "C4": "sounds/bts_2/C4.mp3",
-        "D4": "sounds/bts_2/D4.mp3",
-        "E4": "sounds/bts_2/E4.mp3",
-        "F4": "sounds/bts_2/F4.mp3",
-        "G4": "sounds/bts_2/G4.mp3",
-        "A4": "sounds/bts_2/A4.mp3",
-        "B4": "sounds/bts_2/B4.mp3",
-        "C5": "sounds/bts_2/C5.mp3"
-      },
       "labels": {
         "kr": "슈가",
         "en": "SUGA"
@@ -125,16 +65,6 @@
       "wave": "sawtooth",
       "filter": 2000,
       "gain": 0.19,
-      "notes": {
-        "C4": "sounds/bts_3/C4.mp3",
-        "D4": "sounds/bts_3/D4.mp3",
-        "E4": "sounds/bts_3/E4.mp3",
-        "F4": "sounds/bts_3/F4.mp3",
-        "G4": "sounds/bts_3/G4.mp3",
-        "A4": "sounds/bts_3/A4.mp3",
-        "B4": "sounds/bts_3/B4.mp3",
-        "C5": "sounds/bts_3/C5.mp3"
-      },
       "labels": {
         "kr": "알엠",
         "en": "RM"
@@ -145,16 +75,6 @@
       "wave": "square",
       "filter": 1400,
       "gain": 0.14,
-      "notes": {
-        "C4": "sounds/bts_4/C4.mp3",
-        "D4": "sounds/bts_4/D4.mp3",
-        "E4": "sounds/bts_4/E4.mp3",
-        "F4": "sounds/bts_4/F4.mp3",
-        "G4": "sounds/bts_4/G4.mp3",
-        "A4": "sounds/bts_4/A4.mp3",
-        "B4": "sounds/bts_4/B4.mp3",
-        "C5": "sounds/bts_4/C5.mp3"
-      },
       "labels": {
         "kr": "정국",
         "en": "JUNGKOOK"
@@ -165,16 +85,6 @@
       "wave": "sine",
       "filter": 1600,
       "gain": 0.17,
-      "notes": {
-        "C4": "sounds/bts_5/C4.mp3",
-        "D4": "sounds/bts_5/D4.mp3",
-        "E4": "sounds/bts_5/E4.mp3",
-        "F4": "sounds/bts_5/F4.mp3",
-        "G4": "sounds/bts_5/G4.mp3",
-        "A4": "sounds/bts_5/A4.mp3",
-        "B4": "sounds/bts_5/B4.mp3",
-        "C5": "sounds/bts_5/C5.mp3"
-      },
       "labels": {
         "kr": "제이홉",
         "en": "j-hope"
@@ -185,16 +95,6 @@
       "wave": "triangle",
       "filter": 800,
       "gain": 0.21,
-      "notes": {
-        "C4": "sounds/bts_6/C4.mp3",
-        "D4": "sounds/bts_6/D4.mp3",
-        "E4": "sounds/bts_6/E4.mp3",
-        "F4": "sounds/bts_6/F4.mp3",
-        "G4": "sounds/bts_6/G4.mp3",
-        "A4": "sounds/bts_6/A4.mp3",
-        "B4": "sounds/bts_6/B4.mp3",
-        "C5": "sounds/bts_6/C5.mp3"
-      },
       "labels": {
         "kr": "지민",
         "en": "JIMIN"
@@ -205,16 +105,6 @@
       "wave": "sawtooth",
       "filter": 1800,
       "gain": 0.15,
-      "notes": {
-        "C4": "sounds/bts_7/C4.mp3",
-        "D4": "sounds/bts_7/D4.mp3",
-        "E4": "sounds/bts_7/E4.mp3",
-        "F4": "sounds/bts_7/F4.mp3",
-        "G4": "sounds/bts_7/G4.mp3",
-        "A4": "sounds/bts_7/A4.mp3",
-        "B4": "sounds/bts_7/B4.mp3",
-        "C5": "sounds/bts_7/C5.mp3"
-      },
       "labels": {
         "kr": "진",
         "en": "JIN"
@@ -225,16 +115,6 @@
       "wave": "triangle",
       "filter": 2400,
       "gain": 0.18,
-      "notes": {
-        "C4": "sounds/cortis_1/C4.mp3",
-        "D4": "sounds/cortis_1/D4.mp3",
-        "E4": "sounds/cortis_1/E4.mp3",
-        "F4": "sounds/cortis_1/F4.mp3",
-        "G4": "sounds/cortis_1/G4.mp3",
-        "A4": "sounds/cortis_1/A4.mp3",
-        "B4": "sounds/cortis_1/B4.mp3",
-        "C5": "sounds/cortis_1/C5.mp3"
-      },
       "labels": {
         "kr": "건호",
         "en": "KEONHO"
@@ -245,16 +125,6 @@
       "wave": "sawtooth",
       "filter": 900,
       "gain": 0.16,
-      "notes": {
-        "C4": "sounds/cortis_2/C4.mp3",
-        "D4": "sounds/cortis_2/D4.mp3",
-        "E4": "sounds/cortis_2/E4.mp3",
-        "F4": "sounds/cortis_2/F4.mp3",
-        "G4": "sounds/cortis_2/G4.mp3",
-        "A4": "sounds/cortis_2/A4.mp3",
-        "B4": "sounds/cortis_2/B4.mp3",
-        "C5": "sounds/cortis_2/C5.mp3"
-      },
       "labels": {
         "kr": "마틴",
         "en": "MARTIN"
@@ -265,16 +135,6 @@
       "wave": "square",
       "filter": 2200,
       "gain": 0.18,
-      "notes": {
-        "C4": "sounds/cortis_3/C4.mp3",
-        "D4": "sounds/cortis_3/D4.mp3",
-        "E4": "sounds/cortis_3/E4.mp3",
-        "F4": "sounds/cortis_3/F4.mp3",
-        "G4": "sounds/cortis_3/G4.mp3",
-        "A4": "sounds/cortis_3/A4.mp3",
-        "B4": "sounds/cortis_3/B4.mp3",
-        "C5": "sounds/cortis_3/C5.mp3"
-      },
       "labels": {
         "kr": "성현",
         "en": "SEONGHYEON"
@@ -285,16 +145,6 @@
       "wave": "square",
       "filter": 1400,
       "gain": 0.14,
-      "notes": {
-        "C4": "sounds/cortis_4/C4.mp3",
-        "D4": "sounds/cortis_4/D4.mp3",
-        "E4": "sounds/cortis_4/E4.mp3",
-        "F4": "sounds/cortis_4/F4.mp3",
-        "G4": "sounds/cortis_4/G4.mp3",
-        "A4": "sounds/cortis_4/A4.mp3",
-        "B4": "sounds/cortis_4/B4.mp3",
-        "C5": "sounds/cortis_4/C5.mp3"
-      },
       "labels": {
         "kr": "제임스",
         "en": "JAMES"
@@ -305,16 +155,6 @@
       "wave": "sine",
       "filter": 1600,
       "gain": 0.17,
-      "notes": {
-        "C4": "sounds/cortis_5/C4.mp3",
-        "D4": "sounds/cortis_5/D4.mp3",
-        "E4": "sounds/cortis_5/E4.mp3",
-        "F4": "sounds/cortis_5/F4.mp3",
-        "G4": "sounds/cortis_5/G4.mp3",
-        "A4": "sounds/cortis_5/A4.mp3",
-        "B4": "sounds/cortis_5/B4.mp3",
-        "C5": "sounds/cortis_5/C5.mp3"
-      },
       "labels": {
         "kr": "주훈",
         "en": "JUHOON"
@@ -325,16 +165,6 @@
       "wave": "sine",
       "filter": 1100,
       "gain": 0.16,
-      "notes": {
-        "C4": "sounds/enhypen_1/C4.mp3",
-        "D4": "sounds/enhypen_1/D4.mp3",
-        "E4": "sounds/enhypen_1/E4.mp3",
-        "F4": "sounds/enhypen_1/F4.mp3",
-        "G4": "sounds/enhypen_1/G4.mp3",
-        "A4": "sounds/enhypen_1/A4.mp3",
-        "B4": "sounds/enhypen_1/B4.mp3",
-        "C5": "sounds/enhypen_1/C5.mp3"
-      },
       "labels": {
         "kr": "니키",
         "en": "NI-KI"
@@ -345,16 +175,6 @@
       "wave": "triangle",
       "filter": 2000,
       "gain": 0.19,
-      "notes": {
-        "C4": "sounds/enhypen_2/C4.mp3",
-        "D4": "sounds/enhypen_2/D4.mp3",
-        "E4": "sounds/enhypen_2/E4.mp3",
-        "F4": "sounds/enhypen_2/F4.mp3",
-        "G4": "sounds/enhypen_2/G4.mp3",
-        "A4": "sounds/enhypen_2/A4.mp3",
-        "B4": "sounds/enhypen_2/B4.mp3",
-        "C5": "sounds/enhypen_2/C5.mp3"
-      },
       "labels": {
         "kr": "선우",
         "en": "SUNOO"
@@ -365,16 +185,6 @@
       "wave": "sawtooth",
       "filter": 1400,
       "gain": 0.14,
-      "notes": {
-        "C4": "sounds/enhypen_3/C4.mp3",
-        "D4": "sounds/enhypen_3/D4.mp3",
-        "E4": "sounds/enhypen_3/E4.mp3",
-        "F4": "sounds/enhypen_3/F4.mp3",
-        "G4": "sounds/enhypen_3/G4.mp3",
-        "A4": "sounds/enhypen_3/A4.mp3",
-        "B4": "sounds/enhypen_3/B4.mp3",
-        "C5": "sounds/enhypen_3/C5.mp3"
-      },
       "labels": {
         "kr": "성훈",
         "en": "SUNGHOON"
@@ -385,16 +195,6 @@
       "wave": "square",
       "filter": 1600,
       "gain": 0.17,
-      "notes": {
-        "C4": "sounds/enhypen_4/C4.mp3",
-        "D4": "sounds/enhypen_4/D4.mp3",
-        "E4": "sounds/enhypen_4/E4.mp3",
-        "F4": "sounds/enhypen_4/F4.mp3",
-        "G4": "sounds/enhypen_4/G4.mp3",
-        "A4": "sounds/enhypen_4/A4.mp3",
-        "B4": "sounds/enhypen_4/B4.mp3",
-        "C5": "sounds/enhypen_4/C5.mp3"
-      },
       "labels": {
         "kr": "정원",
         "en": "JUNGWON"
@@ -405,16 +205,6 @@
       "wave": "sine",
       "filter": 800,
       "gain": 0.21,
-      "notes": {
-        "C4": "sounds/enhypen_5/C4.mp3",
-        "D4": "sounds/enhypen_5/D4.mp3",
-        "E4": "sounds/enhypen_5/E4.mp3",
-        "F4": "sounds/enhypen_5/F4.mp3",
-        "G4": "sounds/enhypen_5/G4.mp3",
-        "A4": "sounds/enhypen_5/A4.mp3",
-        "B4": "sounds/enhypen_5/B4.mp3",
-        "C5": "sounds/enhypen_5/C5.mp3"
-      },
       "labels": {
         "kr": "제이",
         "en": "JAY"
@@ -425,16 +215,6 @@
       "wave": "triangle",
       "filter": 1800,
       "gain": 0.15,
-      "notes": {
-        "C4": "sounds/enhypen_6/C4.mp3",
-        "D4": "sounds/enhypen_6/D4.mp3",
-        "E4": "sounds/enhypen_6/E4.mp3",
-        "F4": "sounds/enhypen_6/F4.mp3",
-        "G4": "sounds/enhypen_6/G4.mp3",
-        "A4": "sounds/enhypen_6/A4.mp3",
-        "B4": "sounds/enhypen_6/B4.mp3",
-        "C5": "sounds/enhypen_6/C5.mp3"
-      },
       "labels": {
         "kr": "제이크",
         "en": "JAKE"
@@ -445,16 +225,6 @@
       "wave": "sawtooth",
       "filter": 2400,
       "gain": 0.18,
-      "notes": {
-        "C4": "sounds/enhypen_7/C4.mp3",
-        "D4": "sounds/enhypen_7/D4.mp3",
-        "E4": "sounds/enhypen_7/E4.mp3",
-        "F4": "sounds/enhypen_7/F4.mp3",
-        "G4": "sounds/enhypen_7/G4.mp3",
-        "A4": "sounds/enhypen_7/A4.mp3",
-        "B4": "sounds/enhypen_7/B4.mp3",
-        "C5": "sounds/enhypen_7/C5.mp3"
-      },
       "labels": {
         "kr": "희승",
         "en": "HEESEUNG"
@@ -465,16 +235,6 @@
       "wave": "square",
       "filter": 1400,
       "gain": 0.14,
-      "notes": {
-        "C4": "sounds/ive_1/C4.mp3",
-        "D4": "sounds/ive_1/D4.mp3",
-        "E4": "sounds/ive_1/E4.mp3",
-        "F4": "sounds/ive_1/F4.mp3",
-        "G4": "sounds/ive_1/G4.mp3",
-        "A4": "sounds/ive_1/A4.mp3",
-        "B4": "sounds/ive_1/B4.mp3",
-        "C5": "sounds/ive_1/C5.mp3"
-      },
       "labels": {
         "kr": "가을",
         "en": "GAEUL"
@@ -485,16 +245,6 @@
       "wave": "triangle",
       "filter": 1600,
       "gain": 0.17,
-      "notes": {
-        "C4": "sounds/ive_2/C4.mp3",
-        "D4": "sounds/ive_2/D4.mp3",
-        "E4": "sounds/ive_2/E4.mp3",
-        "F4": "sounds/ive_2/F4.mp3",
-        "G4": "sounds/ive_2/G4.mp3",
-        "A4": "sounds/ive_2/A4.mp3",
-        "B4": "sounds/ive_2/B4.mp3",
-        "C5": "sounds/ive_2/C5.mp3"
-      },
       "labels": {
         "kr": "레이",
         "en": "REI"
@@ -505,16 +255,6 @@
       "wave": "sine",
       "filter": 800,
       "gain": 0.21,
-      "notes": {
-        "C4": "sounds/ive_3/C4.mp3",
-        "D4": "sounds/ive_3/D4.mp3",
-        "E4": "sounds/ive_3/E4.mp3",
-        "F4": "sounds/ive_3/F4.mp3",
-        "G4": "sounds/ive_3/G4.mp3",
-        "A4": "sounds/ive_3/A4.mp3",
-        "B4": "sounds/ive_3/B4.mp3",
-        "C5": "sounds/ive_3/C5.mp3"
-      },
       "labels": {
         "kr": "리즈",
         "en": "LIZ"
@@ -525,16 +265,6 @@
       "wave": "sawtooth",
       "filter": 1800,
       "gain": 0.15,
-      "notes": {
-        "C4": "sounds/ive_4/C4.mp3",
-        "D4": "sounds/ive_4/D4.mp3",
-        "E4": "sounds/ive_4/E4.mp3",
-        "F4": "sounds/ive_4/F4.mp3",
-        "G4": "sounds/ive_4/G4.mp3",
-        "A4": "sounds/ive_4/A4.mp3",
-        "B4": "sounds/ive_4/B4.mp3",
-        "C5": "sounds/ive_4/C5.mp3"
-      },
       "labels": {
         "kr": "유진",
         "en": "YUJIN"
@@ -545,16 +275,6 @@
       "wave": "sine",
       "filter": 800,
       "gain": 0.21,
-      "notes": {
-        "C4": "sounds/ive_5/C4.mp3",
-        "D4": "sounds/ive_5/D4.mp3",
-        "E4": "sounds/ive_5/E4.mp3",
-        "F4": "sounds/ive_5/F4.mp3",
-        "G4": "sounds/ive_5/G4.mp3",
-        "A4": "sounds/ive_5/A4.mp3",
-        "B4": "sounds/ive_5/B4.mp3",
-        "C5": "sounds/ive_5/C5.mp3"
-      },
       "labels": {
         "kr": "이서",
         "en": "LEESEO"
@@ -565,16 +285,6 @@
       "wave": "triangle",
       "filter": 1800,
       "gain": 0.15,
-      "notes": {
-        "C4": "sounds/ive_6/C4.mp3",
-        "D4": "sounds/ive_6/D4.mp3",
-        "E4": "sounds/ive_6/E4.mp3",
-        "F4": "sounds/ive_6/F4.mp3",
-        "G4": "sounds/ive_6/G4.mp3",
-        "A4": "sounds/ive_6/A4.mp3",
-        "B4": "sounds/ive_6/B4.mp3",
-        "C5": "sounds/ive_6/C5.mp3"
-      },
       "labels": {
         "kr": "원영",
         "en": "WONYOUNG"
@@ -585,16 +295,6 @@
       "wave": "sine",
       "filter": 2000,
       "gain": 0.19,
-      "notes": {
-        "C4": "sounds/riize_1/C4.mp3",
-        "D4": "sounds/riize_1/D4.mp3",
-        "E4": "sounds/riize_1/E4.mp3",
-        "F4": "sounds/riize_1/F4.mp3",
-        "G4": "sounds/riize_1/G4.mp3",
-        "A4": "sounds/riize_1/A4.mp3",
-        "B4": "sounds/riize_1/B4.mp3",
-        "C5": "sounds/riize_1/C5.mp3"
-      },
       "labels": {
         "kr": "성찬",
         "en": "SUNGCHAN"
@@ -605,16 +305,6 @@
       "wave": "triangle",
       "filter": 1400,
       "gain": 0.14,
-      "notes": {
-        "C4": "sounds/riize_2/C4.mp3",
-        "D4": "sounds/riize_2/D4.mp3",
-        "E4": "sounds/riize_2/E4.mp3",
-        "F4": "sounds/riize_2/F4.mp3",
-        "G4": "sounds/riize_2/G4.mp3",
-        "A4": "sounds/riize_2/A4.mp3",
-        "B4": "sounds/riize_2/B4.mp3",
-        "C5": "sounds/riize_2/C5.mp3"
-      },
       "labels": {
         "kr": "소희",
         "en": "SOHEE"
@@ -625,16 +315,6 @@
       "wave": "sawtooth",
       "filter": 1600,
       "gain": 0.17,
-      "notes": {
-        "C4": "sounds/riize_3/C4.mp3",
-        "D4": "sounds/riize_3/D4.mp3",
-        "E4": "sounds/riize_3/E4.mp3",
-        "F4": "sounds/riize_3/F4.mp3",
-        "G4": "sounds/riize_3/G4.mp3",
-        "A4": "sounds/riize_3/A4.mp3",
-        "B4": "sounds/riize_3/B4.mp3",
-        "C5": "sounds/riize_3/C5.mp3"
-      },
       "labels": {
         "kr": "쇼타로",
         "en": "SHOTARO"
@@ -645,16 +325,6 @@
       "wave": "square",
       "filter": 800,
       "gain": 0.21,
-      "notes": {
-        "C4": "sounds/riize_4/C4.mp3",
-        "D4": "sounds/riize_4/D4.mp3",
-        "E4": "sounds/riize_4/E4.mp3",
-        "F4": "sounds/riize_4/F4.mp3",
-        "G4": "sounds/riize_4/G4.mp3",
-        "A4": "sounds/riize_4/A4.mp3",
-        "B4": "sounds/riize_4/B4.mp3",
-        "C5": "sounds/riize_4/C5.mp3"
-      },
       "labels": {
         "kr": "앤톤",
         "en": "ANTON"
@@ -665,16 +335,6 @@
       "wave": "sine",
       "filter": 1800,
       "gain": 0.15,
-      "notes": {
-        "C4": "sounds/riize_5/C4.mp3",
-        "D4": "sounds/riize_5/D4.mp3",
-        "E4": "sounds/riize_5/E4.mp3",
-        "F4": "sounds/riize_5/F4.mp3",
-        "G4": "sounds/riize_5/G4.mp3",
-        "A4": "sounds/riize_5/A4.mp3",
-        "B4": "sounds/riize_5/B4.mp3",
-        "C5": "sounds/riize_5/C5.mp3"
-      },
       "labels": {
         "kr": "원빈",
         "en": "WONBIN"
@@ -685,16 +345,6 @@
       "wave": "triangle",
       "filter": 2400,
       "gain": 0.18,
-      "notes": {
-        "C4": "sounds/riize_6/C4.mp3",
-        "D4": "sounds/riize_6/D4.mp3",
-        "E4": "sounds/riize_6/E4.mp3",
-        "F4": "sounds/riize_6/F4.mp3",
-        "G4": "sounds/riize_6/G4.mp3",
-        "A4": "sounds/riize_6/A4.mp3",
-        "B4": "sounds/riize_6/B4.mp3",
-        "C5": "sounds/riize_6/C5.mp3"
-      },
       "labels": {
         "kr": "은석",
         "en": "EUNSEOK"
@@ -705,16 +355,6 @@
       "wave": "sine",
       "filter": 2000,
       "gain": 0.19,
-      "notes": {
-        "C4": "sounds/skz_1/C4.mp3",
-        "D4": "sounds/skz_1/D4.mp3",
-        "E4": "sounds/skz_1/E4.mp3",
-        "F4": "sounds/skz_1/F4.mp3",
-        "G4": "sounds/skz_1/G4.mp3",
-        "A4": "sounds/skz_1/A4.mp3",
-        "B4": "sounds/skz_1/B4.mp3",
-        "C5": "sounds/skz_1/C5.mp3"
-      },
       "labels": {
         "kr": "리노",
         "en": "LEE KNOW"
@@ -725,16 +365,6 @@
       "wave": "triangle",
       "filter": 1400,
       "gain": 0.14,
-      "notes": {
-        "C4": "sounds/skz_2/C4.mp3",
-        "D4": "sounds/skz_2/D4.mp3",
-        "E4": "sounds/skz_2/E4.mp3",
-        "F4": "sounds/skz_2/F4.mp3",
-        "G4": "sounds/skz_2/G4.mp3",
-        "A4": "sounds/skz_2/A4.mp3",
-        "B4": "sounds/skz_2/B4.mp3",
-        "C5": "sounds/skz_2/C5.mp3"
-      },
       "labels": {
         "kr": "방찬",
         "en": "BANG CHAN"
@@ -745,16 +375,6 @@
       "wave": "sawtooth",
       "filter": 1600,
       "gain": 0.17,
-      "notes": {
-        "C4": "sounds/skz_3/C4.mp3",
-        "D4": "sounds/skz_3/D4.mp3",
-        "E4": "sounds/skz_3/E4.mp3",
-        "F4": "sounds/skz_3/F4.mp3",
-        "G4": "sounds/skz_3/G4.mp3",
-        "A4": "sounds/skz_3/A4.mp3",
-        "B4": "sounds/skz_3/B4.mp3",
-        "C5": "sounds/skz_3/C5.mp3"
-      },
       "labels": {
         "kr": "승민",
         "en": "SEUNGMIN"
@@ -765,16 +385,6 @@
       "wave": "square",
       "filter": 800,
       "gain": 0.21,
-      "notes": {
-        "C4": "sounds/skz_4/C4.mp3",
-        "D4": "sounds/skz_4/D4.mp3",
-        "E4": "sounds/skz_4/E4.mp3",
-        "F4": "sounds/skz_4/F4.mp3",
-        "G4": "sounds/skz_4/G4.mp3",
-        "A4": "sounds/skz_4/A4.mp3",
-        "B4": "sounds/skz_4/B4.mp3",
-        "C5": "sounds/skz_4/C5.mp3"
-      },
       "labels": {
         "kr": "아이엔",
         "en": "I.N"
@@ -785,16 +395,6 @@
       "wave": "sine",
       "filter": 1800,
       "gain": 0.15,
-      "notes": {
-        "C4": "sounds/skz_5/C4.mp3",
-        "D4": "sounds/skz_5/D4.mp3",
-        "E4": "sounds/skz_5/E4.mp3",
-        "F4": "sounds/skz_5/F4.mp3",
-        "G4": "sounds/skz_5/G4.mp3",
-        "A4": "sounds/skz_5/A4.mp3",
-        "B4": "sounds/skz_5/B4.mp3",
-        "C5": "sounds/skz_5/C5.mp3"
-      },
       "labels": {
         "kr": "창빈",
         "en": "CHANGBIN"
@@ -805,16 +405,6 @@
       "wave": "triangle",
       "filter": 2400,
       "gain": 0.18,
-      "notes": {
-        "C4": "sounds/skz_6/C4.mp3",
-        "D4": "sounds/skz_6/D4.mp3",
-        "E4": "sounds/skz_6/E4.mp3",
-        "F4": "sounds/skz_6/F4.mp3",
-        "G4": "sounds/skz_6/G4.mp3",
-        "A4": "sounds/skz_6/A4.mp3",
-        "B4": "sounds/skz_6/B4.mp3",
-        "C5": "sounds/skz_6/C5.mp3"
-      },
       "labels": {
         "kr": "필릭스",
         "en": "FELIX"
@@ -825,16 +415,6 @@
       "wave": "sawtooth",
       "filter": 900,
       "gain": 0.2,
-      "notes": {
-        "C4": "sounds/skz_7/C4.mp3",
-        "D4": "sounds/skz_7/D4.mp3",
-        "E4": "sounds/skz_7/E4.mp3",
-        "F4": "sounds/skz_7/F4.mp3",
-        "G4": "sounds/skz_7/G4.mp3",
-        "A4": "sounds/skz_7/A4.mp3",
-        "B4": "sounds/skz_7/B4.mp3",
-        "C5": "sounds/skz_7/C5.mp3"
-      },
       "labels": {
         "kr": "한",
         "en": "HAN"
@@ -845,16 +425,6 @@
       "wave": "square",
       "filter": 2200,
       "gain": 0.18,
-      "notes": {
-        "C4": "sounds/skz_8/C4.mp3",
-        "D4": "sounds/skz_8/D4.mp3",
-        "E4": "sounds/skz_8/E4.mp3",
-        "F4": "sounds/skz_8/F4.mp3",
-        "G4": "sounds/skz_8/G4.mp3",
-        "A4": "sounds/skz_8/A4.mp3",
-        "B4": "sounds/skz_8/B4.mp3",
-        "C5": "sounds/skz_8/C5.mp3"
-      },
       "labels": {
         "kr": "현진",
         "en": "HYUNJIN"
@@ -865,16 +435,6 @@
       "wave": "sine",
       "filter": 2000,
       "gain": 0.19,
-      "notes": {
-        "C4": "sounds/txt_1/C4.mp3",
-        "D4": "sounds/txt_1/D4.mp3",
-        "E4": "sounds/txt_1/E4.mp3",
-        "F4": "sounds/txt_1/F4.mp3",
-        "G4": "sounds/txt_1/G4.mp3",
-        "A4": "sounds/txt_1/A4.mp3",
-        "B4": "sounds/txt_1/B4.mp3",
-        "C5": "sounds/txt_1/C5.mp3"
-      },
       "labels": {
         "kr": "범규",
         "en": "BEOMGYU"
@@ -885,16 +445,6 @@
       "wave": "triangle",
       "filter": 1400,
       "gain": 0.14,
-      "notes": {
-        "C4": "sounds/txt_2/C4.mp3",
-        "D4": "sounds/txt_2/D4.mp3",
-        "E4": "sounds/txt_2/E4.mp3",
-        "F4": "sounds/txt_2/F4.mp3",
-        "G4": "sounds/txt_2/G4.mp3",
-        "A4": "sounds/txt_2/A4.mp3",
-        "B4": "sounds/txt_2/B4.mp3",
-        "C5": "sounds/txt_2/C5.mp3"
-      },
       "labels": {
         "kr": "휴닝카이",
         "en": "HUENINGKAI"
@@ -905,16 +455,6 @@
       "wave": "sawtooth",
       "filter": 1600,
       "gain": 0.17,
-      "notes": {
-        "C4": "sounds/txt_3/C4.mp3",
-        "D4": "sounds/txt_3/D4.mp3",
-        "E4": "sounds/txt_3/E4.mp3",
-        "F4": "sounds/txt_3/F4.mp3",
-        "G4": "sounds/txt_3/G4.mp3",
-        "A4": "sounds/txt_3/A4.mp3",
-        "B4": "sounds/txt_3/B4.mp3",
-        "C5": "sounds/txt_3/C5.mp3"
-      },
       "labels": {
         "kr": "수빈",
         "en": "SOOBIN"
@@ -925,16 +465,6 @@
       "wave": "square",
       "filter": 800,
       "gain": 0.21,
-      "notes": {
-        "C4": "sounds/txt_4/C4.mp3",
-        "D4": "sounds/txt_4/D4.mp3",
-        "E4": "sounds/txt_4/E4.mp3",
-        "F4": "sounds/txt_4/F4.mp3",
-        "G4": "sounds/txt_4/G4.mp3",
-        "A4": "sounds/txt_4/A4.mp3",
-        "B4": "sounds/txt_4/B4.mp3",
-        "C5": "sounds/txt_4/C5.mp3"
-      },
       "labels": {
         "kr": "태현",
         "en": "TAEHYUN"
@@ -945,16 +475,6 @@
       "wave": "sine",
       "filter": 1800,
       "gain": 0.15,
-      "notes": {
-        "C4": "sounds/txt_5/C4.mp3",
-        "D4": "sounds/txt_5/D4.mp3",
-        "E4": "sounds/txt_5/E4.mp3",
-        "F4": "sounds/txt_5/F4.mp3",
-        "G4": "sounds/txt_5/G4.mp3",
-        "A4": "sounds/txt_5/A4.mp3",
-        "B4": "sounds/txt_5/B4.mp3",
-        "C5": "sounds/txt_5/C5.mp3"
-      },
       "labels": {
         "kr": "연준",
         "en": "YEONJUN"
