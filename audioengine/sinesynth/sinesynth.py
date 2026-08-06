@@ -1,5 +1,5 @@
 """
-MIDI 테스트 리그 (MIDI Test Rig)
+SineSynth
 ================================
 에이블톤이 설치되지 않은 테스트용 PC에서 Python -> loopMIDI 파이프라인을
 검증하기 위한 로컬 대체 프로그램이다.
@@ -11,7 +11,7 @@ MIDI 테스트 리그 (MIDI Test Rig)
   - 로그를 고정 열 너비의 테이블로 표시한다
   - 마스터 피치와 MIDI 36~43 각 음의 개별 오프셋을 조정한다
   - MIDI 36~43 수동 테스트 버튼을 제공한다
-  - 설정은 스크립트와 같은 폴더의 midi_test_rig_settings.json에 저장한다
+  - 설정은 스크립트와 같은 폴더의 sinesynth_settings.json에 저장한다
 """
 
 import importlib.util
@@ -74,16 +74,16 @@ else:
     else:
         _DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "data" / "portmapping.json"
 
-SAMPLE_RATE = 44100
-ATTACK_TIME = 0.008
+SAMPLE_RATE = 48000
+ATTACK_TIME = 0.01
 RELEASE_TIME = 0.02
-DEFAULT_HOLD_TIME = 4.0
-BLOCK_SIZE = 256
+DEFAULT_HOLD_TIME = 4.0 #note_off 누락시 4초뒤 off
+BLOCK_SIZE = 512
 
 BASE_NOTES = tuple(range(36, 44))
 BASE_NOTE_NAMES = ("C", "C#", "D", "D#", "E", "F", "F#", "G")
 DEFAULT_CONFIG_PATH = _DEFAULT_CONFIG_PATH
-SETTINGS_PATH = Path(__file__).resolve().with_name("midi_test_rig_settings.json")
+SETTINGS_PATH = Path(__file__).resolve().with_name("sinesynth_settings.json")
 
 
 # --------------------------------------------------------------------------
@@ -360,7 +360,7 @@ class App(tk.Tk):
 
     def __init__(self, config_path: Path):
         super().__init__()
-        self.title("MIDI 테스트 리그 - loopMIDI → 사인파 신디사이저")
+        self.title("SineSynth - loopMIDI → 사인파 신디사이저")
         self.geometry("1280x760")
         self.minsize(1080, 650)
 
@@ -553,12 +553,12 @@ class App(tk.Tk):
         top_row = ttk.Frame(panel)
         top_row.pack(fill="x")
 
-        ttk.Label(top_row, text="마스터 피치 (st, -24~+24)", font=("", 9, "bold")).pack(side="left")
+        ttk.Label(top_row, text="마스터 피치 (st, -48~+48)", font=("", 9, "bold")).pack(side="left")
         self.master_pitch_var = tk.IntVar(value=0)
         master_spin = ttk.Spinbox(
             top_row,
-            from_=-24,
-            to=24,
+            from_=-48,
+            to=48,
             textvariable=self.master_pitch_var,
             width=6,
             justify="center",
@@ -631,7 +631,7 @@ class App(tk.Tk):
         return max(minimum, min(maximum, parsed))
 
     def _on_master_pitch(self, *_):
-        value = self._clamp_int(self.master_pitch_var.get(), -24, 24)
+        value = self._clamp_int(self.master_pitch_var.get(), -48, 48)
         self.master_pitch_var.set(value)
         self.transpose.master = value
 
@@ -654,7 +654,7 @@ class App(tk.Tk):
         try:
             data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
 
-            master = self._clamp_int(data.get("master_pitch", 0), -24, 24)
+            master = self._clamp_int(data.get("master_pitch", 0), -48, 48)
             self.transpose.master = master
             self.master_pitch_var.set(master)
 

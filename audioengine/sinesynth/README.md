@@ -1,4 +1,4 @@
-# MIDI 테스트 리그
+# SineSynth
 
 에이블톤 미설치 PC용 로컬 대체 프로그램이다. loopMIDI 입력을 수신해 포트와 채널을 그룹/멤버로 변환하고, 사인파 재생과 실시간 로그를 제공한다.
 
@@ -7,8 +7,8 @@
 ```text
 <프로젝트 루트>/
   app/app_paths.py
-  audioengine/midi_test_rig.py
-  audioengine/midi_test_rig_settings.json  # 실행 후 저장되는 설정
+  audioengine/sinesynth.py
+  audioengine/sinesynth_settings.json  # 실행 후 저장되는 설정
   data/portmapping.json
 ```
 
@@ -21,14 +21,14 @@
 커스텀 매핑 파일을 사용할 수도 있다.
 
 ```bash
-python midi_test_rig.py C:\path\to\portmapping.json
+python sinesynth.py C:\path\to\portmapping.json
 ```
 
 ## 설치 및 실행
 
 ```bash
 pip install -r requirements.txt
-python audioengine/midi_test_rig.py
+python audioengine/sinesynth.py
 ```
 
 ## 기능
@@ -56,7 +56,7 @@ python audioengine/midi_test_rig.py
 
 ## 설정 파일
 
-설정은 `midi_test_rig.py`와 같은 폴더의 `midi_test_rig_settings.json`에 저장된다.
+설정은 `sinesynth.py`와 같은 폴더의 `sinesynth_settings.json`에 저장된다.
 
 ```json
 {
@@ -86,4 +86,4 @@ loopMIDI는 Windows 전용이므로 동일한 Windows 테스트 PC에서 실행�
 
 - 피치 설정을 변경하면 기존 활성 보이스를 즉시 제거한다. 변경 후 새 NOTE_ON부터 새 피치가 적용된다.
 - 수동 테스트와 실제 MIDI 입력은 같은 `(그룹, 채널, 원본 노트)` 보이스 키를 사용하므로 같은 음이 이중 생성되지 않는다.
-- Windows에서는 테스트 리그 중복 실행을 차단한다. 이전 프로세스와 새 프로세스가 동시에 같은 MIDI를 재생하는 상황을 막는다.
+- Windows에서는 SineSynth 중복 실행을 차단한다. 이전 프로세스와 새 프로세스가 동시에 같은 MIDI를 재생하는 상황을 막는다.
