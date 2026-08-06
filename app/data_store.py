@@ -1,4 +1,4 @@
-"""설정·오브 매핑 JSON 입출력과 voice 보조 기능을 제공한다."""
+"""config, orb_mapping, portmapping 입출력과 voice 보조 기능을 제공한다."""
 
 from __future__ import annotations
 
