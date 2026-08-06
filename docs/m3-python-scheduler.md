@@ -37,12 +37,11 @@ Serial / HTTP game command
 ## WebSocket 이벤트
 
 - `/game/playback/start`: `run_id`, `mode`, `step_count`
-- `/game/playback/beat`: `run_id`, `mode`, `step`, `duration_ms`, `notes JSON`
+- `/game/playback/beat`: `run_id`, `mode`, `step`, `duration_ms`
 - `/game/playback/end`: `run_id`, `mode`, `cancelled`
 
 `run_id`가 이전 실행보다 작으면 screen이 늦게 도착한 이벤트로 보고 무시한다.
-`notes JSON`은 `audio_output: web` 개발 fallback에서만 즉시 재생하며, MIDI
-모드에서는 시각화 정보로만 사용한다.
+음향은 Python MIDI 출력 하나만 사용하며 Screen은 beat 위치만 표시한다.
 
 ## 테스트 범위
 

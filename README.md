@@ -18,9 +18,8 @@ OrbBridge/
 │   ├── web_server.py        HTTP API와 정적 파일 제공
 │   ├── websocket_service.py 실시간 이벤트와 재접속 snapshot
 │   ├── data_store.py        설정·오브 매핑 입출력
-│   ├── melody_store.py      멜로디·게임 규칙 검증
-│   ├── melody_rotation.py   게임별 멜로디 순회
-│   ├── voice_store.py       voice 표시·MIDI 이름 메타데이터
+│   ├── melody_manager.py    멜로디 로드·규칙·게임별 순회
+│   ├── voice_catalog.py     voice 표시색·이름 메타데이터
 │   └── app_paths.py         개발판·배포판 경로 처리
 ├── web/
 │   ├── screen/              관객용 화면
@@ -29,6 +28,7 @@ OrbBridge/
 ├── tools/
 │   ├── orb_register.py      DS2431 오브 등록
 │   ├── melody_register.py   멜로디·게임 규칙·순서 편집
+│   ├── midi_debug.py        MIDI 포트·voice 출력 진단
 │   └── debug/               마스터·슬레이브 심층 진단
 ├── data/                    실행 데이터의 단일 저장 위치
 │   ├── config.json
@@ -94,7 +94,6 @@ Admin에는 운영에 필요한 `start`, `reset`만 표시한다. `end`는 시�
     "playlist": ["dynamite", "Iam", "biplane"]
   },
   "input_mode": "table",
-  "audio_output": "midi",
   "web": {
     "host": "127.0.0.1",
     "port": 8080
@@ -109,8 +108,7 @@ Admin에는 운영에 필요한 `start`, `reset`만 표시한다. `end`는 시�
 | 항목 | 값 |
 |---|---|
 | `input_mode` | `table` 또는 `serial` |
-| `audio_output` | 운영용 `midi` 또는 개발용 합성음 `web` |
-| `melody` | `fixed` 모드와 구버전 설정의 기본 멜로디 ID |
+| `melody` | `fixed` 모드의 기본 멜로디 ID |
 | `melody_rotation.mode` | `sequence`: 게임마다 다음 곡, `fixed`: 첫 곡 고정 |
 | `melody_rotation.playlist` | Melody Register에서 관리하는 게임 순서 |
 | `web` | HTTP 바인딩 주소와 포트 |
@@ -124,7 +122,7 @@ Admin에는 운영에 필요한 `start`, `reset`만 표시한다. `end`는 시�
 - `data/melodies/*.json`: 판정·화면·재생·게임 규칙의 단일 원본
 - `data/orb_mapping.json`: 오브 UID → voice
 - `data/portmapping.json`: voice 그룹 → MIDI 포트·채널
-- `data/voice_catalog.json`: 화면 표시색·합성음 fallback·멤버 이름
+- `data/voice_catalog.json`: 화면 표시색·멤버 이름
 
 서버는 게임 시작 직전에 설정과 다음 멜로디를 다시 읽고 `/game/melody`를
 `RUNNING` 상태보다 먼저 전송한다. `sequence`는 성공한 start에만 순번을
@@ -148,11 +146,13 @@ Orb Register는 `data/orb_mapping.json`을 관리한다. Melody Register는
 
 ```cmd
 py -m tools.debug
+py -m tools.midi_debug --list
 ```
 
 심층 시리얼 진단은 `tools/debug/`에서 실행한다. 게임 런타임과 같은 COM 포트를
 동시에 열 수 없으므로 둘 중 하나만 실행해야 한다. loopMIDI 포트 복구 파일은
-`audioengine/loopmidi_portsetup.reg`이다.
+`audioengine/loopmidi_portsetup.reg`이다. MIDI 단음·8음 순회·전체 voice 동시
+테스트는 `/admin`의 MIDI 진단에서도 실행할 수 있다.
 
 ## 웹 동기화
 
@@ -175,6 +175,10 @@ py -m tools.debug
 | `GET` | `/api/game/state` |
 | `GET` | `/api/melody` |
 | `GET` | `/api/status` |
+| `GET` | `/api/admin/midi/status` |
+| `POST` | `/api/admin/midi/test` |
+| `POST` | `/api/admin/midi/stop` |
+| `POST` | `/api/admin/midi/reconnect` |
 
 ## 검증과 빌드
 

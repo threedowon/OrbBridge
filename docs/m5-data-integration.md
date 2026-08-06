@@ -6,7 +6,7 @@ M5는 분리돼 있던 멜로디 표시·재생·정답 데이터를 하나의 J
 
 ```text
 data/config.json
-  └─ melody_rotation 순서 선택
+  └─ melody_manager 순서 선택
        └─ data/melodies/{id}.json
             ├─ GameEngine 정답 판정
             ├─ Python Scheduler 재생
@@ -20,6 +20,7 @@ data/config.json
 - `game_rules`가 TimeOver·Idle·DFesta 입력 횟수를 함께 보관한다.
 - `current_stage`는 기존 운영 표시값으로 `data/config.json`에 유지한다.
 - 여러 멜로디는 `melody_rotation.playlist` 순서로 게임마다 순환한다.
+- 로드·규칙 검증·순번 관리는 `app/melody_manager.py` 하나가 담당한다.
 
 ## 런타임 갱신
 

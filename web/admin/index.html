@@ -350,6 +350,49 @@
     button.primary:hover { filter: brightness(1.1); }
     button:disabled { opacity: 0.4; cursor: not-allowed; }
 
+    .midi-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+    }
+
+    .midi-summary {
+      color: var(--muted);
+      font-family: "Cascadia Code", "Consolas", monospace;
+      font-size: 10px;
+      line-height: 1.5;
+      margin-bottom: 8px;
+      word-break: break-all;
+    }
+
+    .midi-fields {
+      display: grid;
+      grid-template-columns: 1fr 86px;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .midi-fields label {
+      color: var(--muted);
+      font-size: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    select, input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--ink);
+      border-radius: 5px;
+      padding: 5px 6px;
+      font-size: 11px;
+    }
+
+    .midi-job { color: var(--muted); font-size: 10px; margin-top: 7px; }
+
     .links {
       display: flex;
       gap: 12px;
@@ -380,6 +423,10 @@
       <div class="status-item" title="게임 상태">
         <span class="dot" id="dot-game"></span>
         <span id="lbl-game">Game —</span>
+      </div>
+      <div class="status-item" title="MIDI 출력 상태">
+        <span class="dot" id="dot-midi"></span>
+        <span id="lbl-midi">MIDI —</span>
       </div>
       <div class="links">
         <a href="/table">Table</a>
@@ -437,6 +484,34 @@
         </div>
       </div>
 
+      <div>
+        <div class="section-title">MIDI 진단</div>
+        <div class="midi-card">
+          <div class="midi-summary" id="midi-summary">상태 확인 중</div>
+          <div class="midi-fields">
+            <label>Voice<select id="midi-voice"></select></label>
+            <label>Pitch
+              <select id="midi-pitch">
+                <option value="0">C</option><option value="1">D</option>
+                <option value="2">E</option><option value="3">F</option>
+                <option value="4">G</option><option value="5">A</option>
+                <option value="6">B</option><option value="7">C high</option>
+              </select>
+            </label>
+            <label>음 길이(ms)<input id="midi-duration" type="number" min="30" max="5000" value="180"></label>
+            <label>순회 간격(ms)<input id="midi-delay" type="number" min="30" max="5000" value="220"></label>
+          </div>
+          <div class="toolbar">
+            <button class="primary" data-midi-mode="note">단음</button>
+            <button data-midi-mode="voice">선택 Voice 8음</button>
+            <button data-midi-mode="all_voices">전체 Voice 동시</button>
+            <button id="btn-midi-stop">중지</button>
+            <button id="btn-midi-reconnect">포트 재연결</button>
+          </div>
+          <div class="midi-job" id="midi-job">대기</div>
+        </div>
+      </div>
+
       <div style="flex:1;display:flex;flex-direction:column;min-height:0">
         <div class="section-title">이벤트 로그</div>
         <div class="event-log" id="event-log"></div>
@@ -457,6 +532,7 @@
     let selectedKey = null;
     let ws = null;
     let wsRetry = null;
+    let lastMidiJobId = 0;
 
     const gridEl = document.getElementById('grid');
     const logEl = document.getElementById('event-log');
@@ -679,6 +755,76 @@
       } catch { /* 서버가 시작 중일 수 있다. */ }
     }
 
+    function renderMidiStatus(payload) {
+      const midi = payload?.midi || {};
+      const job = payload?.job || {};
+      const ready = Boolean(midi.ready);
+      setDot('dot-midi', ready ? 'ok' : 'err');
+      document.getElementById('lbl-midi').textContent = ready
+        ? `MIDI ${midi.opened_ports?.length || 0} ports`
+        : 'MIDI 연결 안 됨';
+      document.getElementById('midi-summary').textContent = ready
+        ? `open: ${(midi.opened_ports || []).join(', ')}`
+        : (midi.error || '열린 MIDI 포트 없음');
+
+      const voiceSelect = document.getElementById('midi-voice');
+      const selected = voiceSelect.value;
+      const voices = payload?.voices || [];
+      if (voices.join('\n') !== Array.from(voiceSelect.options).map(o => o.value).join('\n')) {
+        voiceSelect.innerHTML = '';
+        for (const voice of voices) {
+          const option = document.createElement('option');
+          option.value = voice;
+          option.textContent = voice;
+          voiceSelect.appendChild(option);
+        }
+        if (voices.includes(selected)) voiceSelect.value = selected;
+      }
+
+      const running = Boolean(job.running);
+      document.querySelectorAll('[data-midi-mode]').forEach(button => {
+        button.disabled = running || !ready;
+      });
+      document.getElementById('btn-midi-stop').disabled = !running;
+      document.getElementById('btn-midi-reconnect').disabled = running;
+      document.getElementById('midi-job').textContent = running
+        ? `${job.mode} · ${job.completed}/${job.total}`
+        : (job.error || (job.id ? `완료 · ${job.completed}/${job.total}` : '대기'));
+
+      if (!running && job.id && job.id !== lastMidiJobId) {
+        lastMidiJobId = job.id;
+        const failures = (job.results || []).filter(result => !result.ok).length;
+        addLog(
+          'midi',
+          `${job.mode} 완료 · ${job.completed}/${job.total}${failures ? ` · 실패 ${failures}` : ''}`,
+          failures ? 'log-warn' : 'log-info',
+        );
+      }
+    }
+
+    async function fetchMidiStatus() {
+      try {
+        const response = await fetch('/api/admin/midi/status');
+        if (!response.ok) throw new Error(await response.text());
+        renderMidiStatus(await response.json());
+      } catch (error) {
+        setDot('dot-midi', 'err');
+        document.getElementById('lbl-midi').textContent = 'MIDI 상태 오류';
+        document.getElementById('midi-summary').textContent = error.message;
+      }
+    }
+
+    async function postMidi(path, body = {}) {
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+      return payload;
+    }
+
     function renderCellsSnapshot(data) {
       cells.clear();
       gridEl.querySelectorAll('.cell').forEach(el => {
@@ -817,12 +963,45 @@
       addLog('admin', '그리드 초기화 (표시만)', 'log-info');
     });
 
+    document.querySelectorAll('[data-midi-mode]').forEach(button => {
+      button.addEventListener('click', async () => {
+        try {
+          await postMidi('/api/admin/midi/test', {
+            mode: button.dataset.midiMode,
+            voice: document.getElementById('midi-voice').value,
+            pitch: Number(document.getElementById('midi-pitch').value),
+            duration_ms: Number(document.getElementById('midi-duration').value),
+            delay_ms: Number(document.getElementById('midi-delay').value),
+          });
+          await fetchMidiStatus();
+        } catch (error) {
+          addLog('midi', error.message, 'log-warn');
+        }
+      });
+    });
+    document.getElementById('btn-midi-stop').addEventListener('click', async () => {
+      try { await postMidi('/api/admin/midi/stop'); } catch (error) {
+        addLog('midi', error.message, 'log-warn');
+      }
+      fetchMidiStatus();
+    });
+    document.getElementById('btn-midi-reconnect').addEventListener('click', async () => {
+      try {
+        renderMidiStatus(await postMidi('/api/admin/midi/reconnect'));
+        addLog('midi', '포트 재연결 완료', 'log-info');
+      } catch (error) {
+        addLog('midi', error.message, 'log-warn');
+      }
+    });
+
     buildGrid();
     loadSnapshot();
     fetchStatus();
+    fetchMidiStatus();
     connectWs();
     // 브라우저가 타이머 기준이 되지 않도록 서버 값을 1초마다 표시만 갱신한다.
     setInterval(fetchStatus, 1000);
+    setInterval(fetchMidiStatus, 1000);
   </script>
 </body>
 </html>

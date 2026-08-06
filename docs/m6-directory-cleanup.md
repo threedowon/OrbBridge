@@ -8,7 +8,7 @@ M6는 공연 런타임, 웹 화면, 등록 도구, 빌드 설정의 물리 경�
 ```text
 app/       공연 중 실행되는 Python 본체
 web/       screen·table·admin 정적 UI
-tools/     오브·멜로디 등록 도구
+tools/     오브·멜로디 등록 및 MIDI·시리얼 진단 도구
 data/      모든 실행 JSON
 audioengine/ loopMIDI·Ableton 운영 파일
 build/     PyInstaller 설정
@@ -28,6 +28,7 @@ Python 코드는 `app.*`, `tools.*` 패키지 import를 사용한다. 실행 명
 - 삭제된 `sounds/`를 다시 만들던 경로와 Voice Sample Register
 - 사용되지 않는 `start_mock_server` 호환 별칭
 - 실행할 때마다 의존성을 설치하던 `start.command` 동작
+- Screen의 Web Audio 합성음과 브라우저 MIDI 전송 경로
 
 ## 유지한 기능
 
@@ -36,7 +37,7 @@ Python 코드는 `app.*`, `tools.*` 패키지 import를 사용한다. 실행 명
 - Python Scheduler·MIDI·WebSocket snapshot
 - Orb Register와 전체 Melody Register
 - `tools/debug/`의 오프라인 심층 진단 도구
-- `audio_output: web`의 oscillator 기반 개발 fallback
+- `tools/midi_debug.py`와 Admin MIDI 진단
 - PyInstaller용 data seed 복사
 
 ## 완료 기준

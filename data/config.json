@@ -10,7 +10,6 @@
     ]
   },
   "input_mode": "table",
-  "audio_output": "midi",
   "web": {
     "host": "127.0.0.1",
     "port": 8080

@@ -127,9 +127,18 @@ def start_http_server(
                 return
 
             if path == "/api/voices":
-                from app.voice_store import voice_api_payload
+                from app.voice_catalog import voice_api_payload
 
                 self._json(200, voice_api_payload())
+                return
+
+            if path == "/api/admin/midi/status":
+                try:
+                    from tools.midi_debug import status_payload
+
+                    self._json(200, status_payload())
+                except Exception as exc:
+                    self._json(500, {"ok": False, "error": str(exc)})
                 return
 
             if path == "/api/orbs":
@@ -242,46 +251,22 @@ def start_http_server(
                 self._run_callback(on_game_dfesta)
                 return
 
-            if self.path == "/api/midi/note":
-                try:
-                    from app.midi_out import (
-                        LISTEN_VOICE,
-                        note_name_to_pitch,
-                        trigger as midi_trigger,
-                    )
+            if self.path == "/api/admin/midi/reconnect":
+                from tools.midi_debug import reconnect
 
-                    voice = str(data.get("voice") or LISTEN_VOICE)
-                    pitch = data.get("pitch")
-                    if pitch is None and data.get("note"):
-                        pitch = note_name_to_pitch(str(data["note"]))
-                    if pitch is None:
-                        pitch = 0
-                    duration_ms = float(data.get("duration_ms", 320))
-                    velocity = int(data.get("velocity", 127))
-                    result = midi_trigger(
-                        voice,
-                        int(pitch),
-                        velocity=velocity,
-                        duration_ms=duration_ms,
-                    )
-                    self._json(200 if result.get("ok") else 400, result)
-                except Exception as exc:
-                    self._json(500, {"ok": False, "error": str(exc)})
+                self._run_callback(reconnect)
                 return
 
-            if self.path == "/api/midi/notes":
-                try:
-                    from app.midi_out import trigger_many
+            if self.path == "/api/admin/midi/test":
+                from tools.midi_debug import start_test
 
-                    raw = data.get("notes")
-                    if not isinstance(raw, list) or not raw:
-                        self._json(400, {"ok": False, "error": "notes[] required"})
-                        return
-                    results = trigger_many(raw)
-                    ok = all(r.get("ok") for r in results)
-                    self._json(200 if ok else 207, {"ok": ok, "results": results})
-                except Exception as exc:
-                    self._json(500, {"ok": False, "error": str(exc)})
+                self._run_callback(start_test, data)
+                return
+
+            if self.path == "/api/admin/midi/stop":
+                from tools.midi_debug import stop_test
+
+                self._run_callback(stop_test)
                 return
 
             self._send(404, b"Not found", "text/plain")

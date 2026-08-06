@@ -1,4 +1,3 @@
-import json
 import threading
 import time
 from copy import deepcopy
@@ -13,12 +12,11 @@ from app.game_engine import (
     PlacementResult,
 )
 from app.game_runtime import GameRuntime, RuntimeResult
-from app.melody_store import (
+from app.melody_manager import (
+    MelodyManager,
     answer_sequence_from_melody,
     game_rules_from_melody,
-    load_melody_document,
 )
-from app.melody_rotation import MelodyRotator, available_melody_ids
 from app.scheduler import PlaybackMode, PlaybackScheduler, parse_melody
 from app.serial_io import run_serial_loop
 
@@ -28,15 +26,12 @@ ensure_data_files()
 config = load_config()
 orb_mapping = load_mapping()
 
-_melody_rotator = MelodyRotator()
+_melody_manager = MelodyManager(melodies_dir())
 
 current_stage   = int(config.get("current_stage", 1))
-melody_id       = _melody_rotator.preview(
-    config,
-    available_melody_ids(melodies_dir()),
-)
+melody_id       = _melody_manager.preview(config)
 melody_path     = melodies_dir() / f"{melody_id}.json"
-melody_document = load_melody_document(melody_path)
+melody_document = _melody_manager.load(melody_id)
 playback_melody = parse_melody(melody_document)
 answer_sequence = answer_sequence_from_melody(melody_document)
 game_rules      = game_rules_from_melody(melody_document)
@@ -65,11 +60,11 @@ _serial_status = {"connected": False, "port": "", "error": ""}
 _serial_stop = threading.Event()
 _serial_thread: threading.Thread | None = None
 
-# ── M2 게임 런타임 (Serial/HTTP 입력의 단일 writer) ───
+# ── 게임 런타임 (Serial/HTTP 입력의 단일 writer) ───────
 _runtime_lock = threading.Lock()
 _game_runtime: GameRuntime | None = None
 
-# ── M3 재생 Scheduler (Listen·Play·DFesta의 단일 clock) ──
+# ── 재생 Scheduler (Listen·Play·DFesta의 단일 clock) ────
 # GameRuntime은 게임 상태를, PlaybackScheduler는 박자와 MIDI 출력을 소유한다.
 _scheduler_lock = threading.Lock()
 _playback_scheduler: PlaybackScheduler | None = None
@@ -148,19 +143,9 @@ def _slave_list_locked(now: float) -> list:
     return out
 
 
-def audio_output_mode() -> str:
-    """config.json에서 검증된 오디오 출력 방식을 반환한다."""
-    mode = str(config.get("audio_output", "web")).lower().strip()
-    return mode if mode in ("midi", "web") else "web"
-
-
 def _scheduler_send_notes(notes: list[dict]) -> list[dict]:
-    """도달한 Scheduler beat 하나를 잠긴 MIDI 묶음으로 보낸다.
-
-    web 모드는 같은 음표를 WebSocket beat 이벤트로 받으므로 Python에서
-    MIDI 포트를 열지 않는다.
-    """
-    if audio_output_mode() != "midi" or not notes:
+    """도달한 Scheduler beat 하나를 MIDI 묶음으로 보낸다."""
+    if not notes:
         return []
 
     from app.midi_out import trigger_many
@@ -184,13 +169,6 @@ def _scheduler_publish_event(event: dict) -> None:
             [run_id, mode, int(event["step_count"])],
         )
     elif event_type == "beat":
-        # Web Audio용 음표 묶음을 압축된 JSON으로 전송한다.
-        # MIDI 모드는 이 필드를 무시하고 Python의 trigger_many를 사용한다.
-        encoded_notes = json.dumps(
-            event.get("notes") or [],
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
         _publish_web_event(
             "/game/playback/beat",
             [
@@ -198,7 +176,6 @@ def _scheduler_publish_event(event: dict) -> None:
                 mode,
                 int(event["step"]),
                 int(event["duration_ms"]),
-                encoded_notes,
             ],
         )
     elif event_type == "end":
@@ -338,8 +315,7 @@ def get_status() -> dict:
             "game": game,
             "current_stage": current_stage,
             "melody": melody_id,
-            "melody_rotation": _melody_rotator.snapshot(),
-            "audio_output": audio_output_mode(),
+            "melody_rotation": _melody_manager.snapshot(),
             "playback": get_playback_scheduler().snapshot(),
             "orb_count": len(orb_mapping),
             "serial": serial,
@@ -451,12 +427,9 @@ def reload_melody_data() -> None:
     input_mode = str(config.get("input_mode", "table")).lower().strip()
     if input_mode not in ("table", "serial"):
         raise ValueError("input_mode must be table or serial")
-    selected_id = _melody_rotator.reserve(
-        config,
-        available_melody_ids(melodies_dir()),
-    )
+    selected_id = _melody_manager.reserve(config)
     selected_path = melodies_dir() / f"{selected_id}.json"
-    selected_document = load_melody_document(selected_path)
+    selected_document = _melody_manager.load(selected_id)
     selected_playback = parse_melody(selected_document)
     selected_answers = answer_sequence_from_melody(selected_document)
     selected_rules = game_rules_from_melody(selected_document)
@@ -499,9 +472,9 @@ def start_game() -> dict:
         _publish_web_event("/game/melody", [get_active_melody()])
         started = runtime.start_game()
     except Exception:
-        _melody_rotator.cancel()
+        _melody_manager.cancel()
         raise
-    _melody_rotator.commit()
+    _melody_manager.commit()
     _publish_transition(started)
 
     print(f"[game] 시작 — stage {current_stage}, melody={melody_id}")
@@ -714,15 +687,18 @@ def handle_event(event: dict) -> dict:
             [slave, cell, voice, note, result, orb_key],
         )
 
-        # MIDI 모드는 즉시 소리를 내며 screen은 중복 재생을 건너뛴다.
-        if (
-            audio_output_mode() == "midi"
-            and runtime_result.value is not PlacementResult.INACTIVE
-        ):
+        # 실제 음향 출력은 Python MIDI 경로 하나만 사용한다.
+        if runtime_result.value is not PlacementResult.INACTIVE:
             try:
                 from app.midi_out import cell_to_pitch, trigger as midi_trigger
 
-                midi_trigger(voice, cell_to_pitch(int(cell)), duration_ms=320)
+                midi_result = midi_trigger(
+                    voice,
+                    cell_to_pitch(int(cell)),
+                    duration_ms=320,
+                )
+                if not midi_result.get("ok"):
+                    print(f"[midi] trigger failed: {midi_result}")
             except Exception as exc:
                 print(f"[midi] trigger failed: {exc}")
         snapshot = _publish_transition(runtime_result)
@@ -882,25 +858,24 @@ def run_main() -> None:
     start_websocket_service()
     print(f"[stage {current_stage}] 정답 시퀀스: {answer_sequence}")
     print(f"[melody] {melody_id}")
-    print(f"[melody rotation] {_melody_rotator.snapshot()}")
+    print(f"[melody rotation] {_melody_manager.snapshot()}")
     print(f"[input] {input_mode} mode")
-    print(f"[audio] {audio_output_mode()}")
+    print("[audio] midi")
     print("screen에서 시작을 누르면 게임이 시작됩니다.")
     web_config = config.get("web") or {"host": "127.0.0.1", "port": 8080}
     print(f"[http] http://127.0.0.1:{web_config.get('port', 8080)}/screen")
     print(f"[http] http://127.0.0.1:{web_config.get('port', 8080)}/table")
 
-    if audio_output_mode() == "midi":
-        try:
-            from app.midi_out import ensure_init
+    try:
+        from app.midi_out import ensure_init
 
-            ok, err = ensure_init()
-            if ok:
-                print("[midi] ready (loopMIDI → Ableton)")
-            else:
-                print(f"[midi] WARN: {err}")
-        except Exception as exc:
-            print(f"[midi] WARN: init failed: {exc}")
+        ok, err = ensure_init()
+        if ok:
+            print("[midi] ready (loopMIDI → Ableton)")
+        else:
+            print(f"[midi] WARN: {err}")
+    except Exception as exc:
+        print(f"[midi] WARN: init failed: {exc}")
 
     from app.web_server import start_http_server
 
@@ -935,10 +910,9 @@ def run_main() -> None:
             scheduler = _playback_scheduler
         if scheduler is not None:
             scheduler.close()
-        if audio_output_mode() == "midi":
-            from app.midi_out import shutdown
+        from app.midi_out import shutdown
 
-            shutdown()
+        shutdown()
 
 
 if __name__ == "__main__":

@@ -36,6 +36,7 @@ a = Analysis(
         "serial.tools.list_ports_windows",
         "mido.backends.rtmidi",
         "rtmidi",
+        "tools.midi_debug",
     ],
     hookspath=[],
     hooksconfig={},

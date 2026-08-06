@@ -131,6 +131,7 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
         assert status["game"] == game
         assert status["melody"] == "dynamite"
         assert status["melody_rotation"]["next_melody"] == "Iam"
+        assert "audio_output" not in status
 
         for orb_id, slave, cell, _voice in placements[1:]:
             completed = main.handle_event(
@@ -483,6 +484,32 @@ def test_main_fans_out_events_and_builds_complete_web_snapshot():
         assert snapshot["events"] == []
     finally:
         main._websocket_service = None
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("app.main", "app.serial_io", "serial"):
+            sys.modules.pop(name, None)
+
+
+def test_playback_beat_websocket_contains_display_data_only():
+    main = _load_main_module()
+
+    try:
+        main._scheduler_publish_event(
+            {
+                "type": "beat",
+                "run_id": 4,
+                "mode": "play",
+                "step": 2,
+                "duration_ms": 320,
+                "notes": [{"voice": "aespa_1", "pitch": 0}],
+            }
+        )
+        assert main._websocket_service.messages[-1] == (
+            "/game/playback/beat",
+            [4, "play", 2, 320],
+        )
+    finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]

@@ -1,17 +1,17 @@
 /** /api/voices를 사용할 수 없을 때 쓰는 기본 voice 목록이다. */
 export let VOICES = [
-  { id: 0, name: 'aespa_1',   color: '#f472b6', wave: 'sine',     filter: 900,  gain: 0.20 },
-  { id: 1, name: 'aespa_2',   color: '#5eead4', wave: 'triangle', filter: 2200, gain: 0.18 },
-  { id: 2, name: 'aespa_3',   color: '#fbbf24', wave: 'sawtooth', filter: 1100, gain: 0.16 },
-  { id: 3, name: 'aespa_4',   color: '#a78bfa', wave: 'sine',     filter: 2000, gain: 0.19 },
-  { id: 4, name: 'ive_1',    color: '#60a5fa', wave: 'square',   filter: 1400, gain: 0.14 },
-  { id: 5, name: 'ive_2',    color: '#4ade80', wave: 'triangle', filter: 1600, gain: 0.17 },
-  { id: 6, name: 'ive_3',    color: '#fb923c', wave: 'sine',     filter: 800,  gain: 0.21 },
-  { id: 7, name: 'ive_4',    color: '#f87171', wave: 'sawtooth', filter: 1800, gain: 0.15 },
-  { id: 8, name: 'cortis_1', color: '#c084fc', wave: 'triangle', filter: 2400, gain: 0.18 },
+  { id: 0, name: 'aespa_1', color: '#f472b6' },
+  { id: 1, name: 'aespa_2', color: '#5eead4' },
+  { id: 2, name: 'aespa_3', color: '#fbbf24' },
+  { id: 3, name: 'aespa_4', color: '#a78bfa' },
+  { id: 4, name: 'ive_1', color: '#60a5fa' },
+  { id: 5, name: 'ive_2', color: '#4ade80' },
+  { id: 6, name: 'ive_3', color: '#fb923c' },
+  { id: 7, name: 'ive_4', color: '#f87171' },
+  { id: 8, name: 'cortis_1', color: '#c084fc' },
 ];
 
-/** GET /api/voices 응답으로 음색 목록을 교체한다. */
+/** GET /api/voices 응답으로 표시용 voice 목록을 교체한다. */
 export function setVoices(list) {
   if (!Array.isArray(list) || !list.length) return;
   VOICES = list.map((v, i) => ({ ...v, id: i }));

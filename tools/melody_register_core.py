@@ -10,12 +10,12 @@ from typing import Any, Callable
 
 from app.app_paths import melodies_dir
 from app.data_store import load_config, save_config
-from app.melody_rotation import (
+from app.melody_manager import (
     MODE_FIXED,
     MODE_SEQUENCE,
+    game_rules_from_melody,
     rotation_plan_from_config,
 )
-from app.melody_store import game_rules_from_melody
 
 NOTE_CHOICES = ("C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5")
 NOTE_REST = "REST"

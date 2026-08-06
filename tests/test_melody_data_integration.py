@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 from app.app_paths import data_dir, melodies_dir
-from app.melody_store import (
+from app.melody_manager import (
     answer_sequence_from_melody,
     game_rules_from_melody,
     load_melody_document,
@@ -75,7 +75,6 @@ def test_melody_register_saves_sequence_without_overwriting_other_config(monkeyp
     original = {
         "melody": "dynamite",
         "input_mode": "serial",
-        "audio_output": "midi",
     }
     saved = []
     monkeypatch.setattr(melody_register_core, "load_config", lambda: dict(original))
@@ -98,7 +97,7 @@ def test_melody_register_saves_sequence_without_overwriting_other_config(monkeyp
         "playlist": ["Iam", "biplane", "dynamite"],
     }
     assert saved[0]["input_mode"] == "serial"
-    assert saved[0]["audio_output"] == "midi"
+    assert "audio_output" not in saved[0]
 
 
 def test_melody_register_round_trip_preserves_game_rules():

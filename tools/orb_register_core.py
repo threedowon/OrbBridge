@@ -18,7 +18,7 @@ from app.data_store import (
     save_mapping,
     validate_voice,
 )
-from app.voice_store import ensure_voice_profile, sync_mapping_voices_to_catalog
+from app.voice_catalog import ensure_voice_profile, sync_mapping_voices_to_catalog
 
 DETECT_TYPES = {"ds2431", "ds2431_detected", "detect", "orb_detect", "orb_id"}
 LOG_LIMIT = 80

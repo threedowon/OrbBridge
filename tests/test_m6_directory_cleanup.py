@@ -3,7 +3,7 @@ from pathlib import Path
 
 from app import web_server
 from app.serial_io import run_serial_loop
-from app.voice_store import list_catalog_voices, voice_api_payload
+from app.voice_catalog import list_catalog_voices, voice_api_payload
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +18,7 @@ def test_m6_directories_match_runtime_roles():
     assert (ROOT / "web" / "admin" / "index.html").is_file()
     assert (ROOT / "tools" / "orb_register.py").is_file()
     assert (ROOT / "tools" / "melody_register.py").is_file()
+    assert (ROOT / "tools" / "midi_debug.py").is_file()
     assert (ROOT / "tools" / "debug" / "__main__.py").is_file()
     assert (ROOT / "audioengine" / "loopmidi_portsetup.reg").is_file()
 
@@ -32,12 +33,19 @@ def test_config_has_one_source_and_uses_web_name():
     assert "web" in config
     assert "mock" not in config
     assert "debug" not in config
+    assert "audio_output" not in config
 
 
 def test_removed_sample_and_editor_paths_do_not_return():
     assert not (ROOT / "data" / "sounds").exists()
     assert not list(ROOT.rglob("*voice_register*"))
     assert not list(ROOT.rglob("*melody_editor*"))
+    assert not (ROOT / "app" / "melody_store.py").exists()
+    assert not (ROOT / "app" / "melody_rotation.py").exists()
+    assert not (ROOT / "app" / "voice_store.py").exists()
+    assert (ROOT / "app" / "melody_manager.py").is_file()
+    assert (ROOT / "app" / "voice_catalog.py").is_file()
+    assert not (ROOT / "web" / "screen" / "js" / "audio.js").exists()
 
     runtime_text = "\n".join(
         path.read_text(encoding="utf-8")
@@ -57,6 +65,9 @@ def test_voice_catalog_contains_metadata_without_missing_sample_paths():
     assert catalog["voices"]
     assert all("notes" not in profile for profile in catalog["voices"].values())
     assert all("color" in profile for profile in catalog["voices"].values())
+    assert all("wave" not in profile for profile in catalog["voices"].values())
+    assert all("filter" not in profile for profile in catalog["voices"].values())
+    assert all("gain" not in profile for profile in catalog["voices"].values())
 
 
 def test_explicit_empty_mapping_does_not_reload_saved_mapping():
@@ -76,6 +87,7 @@ def test_windows_launchers_use_module_entrypoints_without_removed_paths():
         ROOT / "start.bat",
         ROOT / "tools" / "melody_register.bat",
         ROOT / "tools" / "orb_register.bat",
+        ROOT / "tools" / "midi_debug.bat",
         ROOT / "tools" / "debug" / "debug.bat",
         ROOT / "build" / "build_orbbridge.bat",
         ROOT / "build" / "build_orb_register.bat",
@@ -89,6 +101,24 @@ def test_windows_launchers_use_module_entrypoints_without_removed_paths():
     assert "-m app.launcher" in text
     assert "-m tools.melody_register" in text
     assert "-m tools.debug" in text
+    assert "-m tools.midi_debug" in text
+
+
+def test_admin_exposes_midi_debug_without_screen_midi_legacy():
+    server = (ROOT / "app" / "web_server.py").read_text(encoding="utf-8")
+    admin = (ROOT / "web" / "admin" / "index.html").read_text(encoding="utf-8")
+    screen = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (ROOT / "web" / "screen").rglob("*.js")
+    )
+
+    assert "/api/admin/midi/status" in server
+    assert "/api/admin/midi/test" in server
+    assert "/api/admin/midi/stop" in server
+    assert "/api/admin/midi/test" in admin
+    assert "/api/midi/note" not in server
+    assert "/api/midi/notes" not in server
+    assert "AudioContext" not in screen
 
 
 def test_loopmidi_registry_ports_match_portmapping():

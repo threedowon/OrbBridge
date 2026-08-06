@@ -5,9 +5,7 @@ import {
   melodyBeatCount,
   noteAt,
   rowCount,
-  rowToNoteIn,
 } from './data.js';
-import { playTone, isMidiMode } from './audio.js';
 import { draw } from './staff.js';
 
 /**
@@ -123,19 +121,15 @@ export function createEngine() {
       }
       const occupied = grid[col][row] >= 0;
       grid[col][row] = occupied ? -1 : voice;
-      if (!occupied) {
-        const note = rowToNoteIn(row, melody.scale);
-        playTone(note.freq, voice, 0.32, 0, { noteName: note.name });
-      }
       syncLockedFromGrid();
       redraw();
     },
 
     /**
      * 서버가 승인한 배치를 반영하고 orb UID마다 위치 하나만 유지한다.
-     * MIDI 모드에서는 Python이 이미 소리를 냈으므로 브라우저는 음소거한다.
+     * 음향은 Python MIDI 경로가 담당하며 Screen은 표시 상태만 갱신한다.
      */
-    placeExternal(col, row, voiceId = 0, orbId = null, { silent = false } = {}) {
+    placeExternal(col, row, voiceId = 0, orbId = null) {
       if (!melody || voiceId < 0) return;
       if (col < 0 || col >= gridCols() || row < 0 || row >= rows()) return;
 
@@ -148,12 +142,6 @@ export function createEngine() {
       if (orbId) orbPositions.set(orbId, { col, row });
       syncLockedFromGrid();
 
-      const note = rowToNoteIn(row, melody.scale);
-      playTone(note.freq, voiceId, 0.32, 0, {
-        noteName: note.name,
-        // 재연결 snapshot은 화면만 복구하며 배치된 오브 소리를 다시 내지 않는다.
-        silent: silent || isMidiMode(),
-      });
       emit('gridChange');
       redraw();
     },

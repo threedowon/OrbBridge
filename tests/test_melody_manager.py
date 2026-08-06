@@ -1,23 +1,28 @@
+from pathlib import Path
+
 import pytest
 
-from app.melody_rotation import (
-    MelodyRotator,
-    rotation_plan_from_config,
-)
+from app.melody_manager import MelodyManager, rotation_plan_from_config
 
 
 AVAILABLE = ["dynamite", "Iam", "biplane"]
 
 
-def test_legacy_melody_setting_remains_fixed():
+def _melody_directory(tmp_path: Path) -> Path:
+    for melody_id in AVAILABLE:
+        (tmp_path / f"{melody_id}.json").write_text("{}\n", encoding="utf-8")
+    return tmp_path
+
+
+def test_single_melody_setting_remains_fixed():
     plan = rotation_plan_from_config({"melody": "Iam"}, AVAILABLE)
 
     assert plan.mode == "fixed"
-    assert plan.first_id == "Iam"
+    assert plan.fixed_id == "Iam"
     assert plan.playlist == ("Iam",)
 
 
-def test_sequence_advances_only_after_successful_commit():
+def test_sequence_advances_only_after_successful_commit(tmp_path):
     config = {
         "melody": "dynamite",
         "melody_rotation": {
@@ -25,26 +30,26 @@ def test_sequence_advances_only_after_successful_commit():
             "playlist": AVAILABLE,
         },
     }
-    rotator = MelodyRotator()
+    manager = MelodyManager(_melody_directory(tmp_path))
 
-    assert rotator.preview(config, AVAILABLE) == "dynamite"
-    assert rotator.reserve(config, AVAILABLE) == "dynamite"
-    rotator.cancel()
-    assert rotator.reserve(config, AVAILABLE) == "dynamite"
+    assert manager.preview(config) == "dynamite"
+    assert manager.reserve(config) == "dynamite"
+    manager.cancel()
+    assert manager.reserve(config) == "dynamite"
 
-    rotator.commit()
-    assert rotator.reserve(config, AVAILABLE) == "Iam"
-    rotator.commit()
-    assert rotator.reserve(config, AVAILABLE) == "biplane"
-    rotator.commit()
-    assert rotator.reserve(config, AVAILABLE) == "dynamite"
+    manager.commit()
+    assert manager.reserve(config) == "Iam"
+    manager.commit()
+    assert manager.reserve(config) == "biplane"
+    manager.commit()
+    assert manager.reserve(config) == "dynamite"
 
 
 @pytest.mark.parametrize(
     ("rotation", "message"),
     [
         ({"mode": "random", "playlist": ["dynamite"]}, "fixed or sequence"),
-        ({"mode": "sequence", "playlist": []}, "must not be empty"),
+        ({"mode": "sequence", "playlist": []}, "must contain melody ids"),
         (
             {"mode": "sequence", "playlist": ["dynamite", "dynamite"]},
             "duplicate",

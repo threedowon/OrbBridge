@@ -17,3 +17,4 @@ M6에서 역할이 있는 운영 파일까지 레거시로 판단해 삭제한 �
 - Melody Register가 곡별 게임 규칙과 게임 순서를 모두 관리한다.
 - `sequence` 모드에서는 성공한 게임 시작마다 다음 멜로디를 선택한다.
 - Windows 스크립트의 CRLF를 보장하도록 `.gitattributes`를 복구했다.
+- 공연용 `app/midi_out.py`와 `tools/midi_debug.py`를 분리하고 Admin 진단을 연결했다.

@@ -1,12 +1,4 @@
-import { NOTES, beatCount, setVoices } from './data.js';
-import {
-  isMidiMode,
-  playSuccess,
-  playTone,
-  setAudioOwnerCheck,
-  setAudioOutputMode,
-  unlock,
-} from './audio.js';
+import { beatCount, setVoices } from './data.js';
 import { initStaff } from './staff.js';
 import { createEngine } from './engine.js';
 import { initConfetti, burst } from './confetti.js';
@@ -15,8 +7,6 @@ import { setVoiceIndex, tableToStaff, voiceToIndex } from './mapping.js';
 import { showOrbPlaced } from './orb-toast.js';
 
 const WS_URL = `ws://${location.hostname || '127.0.0.1'}:8765`;
-const AUDIO_OWNER_KEY = 'orbbridge-audio-owner';
-const tabId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 const engine = createEngine();
 
 let staffApi = null;
@@ -52,29 +42,6 @@ function setConn(on) {
   connEl.className = 'conn-dot' + (on ? ' on' : '');
   connEl.title = label;
   connEl.setAttribute('aria-label', label);
-}
-
-/** 열려 있는 screen 탭 중 하나만 브라우저 fallback 오디오를 출력한다. */
-function ownsAudio() {
-  try {
-    return localStorage.getItem(AUDIO_OWNER_KEY) === tabId;
-  } catch {
-    return true;
-  }
-}
-
-function claimAudio(force = false) {
-  try {
-    const owner = localStorage.getItem(AUDIO_OWNER_KEY);
-    // 직접 누른 start는 오래된 탭에서 오디오 소유권을 넘겨받는 입력이다.
-    if (force || !owner || owner === tabId) {
-      localStorage.setItem(AUDIO_OWNER_KEY, tabId);
-      return true;
-    }
-    return false;
-  } catch {
-    return true;
-  }
 }
 
 function prepareMelody(document) {
@@ -116,7 +83,6 @@ function setupPlaySession() {
 
 async function startGame() {
   if (gameRunning) return;
-  unlock();
   const result = await apiPost('/api/game/start');
   if (result.game) applyGameSnapshot(result.game, false);
   gameRunning = gameState === 'RUNNING';
@@ -134,23 +100,8 @@ async function loadVoiceCatalog() {
   }
 }
 
-async function loadAudioOutputMode() {
-  try {
-    const response = await fetch('/api/status');
-    if (!response.ok) return;
-    const data = await response.json();
-    setAudioOutputMode(data.audio_output === 'midi' ? 'midi' : 'web');
-    console.info('[audio] output =', data.audio_output || 'web');
-  } catch {
-    setAudioOutputMode('web');
-  }
-}
-
 async function enterPlayView() {
   if (!currentMelody) return;
-  unlock();
-  claimAudio(true);
-  await loadAudioOutputMode();
   await loadVoiceCatalog();
   try {
     await apiPost('/api/game/reset');
@@ -223,7 +174,6 @@ function applyGameState(state, reason = null, revision = null, announce = true) 
   ) {
     lastCompleteRevision = revision;
     burst();
-    playSuccess();
   }
 }
 
@@ -260,7 +210,7 @@ async function applyWebSocketSnapshot(snapshot) {
     try {
       const { col, row } = tableToStaff(slave, cell, currentMelody.scale);
       if (col >= getBeats()) continue;
-      engine.placeExternal(col, row, voiceIndex, info.id, { silent: true });
+      engine.placeExternal(col, row, voiceIndex, info.id);
     } catch {
       // 잘못된 셀 하나가 나머지 snapshot 복구를 막지 않게 한다.
     }
@@ -281,42 +231,11 @@ function beginPlayback(runId, mode) {
   engine.beginPlayback(mode);
 }
 
-/**
- * web 모드는 개발용 fallback이다. 시각 기준은 Python에 있으며,
- * 서버 beat가 도착하면 해당 음표를 즉시 재생한다.
- */
-function playWebBeat(mode, durationMs, encodedNotes) {
-  if (isMidiMode() || !ownsAudio()) return;
-  let notes;
-  try {
-    notes = JSON.parse(encodedNotes || '[]');
-  } catch {
-    return;
-  }
-  if (!Array.isArray(notes) || !notes.length) return;
-
-  const coherent = mode === 'dfesta';
-  for (const item of notes) {
-    const pitch = Math.max(0, Math.min(7, Number(item.pitch) || 0));
-    const note = NOTES[pitch];
-    const voiceIndex = mode === 'listen' ? 0 : voiceToIndex(item.voice);
-    if (!note || voiceIndex < 0) continue;
-    playTone(note.freq, voiceIndex, Math.max(0.04, durationMs / 1000), 0, {
-      preview: mode === 'listen',
-      noteName: note.name,
-      polyphony: notes.length,
-      coherent,
-      volume: coherent ? 0.72 : 0.88,
-    });
-  }
-}
-
-function showPlaybackBeat(runId, mode, step, durationMs, encodedNotes) {
+function showPlaybackBeat(runId, mode, step) {
   const parsedRunId = Number(runId) || 0;
   if (parsedRunId < playbackRunId) return;
   if (parsedRunId > playbackRunId) beginPlayback(parsedRunId, mode);
   engine.showPlaybackBeat(mode, Number(step));
-  playWebBeat(mode, Number(durationMs) || 40, encodedNotes);
 }
 
 function endPlayback(runId, mode) {
@@ -350,7 +269,7 @@ async function handleWsMessage(message) {
       beginPlayback(args[0], args[1]);
       break;
     case '/game/playback/beat':
-      showPlaybackBeat(args[0], args[1], args[2], args[3], args[4]);
+      showPlaybackBeat(args[0], args[1], args[2]);
       break;
     case '/game/playback/end':
       endPlayback(args[0], args[1]);
@@ -394,26 +313,6 @@ function connectWs() {
 
 document.getElementById('btn-enter').addEventListener('click', () => enterPlayView());
 
-document.body.addEventListener('click', () => {
-  unlock();
-  claimAudio();
-}, { once: true });
-
-window.addEventListener('storage', event => {
-  if (event.key === AUDIO_OWNER_KEY && event.newValue !== tabId) {
-    engine.stop();
-  }
-});
-
-window.addEventListener('beforeunload', () => {
-  if (!ownsAudio()) return;
-  try {
-    localStorage.removeItem(AUDIO_OWNER_KEY);
-  } catch {
-    // 비공개 탐색에서는 Storage를 사용할 수 없을 수 있다.
-  }
-});
-
 window.addEventListener('pagehide', () => {
   try {
     const body = JSON.stringify({});
@@ -424,8 +323,6 @@ window.addEventListener('pagehide', () => {
   }
 });
 
-setAudioOwnerCheck(() => ownsAudio());
-claimAudio();
 initConfetti();
 connectWs();
 
@@ -438,7 +335,6 @@ connectWs();
   gameRunning = false;
 
   await loadVoiceCatalog();
-  await loadAudioOutputMode();
   try {
     currentMelody = await loadActiveMelody();
   } catch (error) {

@@ -7,7 +7,7 @@ from app.data_store import (
     load_config,
     load_mapping,
 )
-from app.voice_store import ensure_voice_catalog_file
+from app.voice_catalog import ensure_voice_catalog_file
 
 
 def print_orb_list() -> None:

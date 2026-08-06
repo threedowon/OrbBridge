@@ -12,8 +12,8 @@ export function voiceDisplay(voiceName) {
   const id = String(voiceName || '').trim();
   const v = findVoice(id);
   const labels = v?.labels || {};
-  const kr = String(labels.kr ?? v?.label_kr ?? '').trim();
-  const en = String(labels.en ?? v?.label_en ?? '').trim();
+  const kr = String(labels.kr ?? '').trim();
+  const en = String(labels.en ?? '').trim();
   const color = v?.color || '';
 
   let primary = id;
