@@ -7,7 +7,7 @@ M6는 공연 런타임, 웹 화면, 등록 도구, 빌드 설정의 물리 경�
 
 ```text
 app/       공연 중 실행되는 Python 본체
-web/       screen·table·admin 정적 UI
+web/       screen·admin 정적 UI(admin 내부에 table·control 포함)
 tools/     오브·멜로디 등록 및 MIDI·시리얼 진단 도구
 data/      모든 실행 JSON
 audioengine/ loopMIDI·Ableton 운영 파일
@@ -45,5 +45,5 @@ Python 코드는 `app.*`, `tools.*` 패키지 import를 사용한다. 실행 명
 - `server/`, 루트 `screen/`, `table/`, `admin/` 경로가 남지 않는다.
 - `config.table.json`, 루트 `debug/`, `sounds/` 경로가 남지 않는다.
 - 모든 Python import와 정적 파일 경로가 새 구조를 사용한다.
-- 세 웹 화면, 게임 상태, Scheduler, 재접속 snapshot 회귀 테스트가 통과한다.
+- Screen·Admin 통합 화면, 게임 상태, Scheduler, 재접속 snapshot 회귀 테스트가 통과한다.
 - README·M1–M5 문서가 새 경로를 가리킨다.

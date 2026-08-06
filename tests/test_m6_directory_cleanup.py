@@ -14,8 +14,13 @@ def test_m6_directories_match_runtime_roles():
     assert (ROOT / "app" / "serial_io.py").is_file()
     assert (ROOT / "app" / "web_server.py").is_file()
     assert (ROOT / "web" / "screen" / "index.html").is_file()
-    assert (ROOT / "web" / "table" / "index.html").is_file()
     assert (ROOT / "web" / "admin" / "index.html").is_file()
+    assert (ROOT / "web" / "admin" / "table" / "index.html").is_file()
+    assert (ROOT / "web" / "admin" / "control" / "index.html").is_file()
+    assert not (ROOT / "web" / "table").exists()
+    assert {
+        path.name for path in (ROOT / "web").iterdir() if path.is_dir()
+    } == {"screen", "admin"}
     assert (ROOT / "tools" / "orb_register.py").is_file()
     assert (ROOT / "tools" / "melody_register.py").is_file()
     assert (ROOT / "tools" / "midi_debug.py").is_file()
@@ -78,8 +83,9 @@ def test_explicit_empty_mapping_does_not_reload_saved_mapping():
 def test_web_server_uses_the_m6_static_root():
     assert web_server.WEB_ROOT == ROOT / "web"
     assert web_server.GAME_UI == ROOT / "web" / "screen"
-    assert web_server.TABLE_UI == ROOT / "web" / "table"
     assert web_server.ADMIN_UI == ROOT / "web" / "admin"
+    assert web_server.TABLE_UI == ROOT / "web" / "admin" / "table"
+    assert web_server.ADMIN_CONTROL_UI == ROOT / "web" / "admin" / "control"
 
 
 def test_windows_launchers_use_module_entrypoints_without_removed_paths():
@@ -106,7 +112,9 @@ def test_windows_launchers_use_module_entrypoints_without_removed_paths():
 
 def test_admin_exposes_midi_debug_without_screen_midi_legacy():
     server = (ROOT / "app" / "web_server.py").read_text(encoding="utf-8")
-    admin = (ROOT / "web" / "admin" / "index.html").read_text(encoding="utf-8")
+    admin = (
+        ROOT / "web" / "admin" / "control" / "index.html"
+    ).read_text(encoding="utf-8")
     screen = "\n".join(
         path.read_text(encoding="utf-8")
         for path in (ROOT / "web" / "screen").rglob("*.js")
@@ -119,6 +127,32 @@ def test_admin_exposes_midi_debug_without_screen_midi_legacy():
     assert "/api/midi/note" not in server
     assert "/api/midi/notes" not in server
     assert "AudioContext" not in screen
+
+
+def test_admin_combines_screen_table_and_control_in_one_monitor():
+    monitor = (ROOT / "web" / "admin" / "index.html").read_text(encoding="utf-8")
+    control = (
+        ROOT / "web" / "admin" / "control" / "index.html"
+    ).read_text(encoding="utf-8")
+    screen_html = (ROOT / "web" / "screen" / "index.html").read_text(
+        encoding="utf-8"
+    )
+    screen_js = (ROOT / "web" / "screen" / "js" / "app.js").read_text(
+        encoding="utf-8"
+    )
+    server = (ROOT / "app" / "web_server.py").read_text(encoding="utf-8")
+
+    assert 'src="/screen"' in monitor
+    assert 'src="/admin/table/"' in monitor
+    assert 'src="/admin/control/"' in monitor
+    assert "/api/admin/game/auto-complete" in control
+    assert "/api/admin/orbs/collect" in control
+    assert "/api/admin/game/auto-complete" in server
+    assert "/api/admin/orbs/collect" in server
+    assert "btn-enter" not in screen_html
+    assert "/api/game/start" not in screen_js
+    assert "/api/game/reset" not in screen_js
+    assert "/api/game/end" not in screen_js
 
 
 def test_loopmidi_registry_ports_match_portmapping():

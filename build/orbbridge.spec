@@ -1,4 +1,4 @@
-# PyInstaller 설정 — Python 런타임과 세 웹 인터페이스를 묶는다.
+# PyInstaller 설정 — Python 런타임과 Screen·Admin UI를 묶는다.
 # 빌드: pyinstaller build/orbbridge.spec --noconfirm
 
 from pathlib import Path

@@ -27,7 +27,7 @@ data/config.json
 서버는 게임 시작 직전에 `data/config.json`과 다음 멜로디를 다시 읽는다.
 같은 메모리 snapshot에서 정답 시퀀스와 Scheduler 입력을 만들고,
 `/game/melody`를 `/game/state`보다 먼저 전송한다. 따라서 Melody Register 저장 후
-다음 start 한 번으로 세 웹 화면과 Python 판정·재생이 함께 갱신된다.
+다음 Admin start 한 번으로 Screen·Admin과 Python 판정·재생이 함께 갱신된다.
 성공한 start에서만 순번이 이동하므로 거부되거나 실패한 start는 곡을 건너뛰지
 않는다.
 

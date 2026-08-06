@@ -47,13 +47,13 @@ snapshot은 현재 상태, 활성 멜로디, 배치된 오브, admin 상태, 최
 ## 브라우저 복구
 
 - `screen`은 재연결 때 오브 소리를 다시 내지 않고 배치만 복구한다.
-- `table`은 현재 상태와 배치 셀을 복구한다.
-- `admin`은 상태·셀·최근 이벤트를 복구하고, 감소하는 타이머 표시는 기존 HTTP
+- Admin의 Table은 현재 상태와 배치 셀을 복구한다.
+- Admin Control은 상태·셀·최근 이벤트를 복구하고, 감소하는 타이머 표시는 기존 HTTP
   갱신을 유지한다.
 - HTTP 상태 조회는 서버 시작 경합에 대비한 짧은 보조 경로로 유지한다.
 
 ## 설정
 
-세 브라우저의 WebSocket 포트는 모두 `8765`다. 수신 host는 HTTP host를
+Screen과 Admin 내부 화면의 WebSocket 포트는 모두 `8765`다. 수신 host는 HTTP host를
 기본값으로 사용하며 `data/config.json`의 `websocket.host`로 바인딩 주소만 바꿀 수
 있다.

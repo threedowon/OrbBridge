@@ -217,6 +217,68 @@ def test_manual_end_enters_resetting_directly():
             sys.modules.pop(name, None)
 
 
+def test_admin_auto_complete_and_collect_use_runtime_state():
+    main = _load_main_module()
+    mapping = {
+        f"ORB-{index:02d}": {"voice": f"aespa_{index}"}
+        for index in range(1, 13)
+    }
+    main.load_mapping = lambda: mapping
+
+    try:
+        main.start_game()
+        runtime = main.get_game_runtime()
+        runtime.add_orb(
+            orb_id="WRONG-ORB",
+            slave=1,
+            cell=2,
+            voice="aespa_1",
+            known=True,
+        )
+
+        completed = main.auto_complete_game()
+
+        assert completed["ok"] is True
+        assert completed["removed"] == 1
+        assert completed["changed"] == 8
+        assert completed["game"]["state"] == "RUNNING"
+        assert completed["game"]["is_correct"] is True
+        assert set(completed["game"]["cells"]) == {
+            "1:1",
+            "1:14",
+            "2:5",
+            "2:12",
+            "3:3",
+            "3:10",
+            "4:1",
+            "4:9",
+        }
+        assert all(
+            cell["result"] == "correct"
+            for cell in completed["game"]["cells"].values()
+        )
+
+        addresses = [
+            address for address, _args in main._websocket_service.messages
+        ]
+        assert addresses.count("/orb/added") == 8
+        assert addresses.count("/orb/removed") == 1
+
+        collected = main.collect_all_orbs()
+
+        assert collected["ok"] is True
+        assert collected["changed"] == 8
+        assert collected["game"]["state"] == "RUNNING"
+        assert collected["game"]["cell_count"] == 0
+        assert main.get_cells() == {}
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("app.main", "app.serial_io", "serial"):
+            sys.modules.pop(name, None)
+
+
 
 def test_listen_play_and_dfesta_use_python_scheduler():
     main = _load_main_module()
@@ -325,7 +387,9 @@ def test_heartbeat_uses_occupancy_mask_instead_of_game_state_field():
 
 
 def test_admin_keeps_start_and_reset_but_hides_manual_end():
-    html = (ROOT / "web" / "admin" / "index.html").read_text(encoding="utf-8")
+    html = (
+        ROOT / "web" / "admin" / "control" / "index.html"
+    ).read_text(encoding="utf-8")
 
     for action in ("start", "reset"):
         assert f'data-game-action="{action}">{action}</button>' in html

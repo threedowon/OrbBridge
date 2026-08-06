@@ -1,7 +1,7 @@
 # OrbBridge
 
-물리 오브 테이블과 세 웹 인터페이스를 연결하는 Python 런타임이다. 하드웨어가
-없어도 `/table`에서 전체 게임 흐름을 확인할 수 있다.
+물리 오브 테이블과 Screen·Admin을 연결하는 Python 런타임이다. Admin 한 화면에서
+관객 화면, 테이블 시뮬레이터, 운영 제어를 함께 모니터링할 수 있다.
 
 ## 구조
 
@@ -23,8 +23,9 @@ OrbBridge/
 │   └── app_paths.py         개발판·배포판 경로 처리
 ├── web/
 │   ├── screen/              관객용 화면
-│   ├── table/               하드웨어 없는 테이블 입력 화면
-│   └── admin/               운영 상태·로그·제어 화면
+│   └── admin/               통합 모니터
+│       ├── control/         운영 상태·로그·제어
+│       └── table/           하드웨어 없는 테이블 입력
 ├── tools/
 │   ├── orb_register.py      DS2431 오브 등록
 │   ├── melody_register.py   멜로디·게임 규칙·순서 편집
@@ -54,13 +55,12 @@ python -m app.launcher
 
 | 주소 | 역할 |
 |---|---|
-| `http://127.0.0.1:8080/screen` | 게임 시작·악보·진행 표시 |
-| `http://127.0.0.1:8080/table` | 오브 배치·버튼 시뮬레이션 |
-| `http://127.0.0.1:8080/admin` | 상태·타이머·시리얼·로그 확인 |
+| `http://127.0.0.1:8080/screen` | 관객용 악보·진행 표시 |
+| `http://127.0.0.1:8080/admin` | Screen·Table·Control 통합 모니터 |
 
 macOS에서는 프로젝트 루트의 `start.command`를 실행해도 된다. 실행 스크립트는
 의존성을 자동 설치하지 않으므로 처음 한 번은 위 설치 명령이 필요하다.
-Windows에서는 `start.bat`를 실행하면 서버와 세 웹 화면이 함께 열린다.
+Windows에서는 `start.bat`를 실행하면 서버, Screen, Admin이 함께 열린다.
 
 ## 게임 계약
 
@@ -78,8 +78,8 @@ READY → RUNNING → RESETTING → READY
 - 버튼 이벤트: `listen`, `play`, `dfesta`
 - 종료 사유: `complete`, `idle`, `time_over`, `manual`
 
-Admin에는 운영에 필요한 `start`, `reset`만 표시한다. `end`는 시리얼·HTTP 외부
-제어 호환을 위해 유지한다.
+게임 시작은 Admin에서만 실행한다. Admin에는 `start`, `reset`, 자동완성,
+모든 오브 회수를 제공한다. `end`는 시리얼·HTTP 외부 제어 호환을 위해 유지한다.
 
 ## 설정
 
@@ -157,7 +157,7 @@ py -m tools.midi_debug --list
 ## 웹 동기화
 
 - UI → Python: HTTP `POST /api/...`
-- Python → 세 UI: WebSocket `8765`
+- Python → Screen·Admin 내부 UI: WebSocket `8765`
 - 연결 직후: 게임·멜로디·셀·상태·로그 전체 snapshot
 - 이후: 동일 연결에서 실시간 이벤트 순서 보장
 
@@ -172,6 +172,8 @@ py -m tools.midi_debug --list
 | `POST` | `/api/game/listen` |
 | `POST` | `/api/game/play` |
 | `POST` | `/api/game/dfesta` |
+| `POST` | `/api/admin/game/auto-complete` |
+| `POST` | `/api/admin/orbs/collect` |
 | `GET` | `/api/game/state` |
 | `GET` | `/api/melody` |
 | `GET` | `/api/status` |

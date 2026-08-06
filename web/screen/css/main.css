@@ -406,21 +406,14 @@ body {
   text-align: center;
 }
 
-.btn-enter {
-  background: transparent;
-  border: none;
-  color: var(--text);
+.start-status {
+  color: var(--muted);
   font-family: var(--sans);
-  font-size: .92rem;
+  font-size: .78rem;
   font-weight: 500;
-  padding: 8px 4px;
-  cursor: pointer;
-  opacity: .55;
-  transition: opacity .15s;
+  letter-spacing: .12em;
+  text-transform: uppercase;
 }
-
-.btn-enter:hover { opacity: 1; }
-.btn-enter:disabled { opacity: .25; cursor: not-allowed; }
 
 .play-header {
   display: flex;

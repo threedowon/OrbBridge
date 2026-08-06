@@ -17,6 +17,7 @@ let gameState = 'READY';
 let lastCompleteRevision = -1;
 let playbackRunId = 0;
 let wsSnapshotReceived = false;
+let playViewPrepared = false;
 // snapshot 복구가 비동기여도 서버 전송 순서를 유지한다.
 let wsMessageChain = Promise.resolve();
 
@@ -49,6 +50,7 @@ function prepareMelody(document) {
     document,
     document?.songId ?? 'custom',
   );
+  playViewPrepared = false;
   if (staffApi) {
     engine.load(currentMelody, 0);
     staffApi.resize();
@@ -56,19 +58,8 @@ function prepareMelody(document) {
   }
 }
 
-async function apiPost(path, body) {
-  const response = await fetch(path, {
-    method: 'POST',
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!response.ok) throw new Error(await response.text());
-  return response.json();
-}
-
 /** 재생 시각은 Python이 관리하므로 화면 상태만 준비한다. */
 function setupPlaySession() {
-  gameRunning = false;
   playbackRunId = 0;
   engine.load(currentMelody, 0);
   staffApi?.setHint(false);
@@ -79,13 +70,6 @@ function setupPlaySession() {
     staffApi.resize();
   }
   engine.redraw();
-}
-
-async function startGame() {
-  if (gameRunning) return;
-  const result = await apiPost('/api/game/start');
-  if (result.game) applyGameSnapshot(result.game, false);
-  gameRunning = gameState === 'RUNNING';
 }
 
 async function loadVoiceCatalog() {
@@ -100,22 +84,20 @@ async function loadVoiceCatalog() {
   }
 }
 
-async function enterPlayView() {
-  if (!currentMelody) return;
-  await loadVoiceCatalog();
-  try {
-    await apiPost('/api/game/reset');
-  } catch {
-    // 서버가 시작 중이면 이어지는 start 요청에서 다시 확인한다.
-  }
-  setupPlaySession();
-  show('play');
-  try {
-    await startGame();
-  } catch (error) {
-    console.error('시작 실패:', error.message);
+async function syncViewToGameState() {
+  const active = gameState === 'RUNNING' || gameState === 'RESETTING';
+  if (!active || !currentMelody) {
     show('start');
+    playViewPrepared = false;
+    return;
   }
+
+  await loadVoiceCatalog();
+  if (!playViewPrepared) {
+    setupPlaySession();
+    playViewPrepared = true;
+  }
+  show('play');
 }
 
 async function handleOrbAdded(slave, cell, voice, orbId) {
@@ -182,6 +164,7 @@ async function syncGameState() {
     const response = await fetch('/api/game/state');
     if (!response.ok) return;
     applyGameSnapshot(await response.json(), false);
+    await syncViewToGameState();
   } catch {
     // 서버가 준비되면 WebSocket 재연결에서 다시 동기화한다.
   }
@@ -194,7 +177,8 @@ async function applyWebSocketSnapshot(snapshot) {
   if (snapshot.melody) prepareMelody(snapshot.melody);
   const game = snapshot.game;
   if (game) applyGameSnapshot(game, false);
-  if (!currentMelody || !staffApi) return;
+  await syncViewToGameState();
+  if (!currentMelody || !staffApi || gameState === 'READY') return;
 
   await loadVoiceCatalog();
   engine.load(currentMelody, 0);
@@ -261,9 +245,13 @@ async function handleWsMessage(message) {
       break;
     case '/game/state':
       applyGameState(args[0], args[1] || null, args[2] ?? null);
+      await syncViewToGameState();
       break;
     case '/game/melody':
-      if (args[0]) prepareMelody(args[0]);
+      if (args[0]) {
+        prepareMelody(args[0]);
+        await syncViewToGameState();
+      }
       break;
     case '/game/playback/start':
       beginPlayback(args[0], args[1]);
@@ -311,35 +299,17 @@ function connectWs() {
   };
 }
 
-document.getElementById('btn-enter').addEventListener('click', () => enterPlayView());
-
-window.addEventListener('pagehide', () => {
-  try {
-    const body = JSON.stringify({});
-    const blob = new Blob([body], { type: 'application/json' });
-    if (navigator.sendBeacon) navigator.sendBeacon('/api/game/end', blob);
-  } catch {
-    // 페이지 종료 처리가 화면 이동을 막지 않게 한다.
-  }
-});
-
 initConfetti();
 connectWs();
 
 (async () => {
-  try {
-    await apiPost('/api/game/reset');
-  } catch {
-    // 서버가 준비되면 아래 초기 상태 동기화에서 복구한다.
-  }
-  gameRunning = false;
-
   await loadVoiceCatalog();
   try {
     currentMelody = await loadActiveMelody();
   } catch (error) {
     console.error(error);
-    document.getElementById('btn-enter').disabled = true;
+    document.getElementById('start-status').textContent = '멜로디 로드 실패';
   }
-  show('start');
+  await syncGameState();
+  await syncViewToGameState();
 })();

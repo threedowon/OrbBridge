@@ -70,7 +70,7 @@ _scheduler_lock = threading.Lock()
 _playback_scheduler: PlaybackScheduler | None = None
 
 # ── 직접 WebSocket (브라우저 실시간 이벤트 + 재연결 snapshot) ──
-# screen/table/admin은 모두 이 서비스에서 직접 상태를 받는다.
+# screen과 admin 내부 모니터 화면은 모두 이 서비스에서 직접 상태를 받는다.
 _web_event_lock = threading.Lock()
 _websocket_lock = threading.Lock()
 _websocket_service = None
@@ -387,7 +387,7 @@ def start_websocket_service():
         service = WebSocketService(
             get_web_snapshot,
             host=host,
-            # 세 브라우저 인터페이스가 같은 실시간 포트를 사용한다.
+            # 관객 화면과 Admin 내부 모니터가 같은 실시간 포트를 사용한다.
             port=8765,
         )
         service.start()
@@ -496,6 +496,140 @@ def reset_game() -> dict:
     snapshot = _publish_transition(result)
     print(f"[game] 리셋 — {snapshot['state']}")
     return {"ok": True, "game": snapshot}
+
+
+def _remove_all_cells_for_admin() -> tuple[int, dict]:
+    """현재 셀을 Runtime 경로로 제거하고 모든 웹 화면에 같은 순서로 알린다."""
+
+    runtime = get_game_runtime()
+    snapshot = runtime.snapshot()
+    occupied = sorted(
+        snapshot["cells"].values(),
+        key=lambda entry: (int(entry["position"]), int(entry["cell"])),
+    )
+    changed = 0
+    latest = snapshot
+
+    for entry in occupied:
+        slave = int(entry["slave"])
+        cell = int(entry["cell"])
+        orb_id = str(entry["orb_id"])
+        voice = str(entry.get("voice") or "unknown")
+        note = str(entry.get("note") or parse_cell(cell)[1])
+        result = runtime.remove_orb(
+            slave=slave,
+            cell=cell,
+            orb_id=orb_id,
+        )
+        if not result.value:
+            continue
+
+        changed += 1
+        _record_event(
+            {
+                "type": "removed",
+                "slave": slave,
+                "cell": cell,
+                "id": orb_id,
+                "voice": voice,
+                "note": note,
+                "admin": True,
+            }
+        )
+        _publish_web_event(
+            "/orb/removed",
+            [slave, cell, voice, note, orb_id],
+        )
+        latest = _publish_transition(result)
+
+    return changed, latest
+
+
+def collect_all_orbs() -> dict:
+    """관리자 요청으로 현재 점유 셀 전체를 논리적으로 회수한다."""
+
+    changed, snapshot = _remove_all_cells_for_admin()
+    print(f"[admin] 모든 오브 회수 — {changed}개")
+    return {"ok": True, "changed": changed, "game": snapshot}
+
+
+def auto_complete_game() -> dict:
+    """현재 멜로디의 정답 pitch에 등록 오브를 자동 배치한다."""
+
+    global orb_mapping
+
+    runtime = get_game_runtime()
+    current = runtime.snapshot()
+    if current["state"] != GameState.RUNNING.value:
+        raise InvalidTransition("auto-complete requires RUNNING")
+
+    orb_mapping = load_mapping()
+    available_orbs = [
+        (orb_id, str(entry.get("voice") or "").strip())
+        for orb_id, entry in sorted(orb_mapping.items())
+        if isinstance(entry, dict) and str(entry.get("voice") or "").strip()
+    ]
+    pitched_steps = [
+        step for step in playback_melody.steps if step.pitch is not None
+    ]
+    if not pitched_steps:
+        raise ValueError("active melody has no pitch steps")
+    if any(step.index >= 12 for step in pitched_steps):
+        raise ValueError("auto-complete supports up to 12 melody steps")
+    if len(available_orbs) < len(pitched_steps):
+        raise RuntimeError("not enough registered orbs for auto-complete")
+
+    plan = []
+    for step, (orb_id, voice) in zip(pitched_steps, available_orbs):
+        position = step.index + 1
+        slave = (position - 1) // 2 + 1
+        q = (position - 1) % 2 + 1
+        row = int(step.pitch) + 1
+        cell = row + (q - 1) * 8
+        plan.append((orb_id, voice, slave, cell))
+
+    removed, _snapshot = _remove_all_cells_for_admin()
+    changed = 0
+    latest = runtime.snapshot()
+    for orb_id, voice, slave, cell in plan:
+        result = runtime.add_orb(
+            orb_id=orb_id,
+            slave=slave,
+            cell=cell,
+            voice=voice,
+            known=True,
+        )
+        placement = result.value.value
+        note = parse_cell(cell)[1]
+        _record_event(
+            {
+                "type": "added",
+                "slave": slave,
+                "cell": cell,
+                "id": orb_id,
+                "voice": voice,
+                "note": note,
+                "result": placement,
+                "admin": True,
+            }
+        )
+        _publish_web_event(
+            "/orb/added",
+            [slave, cell, voice, note, placement, orb_id],
+        )
+        latest = _publish_transition(result)
+        changed += 1
+
+    if not latest.get("is_correct"):
+        raise RuntimeError("auto-complete did not produce a correct solution")
+
+    print(f"[admin] 자동완성 — 회수 {removed}개, 배치 {changed}개")
+    return {
+        "ok": True,
+        "changed": changed,
+        "removed": removed,
+        "game": latest,
+    }
 
 
 def request_listen() -> dict:
@@ -861,10 +995,10 @@ def run_main() -> None:
     print(f"[melody rotation] {_melody_manager.snapshot()}")
     print(f"[input] {input_mode} mode")
     print("[audio] midi")
-    print("screen에서 시작을 누르면 게임이 시작됩니다.")
+    print("admin에서 start를 누르면 게임이 시작됩니다.")
     web_config = config.get("web") or {"host": "127.0.0.1", "port": 8080}
     print(f"[http] http://127.0.0.1:{web_config.get('port', 8080)}/screen")
-    print(f"[http] http://127.0.0.1:{web_config.get('port', 8080)}/table")
+    print(f"[http] http://127.0.0.1:{web_config.get('port', 8080)}/admin")
 
     try:
         from app.midi_out import ensure_init
@@ -893,6 +1027,8 @@ def run_main() -> None:
         on_game_listen=request_listen,
         on_game_play=request_play,
         on_game_dfesta=request_dfesta,
+        on_admin_collect_orbs=collect_all_orbs,
+        on_admin_auto_complete=auto_complete_game,
     )
 
     start_serial_input()

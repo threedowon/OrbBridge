@@ -1,4 +1,4 @@
-"""정적 UI(/table, /screen, /admin)와 REST API를 제공하는 HTTP 서버이다."""
+"""정적 UI(/screen, /admin)와 REST API를 제공하는 HTTP 서버이다."""
 
 import json
 import socket
@@ -13,9 +13,10 @@ from app.app_paths import repo_root
 
 ROOT = repo_root()
 WEB_ROOT = ROOT / "web"
-TABLE_UI = WEB_ROOT / "table"
 GAME_UI = WEB_ROOT / "screen"
 ADMIN_UI = WEB_ROOT / "admin"
+TABLE_UI = ADMIN_UI / "table"
+ADMIN_CONTROL_UI = ADMIN_UI / "control"
 
 MIME = {
     ".html": "text/html; charset=utf-8",
@@ -53,6 +54,8 @@ def start_http_server(
     on_game_listen=None,
     on_game_play=None,
     on_game_dfesta=None,
+    on_admin_collect_orbs=None,
+    on_admin_auto_complete=None,
 ) -> None:
     host = cfg.get("host", "127.0.0.1")
     port = cfg.get("port", 8080)
@@ -174,21 +177,26 @@ def start_http_server(
                 return
 
             if path in ("/table", "/table/"):
-                self._serve_file(TABLE_UI / "index.html")
+                self.send_response(302)
+                self.send_header("Location", "/admin")
+                self.end_headers()
                 return
 
             if path in ("/screen", "/screen/"):
                 self._serve_file(GAME_UI / "index.html")
                 return
 
+            if path in ("/admin/table", "/admin/table/"):
+                self._serve_file(TABLE_UI / "index.html")
+                return
+
+            if path in ("/admin/control", "/admin/control/"):
+                self._serve_file(ADMIN_CONTROL_UI / "index.html")
+                return
+
             if path.startswith("/admin/"):
                 rel = path[len("/admin/"):]
                 self._serve_asset(ADMIN_UI, rel)
-                return
-
-            if path.startswith("/table/"):
-                rel = path[len("/table/"):]
-                self._serve_asset(TABLE_UI, rel)
                 return
 
             if path.startswith("/screen/"):
@@ -251,6 +259,14 @@ def start_http_server(
                 self._run_callback(on_game_dfesta)
                 return
 
+            if self.path == "/api/admin/orbs/collect":
+                self._run_callback(on_admin_collect_orbs)
+                return
+
+            if self.path == "/api/admin/game/auto-complete":
+                self._run_callback(on_admin_auto_complete)
+                return
+
             if self.path == "/api/admin/midi/reconnect":
                 from tools.midi_debug import reconnect
 
@@ -284,7 +300,6 @@ def start_http_server(
             traceback.print_exc()
             return
         print(f"[http] http://{host}:{port}/admin")
-        print(f"[http] http://{host}:{port}/table")
         print(f"[http] http://{host}:{port}/screen")
         try:
             server.serve_forever()
