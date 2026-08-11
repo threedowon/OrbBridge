@@ -328,6 +328,42 @@
       padding: 4px 2px;
     }
 
+    .device-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .device-row {
+      display: grid;
+      grid-template-columns: 10px 76px minmax(0, 1fr);
+      align-items: center;
+      gap: 7px;
+      font-size: 11px;
+    }
+
+    .device-role { font-weight: 600; }
+    .device-meta {
+      color: var(--muted);
+      font-family: "Cascadia Code", "Consolas", monospace;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .device-summary {
+      padding-top: 7px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
     .toolbar {
       display: flex;
       gap: 8px;
@@ -457,9 +493,13 @@
   <header>
     <h1>OrbBridge <span>Control</span></h1>
     <div class="status-bar">
-      <div class="status-item" title="아두이노 시리얼 연결">
-        <span class="dot" id="dot-serial"></span>
-        <span id="lbl-serial">Serial —</span>
+      <div class="status-item" title="Master ESP32 USB 연결">
+        <span class="dot" id="dot-master"></span>
+        <span id="lbl-master">Master —</span>
+      </div>
+      <div class="status-item" title="Dot Matrix ESP32-S3 USB 연결">
+        <span class="dot" id="dot-dotmatrix"></span>
+        <span id="lbl-dotmatrix">Dot Matrix —</span>
       </div>
       <div class="status-item" title="Python WebSocket">
         <span class="dot" id="dot-ws"></span>
@@ -510,6 +550,29 @@
           <div class="stat-box"><div class="num" id="stat-next-melody">—</div><div class="lbl">다음 멜로디</div></div>
           <div class="stat-box"><div class="num" id="stat-total-time">—</div><div class="lbl">TimeOver 잔여</div></div>
           <div class="stat-box"><div class="num" id="stat-idle-time">—</div><div class="lbl">Idle 잔여</div></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">USB 장치</div>
+        <div class="device-card">
+          <div class="device-row">
+            <span class="dot" id="card-dot-master"></span>
+            <span class="device-role">Master</span>
+            <span class="device-meta" id="device-master-meta">검색 대기</span>
+          </div>
+          <div class="device-row">
+            <span class="dot" id="card-dot-dotmatrix"></span>
+            <span class="device-role">Dot Matrix</span>
+            <span class="device-meta" id="device-dotmatrix-meta">검색 대기</span>
+          </div>
+          <div class="device-summary">
+            <div id="device-manager-summary">COM 자동 검색 대기</div>
+            <div id="matrix-display-summary">표시 상태 —</div>
+          </div>
+          <div class="toolbar">
+            <button id="btn-device-rescan">COM 재검색</button>
+          </div>
         </div>
       </div>
 
@@ -781,14 +844,56 @@
       }
     }
 
+    function deviceMeta(device) {
+      if (!device?.connected) return device?.error || '미연결';
+      const details = [device.port || 'COM —'];
+      if (device.firmware) details.push(`fw ${device.firmware}`);
+      if (device.device_id) details.push(device.device_id);
+      return details.join(' · ');
+    }
+
+    function renderDevices(s) {
+      const manager = s.hardware || {};
+      const master = manager.devices?.master || {};
+      const dotmatrix = manager.devices?.dotmatrix || {};
+      const masterRequired = s.input_mode === 'serial';
+
+      const masterState = master.connected ? 'ok' : (masterRequired ? 'err' : 'warn');
+      const matrixState = dotmatrix.connected ? 'ok' : 'err';
+      setDot('dot-master', masterState);
+      setDot('card-dot-master', masterState);
+      setDot('dot-dotmatrix', matrixState);
+      setDot('card-dot-dotmatrix', matrixState);
+      document.getElementById('lbl-master').textContent = master.connected
+        ? `Master ${master.port}`
+        : (masterRequired ? 'Master 미연결' : 'Master 선택사항');
+      document.getElementById('lbl-dotmatrix').textContent = dotmatrix.connected
+        ? `Dot Matrix ${dotmatrix.port}`
+        : 'Dot Matrix 미연결';
+      document.getElementById('device-master-meta').textContent = deviceMeta(master);
+      document.getElementById('device-dotmatrix-meta').textContent = deviceMeta(dotmatrix);
+
+      const lastScanAge = manager.last_scan_at == null
+        ? '검색 전'
+        : `${fmtAge(Math.max(0, Date.now() - manager.last_scan_at))} 전 검색`;
+      const scanState = manager.scanning ? '검색 중' : lastScanAge;
+      document.getElementById('device-manager-summary').textContent =
+        `Handshake ${manager.running ? '실행 중' : '중지'} · ${scanState}` +
+        (manager.last_error ? ` · ${manager.last_error}` : '');
+
+      const display = s.matrix_display || {};
+      const current = display.current || {};
+      const view = current.view || current.cmd || '—';
+      const state = current.state ? ` / ${current.state}` : '';
+      const seconds = Number.isFinite(current.seconds) ? ` / ${current.seconds}s` : '';
+      document.getElementById('matrix-display-summary').textContent =
+        `표시 ${view}${state}${seconds} · 밝기 ${display.brightness ?? '—'}` +
+        (display.pending ? ' · 전송 대기' : '');
+    }
+
     function renderStatus(s) {
       if (!s) return;
-      const serialOk = s.serial?.connected;
-      const tableMode = s.input_mode === 'table';
-      setDot('dot-serial', serialOk ? 'ok' : (tableMode ? 'warn' : 'err'));
-      document.getElementById('lbl-serial').textContent = tableMode
-        ? 'Table (web)'
-        : (serialOk ? `Serial ${s.serial.port}` : `Serial ${s.serial?.error || '끊김'}`);
+      renderDevices(s);
 
       const gameState = s.game?.state || 'READY';
       currentGameState = gameState;
@@ -1061,6 +1166,19 @@
     });
     document.getElementById('btn-collect-orbs').addEventListener('click', () => {
       void runAdminAction('/api/admin/orbs/collect', '오브 회수');
+    });
+    document.getElementById('btn-device-rescan').addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        await postGame('/api/admin/devices/rescan');
+        addLog('device', 'COM 재검색 요청', 'log-info');
+      } catch (error) {
+        addLog('device', error.message, 'log-warn');
+      } finally {
+        button.disabled = false;
+        void fetchStatus();
+      }
     });
 
     document.querySelectorAll('[data-midi-mode]').forEach(button => {

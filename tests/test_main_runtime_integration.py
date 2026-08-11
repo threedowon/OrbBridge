@@ -70,7 +70,8 @@ def _load_main_module():
     sys.modules["serial"] = serial_module
     sys.path.insert(0, str(PROJECT_ROOT))
     sys.modules.pop("app.main", None)
-    sys.modules.pop("app.serial_io", None)
+    sys.modules.pop("app.device_manager", None)
+    sys.modules.pop("app.matrix_display", None)
 
     module = importlib.import_module("app.main")
     module._playback_scheduler = FakeScheduler()
@@ -131,6 +132,9 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
         assert status["game"] == game
         assert status["melody"] == "dynamite"
         assert status["melody_rotation"]["next_melody"] == "Iam"
+        assert set(status["hardware"]["devices"]) == {"master", "dotmatrix"}
+        assert status["matrix_display"]["current"]["view"] == "game_status"
+        assert "serial" not in status
         assert "audio_output" not in status
 
         for orb_id, slave, cell, _voice in placements[1:]:
@@ -189,7 +193,7 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial", "app.midi_out"):
+        for name in ("app.main", "app.device_manager", "serial", "app.midi_out"):
             sys.modules.pop(name, None)
 
 
@@ -213,7 +217,7 @@ def test_manual_end_enters_resetting_directly():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("app.main", "app.device_manager", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -275,7 +279,7 @@ def test_admin_auto_complete_and_collect_use_runtime_state():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("app.main", "app.device_manager", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -319,7 +323,7 @@ def test_listen_play_and_dfesta_use_python_scheduler():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("app.main", "app.device_manager", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -334,12 +338,12 @@ def test_serial_game_controls_use_the_canonical_action_literals():
     main.request_dfesta = lambda: calls.append("dfesta")
 
     try:
-        main.handle_serial_message({"type": "game", "action": "start"})
-        main.handle_serial_message({"type": "game", "action": "listen"})
-        main.handle_serial_message({"type": "game", "action": "play"})
-        main.handle_serial_message({"type": "game", "action": "dfesta"})
-        main.handle_serial_message({"type": "game", "action": "end"})
-        main.handle_serial_message({"type": "game", "action": "reset"})
+        main.handle_master_message({"type": "game", "action": "start"})
+        main.handle_master_message({"type": "game", "action": "listen"})
+        main.handle_master_message({"type": "game", "action": "play"})
+        main.handle_master_message({"type": "game", "action": "dfesta"})
+        main.handle_master_message({"type": "game", "action": "end"})
+        main.handle_master_message({"type": "game", "action": "reset"})
 
         assert calls == [
             "start",
@@ -361,7 +365,7 @@ def test_serial_game_controls_use_the_canonical_action_literals():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("app.main", "app.device_manager", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -373,7 +377,7 @@ def test_heartbeat_uses_occupancy_mask_instead_of_game_state_field():
     )
 
     try:
-        main.handle_serial_message(
+        main.handle_master_message(
             {"type": "heartbeat", "slave": 2, "occupancy_mask": 5}
         )
 
@@ -382,7 +386,7 @@ def test_heartbeat_uses_occupancy_mask_instead_of_game_state_field():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("app.main", "app.device_manager", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -415,7 +419,7 @@ def test_state_log_uses_authoritative_state_names_only():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("app.main", "app.device_manager", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -464,7 +468,7 @@ def test_idle_transition_log_matches_runtime_until_reset_is_complete():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("app.main", "app.device_manager", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -484,7 +488,7 @@ def test_melody_rules_expose_120_second_time_over_and_30_second_idle_timers():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("app.main", "app.device_manager", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -502,7 +506,7 @@ def test_playback_requests_are_ignored_outside_active_game_states():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("app.main", "app.device_manager", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -521,7 +525,7 @@ def test_resetting_state_cancels_active_scheduler_without_blocking_runtime():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("app.main", "app.device_manager", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -538,7 +542,7 @@ def test_main_fans_out_events_and_builds_complete_web_snapshot():
         assert websocket.messages == [("/game/example", [7, "value"])]
 
         snapshot = main.get_web_snapshot()
-        assert snapshot["schema_version"] == 3
+        assert snapshot["schema_version"] == 4
         assert snapshot["game"]["state"] == "READY"
         assert snapshot["melody"]["songId"] == "dynamite"
         assert snapshot["melody"]["steps"]
@@ -551,7 +555,7 @@ def test_main_fans_out_events_and_builds_complete_web_snapshot():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("app.main", "app.device_manager", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -577,7 +581,7 @@ def test_playback_beat_websocket_contains_display_data_only():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("app.main", "app.device_manager", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -602,7 +606,7 @@ def test_start_publishes_the_active_melody_before_running_state():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("app.main", "app.device_manager", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -631,5 +635,5 @@ def test_successive_games_follow_the_configured_melody_sequence():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("app.main", "app.device_manager", "serial"):
             sys.modules.pop(name, None)

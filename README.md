@@ -13,7 +13,8 @@ OrbBridge/
 │   ├── game_engine.py       상태·셀·정답·타이머 순수 로직
 │   ├── game_runtime.py      입력 Queue와 단일 writer
 │   ├── scheduler.py         Listen·Play·DFesta 재생 스케줄
-│   ├── serial_io.py         ESP USB 시리얼 입력
+│   ├── device_manager.py    Master·Dot Matrix COM 자동 식별·송수신
+│   ├── matrix_display.py    Dot Matrix 표시 상태·재연결 복원
 │   ├── midi_out.py          Ableton MIDI 출력
 │   ├── web_server.py        HTTP API와 정적 파일 제공
 │   ├── websocket_service.py 실시간 이벤트와 재접속 snapshot
@@ -61,6 +62,8 @@ python -m app.launcher
 macOS에서는 프로젝트 루트의 `start.command`를 실행해도 된다. 실행 스크립트는
 의존성을 자동 설치하지 않으므로 처음 한 번은 위 설치 명령이 필요하다.
 Windows에서는 `start.bat`를 실행하면 서버, Screen, Admin이 함께 열린다.
+Admin은 공연 운영의 단일 통합 모니터이다. 이후 하드웨어·오디오·게임 상태가
+늘어나도 별도 운영 GUI를 추가하지 않고 `/admin/control`에 합쳐 표시한다.
 
 ## 게임 계약
 
@@ -98,9 +101,12 @@ READY → RUNNING → RESETTING → READY
     "host": "127.0.0.1",
     "port": 8080
   },
-  "serial": {
-    "port": "COM5",
-    "baudrate": 115200
+  "hardware": {
+    "baudrate": 115200,
+    "scan_interval_s": 3
+  },
+  "dotmatrix": {
+    "brightness": 64
   }
 }
 ```
@@ -113,9 +119,26 @@ READY → RUNNING → RESETTING → READY
 | `melody_rotation.playlist` | Melody Register에서 관리하는 게임 순서 |
 | `web` | HTTP 바인딩 주소와 포트 |
 | `websocket.host` | 선택값이며 없으면 `web.host` 사용 |
-| `serial` | ESP 마스터 COM 포트와 baudrate |
+| `hardware` | Master·Dot Matrix 공통 baudrate와 자동 검색 간격 |
+| `dotmatrix.brightness` | Dot Matrix 전역 밝기 0–255 |
 
 `config.table.json`, 별도 debug 설정, `sounds/` 샘플 경로는 사용하지 않는다.
+COM 번호는 저장하지 않으며 실행 중 handshake의 `role`로 `master`와
+`dotmatrix`를 자동 식별한다. 실제 COM과 선택적 `device_id`는 Admin 상태에만
+표시하고 포트가 바뀌면 자동 갱신한다.
+
+## USB 장치와 Dot Matrix
+
+PC는 연결 가능한 COM에 `hello`를 보내고 두 ESP 보드가 자신의 역할을 응답한다.
+프로토콜 전문은 `docs/hardware-usb-protocol.md`에 있다.
+
+- Master 입력은 `input_mode: serial`에서만 게임 이벤트로 처리한다.
+- Table 모드에서도 두 장치의 연결 상태는 계속 감시한다.
+- Dot Matrix 출력은 `input_mode`와 무관하게 항상 연결을 시도한다.
+- `matrix_display.py`는 최신 화면 하나만 유지하며 재연결 시 밝기와 화면을 복원한다.
+- 복잡한 ACK 재전송 큐나 장치별 상태 머신은 사용하지 않는다.
+- Admin에서 Master·Dot Matrix의 COM, 펌웨어, 장치 ID와 표시 상태를 확인하고
+  COM 재검색을 요청할 수 있다.
 
 ## 데이터
 
@@ -174,6 +197,7 @@ py -m tools.midi_debug --list
 | `POST` | `/api/game/dfesta` |
 | `POST` | `/api/admin/game/auto-complete` |
 | `POST` | `/api/admin/orbs/collect` |
+| `POST` | `/api/admin/devices/rescan` |
 | `GET` | `/api/game/state` |
 | `GET` | `/api/melody` |
 | `GET` | `/api/status` |

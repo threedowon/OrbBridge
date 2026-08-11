@@ -14,19 +14,19 @@ from tools.melody_register_core import normalize_melody, to_save_payload
 import tools.melody_register_core as melody_register_core
 
 
-def test_runtime_json_lives_under_data_except_midi_test_rig_settings():
-    midi_rig_settings = (
-        ROOT / "audioengine" / "midi_test_rig" / "midi_test_rig_settings.json"
+def test_runtime_json_lives_under_data_except_sinesynth_settings():
+    sinesynth_settings = (
+        ROOT / "audioengine" / "sinesynth" / "sinesynth_settings.json"
     )
     json_files = [
         path
         for path in ROOT.rglob("*.json")
-        if ".pytest_cache" not in path.parts and path != midi_rig_settings
+        if ".pytest_cache" not in path.parts and path != sinesynth_settings
     ]
 
     assert json_files
     assert all(path.is_relative_to(ROOT / "data") for path in json_files)
-    assert midi_rig_settings.is_file()
+    assert sinesynth_settings.is_file()
     assert data_dir() == ROOT / "data"
     assert melodies_dir() == ROOT / "data" / "melodies"
     assert not (ROOT / "app" / "stage_data.json").exists()

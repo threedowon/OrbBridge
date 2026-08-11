@@ -31,6 +31,10 @@
 #define T_REMOVED 2
 #define T_HEART   3
 
+#define USB_PROTOCOL "orbbridge"
+#define USB_PROTOCOL_VERSION 1
+#define FW_VERSION "0.2.0"
+
 Adafruit_NeoPixel led(1, RGB_PIN, NEO_GRB + NEO_KHZ800);
 HardwareSerial RS485(1);
 
@@ -48,6 +52,8 @@ unsigned long badCount = 0;     // CRC 불일치(깨진 프레임) 수
 // 바이너리 프레임 조립 버퍼
 uint8_t frame[FRAME_LEN];
 int frameLen = 0;
+String pcInputLine;
+String masterDeviceId;
 
 uint8_t crc8(const uint8_t* data, int len) {
   uint8_t crc = 0;
@@ -64,6 +70,68 @@ uint8_t crc8(const uint8_t* data, int len) {
 }
 
 void pcSendLine(const String& line) { Serial.println(line); }
+
+String makeDeviceId() {
+  uint64_t mac = ESP.getEfuseMac();
+  char value[13];
+  snprintf(
+    value,
+    sizeof(value),
+    "%04X%08X",
+    (uint16_t)(mac >> 32),
+    (uint32_t)mac
+  );
+  return String(value);
+}
+
+String jsonStringValue(const String& json, const char* key) {
+  String token = String("\"") + key + "\"";
+  int keyAt = json.indexOf(token);
+  if (keyAt < 0) return "";
+  int colonAt = json.indexOf(':', keyAt + token.length());
+  if (colonAt < 0) return "";
+  int valueAt = json.indexOf('"', colonAt + 1);
+  if (valueAt < 0) return "";
+  int endAt = json.indexOf('"', valueAt + 1);
+  if (endAt < 0) return "";
+  return json.substring(valueAt + 1, endAt);
+}
+
+void sendHello(const String& nonce) {
+  Serial.print("{\"type\":\"hello\",\"protocol\":\"");
+  Serial.print(USB_PROTOCOL);
+  Serial.print("\",\"version\":");
+  Serial.print(USB_PROTOCOL_VERSION);
+  Serial.print(",\"role\":\"master\",\"device_id\":\"");
+  Serial.print(masterDeviceId);
+  Serial.print("\",\"fw\":\"");
+  Serial.print(FW_VERSION);
+  Serial.print("\",\"nonce\":\"");
+  Serial.print(nonce);
+  Serial.println("\"}");
+}
+
+void handlePcCommand(const String& line) {
+  String cmd = jsonStringValue(line, "cmd");
+  if (cmd == "hello") {
+    sendHello(jsonStringValue(line, "nonce"));
+  } else if (cmd == "ping") {
+    pcSendLine("{\"type\":\"pong\"}");
+  }
+}
+
+void pollPcCommands() {
+  while (Serial.available()) {
+    char ch = (char)Serial.read();
+    if (ch == '\n') {
+      pcInputLine.trim();
+      if (pcInputLine.length() > 0) handlePcCommand(pcInputLine);
+      pcInputLine = "";
+    } else if (ch != '\r' && pcInputLine.length() < 512) {
+      pcInputLine += ch;
+    }
+  }
+}
 
 void blinkYellow() {
   led.setPixelColor(0, led.Color(255, 255, 0));
@@ -164,6 +232,8 @@ void pollRs485() {
 void setup() {
   Serial.begin(115200);
   delay(1500);
+  pcInputLine.reserve(256);
+  masterDeviceId = makeDeviceId();
 
   led.begin();
   led.setBrightness(LED_BRIGHTNESS);
@@ -181,6 +251,7 @@ void setup() {
 }
 
 void loop() {
+  pollPcCommands();
   pollRs485();
   pollButtons();
   updateLed();

@@ -4,6 +4,7 @@ from copy import deepcopy
 
 from app.app_paths import ensure_data_files, melodies_dir
 from app.data_store import find_orb, load_config, load_mapping
+from app.device_manager import DeviceManager
 from app.game_engine import (
     EndReason,
     GameEngine,
@@ -17,8 +18,8 @@ from app.melody_manager import (
     answer_sequence_from_melody,
     game_rules_from_melody,
 )
+from app.matrix_display import MatrixDisplay
 from app.scheduler import PlaybackMode, PlaybackScheduler, parse_melody
-from app.serial_io import run_serial_loop
 
 ensure_data_files()
 
@@ -52,13 +53,15 @@ GAME_ACTION_LISTEN = "listen"
 GAME_ACTION_PLAY = "play"
 GAME_ACTION_DFESTA = "dfesta"
 
-# ── Admin 상태 (셀 점유, 이벤트 로그, 시리얼) ────────
+# ── Admin 상태 (셀 점유, 이벤트 로그) ───────────────
 _state_lock = threading.Lock()
 _event_log: list[dict] = []
 EVENT_LOG_LIMIT = 100
-_serial_status = {"connected": False, "port": "", "error": ""}
-_serial_stop = threading.Event()
-_serial_thread: threading.Thread | None = None
+
+# ── USB 장치와 Dot Matrix 표시 상태 ──────────────────
+_device_lock = threading.RLock()
+_device_manager: DeviceManager | None = None
+_matrix_display: MatrixDisplay | None = None
 
 # ── 게임 런타임 (Serial/HTTP 입력의 단일 writer) ───────
 _runtime_lock = threading.Lock()
@@ -97,6 +100,39 @@ def _record_event(entry: dict) -> None:
         _event_log.append(entry)
         if len(_event_log) > EVENT_LOG_LIMIT:
             del _event_log[: len(_event_log) - EVENT_LOG_LIMIT]
+
+
+def get_device_manager() -> DeviceManager:
+    """Master·Dot Matrix 자동 식별 관리자를 한 번만 생성한다."""
+    global _device_manager, _matrix_display
+    with _device_lock:
+        if _device_manager is None:
+            hardware_cfg = config.get("hardware") or {}
+            if not hardware_cfg:
+                # 기존 설정에서는 고정 COM을 버리고 baudrate만 이어받는다.
+                legacy_serial = config.get("serial") or {}
+                hardware_cfg = {
+                    "baudrate": legacy_serial.get("baudrate", 115200)
+                }
+            _device_manager = DeviceManager(
+                hardware_cfg,
+                _route_master_message,
+            )
+            matrix_cfg = config.get("dotmatrix") or {}
+            _matrix_display = MatrixDisplay(
+                _device_manager,
+                brightness=int(matrix_cfg.get("brightness", 64)),
+            )
+            _device_manager.set_connected_callback(
+                _matrix_display.handle_device_connected
+            )
+        return _device_manager
+
+
+def get_matrix_display() -> MatrixDisplay:
+    get_device_manager()
+    assert _matrix_display is not None
+    return _matrix_display
 
 
 def _touch_slave(slave_id: int, *, heartbeat: bool) -> None:
@@ -280,6 +316,7 @@ def _on_state_change(previous: str, current: str, snapshot: dict) -> None:
     reason = snapshot.get("end_reason") or ""
     print(f"[state] {previous} → {current}{f' ({reason})' if reason else ''}")
     _publish_web_event("/game/state", _state_payload(snapshot, previous))
+    _sync_matrix_display(snapshot)
 
 
 def get_game_runtime() -> GameRuntime:
@@ -307,8 +344,9 @@ def get_active_melody() -> dict:
 def get_status() -> dict:
     game = get_game_state()
     now = time.time() * 1000
+    hardware = get_device_manager().status()
+    matrix_display = get_matrix_display().status()
     with _state_lock:
-        serial = dict(_serial_status)
         slaves = _slave_list_locked(now)
         return {
             "input_mode": input_mode,
@@ -318,7 +356,8 @@ def get_status() -> dict:
             "melody_rotation": _melody_manager.snapshot(),
             "playback": get_playback_scheduler().snapshot(),
             "orb_count": len(orb_mapping),
-            "serial": serial,
+            "hardware": hardware,
+            "matrix_display": matrix_display,
             "cell_count": game["cell_count"],
             "slaves": slaves,
             "slave_online_timeout_s": SLAVE_ONLINE_TIMEOUT_S,
@@ -358,7 +397,7 @@ def get_web_snapshot() -> dict:
     status["game"] = game
     status["cell_count"] = game["cell_count"]
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "game": game,
         "melody": get_active_melody(),
         "cells": get_cells(game),
@@ -706,8 +745,8 @@ def request_dfesta() -> dict:
         "game": snapshot,
     }
 
-def handle_serial_message(event: dict) -> None:
-    """USB/serial 한 줄 JSON — orb 이벤트 또는 game 버튼."""
+def handle_master_message(event: dict) -> None:
+    """Master가 전달한 orb 이벤트 또는 game 버튼을 처리한다."""
     t = event.get("type")
 
     # 슬레이브 생존 추적: slave 필드가 있는 모든 메시지로 last_seen 을 갱신하고,
@@ -944,47 +983,44 @@ def reconcile_occupancy_mask(slave_id: int, occupancy_mask: int) -> None:
         elif not mask_occ and mem_occ:
             _synth_removed(slave_id, cell)
 
-# ── 시리얼 하드웨어 입력 ───────────────────────────────
-def _update_serial_status(connected: bool, port: str, error: str) -> None:
-    """SerialReader 상태를 Admin snapshot에 반영한다."""
-    with _state_lock:
-        _serial_status.update(
-            {"connected": connected, "port": port, "error": error}
+# ── USB 장치와 Dot Matrix ─────────────────────────────
+def _route_master_message(event: dict) -> None:
+    """Table 모드에서도 장치는 감시하되 실제 입력은 serial 모드에서만 받는다."""
+    if input_mode == "serial":
+        handle_master_message(event)
+
+
+def _sync_matrix_display(snapshot: dict | None = None) -> dict:
+    """현재 게임 상태를 Dot Matrix의 최신 표시 상태로 반영한다."""
+    try:
+        return get_matrix_display().sync_game(
+            snapshot or get_game_state(),
+            stage=current_stage,
+            melody=melody_id,
         )
+    except Exception as exc:
+        print(f"[dotmatrix] 표시 갱신 실패: {exc}")
+        return {"ok": False, "error": str(exc)}
 
 
-def start_serial_input() -> threading.Thread | None:
-    """serial 모드에서 하드웨어 입력 스레드를 한 번만 시작한다."""
-    global _serial_thread
-    if input_mode != "serial":
-        return None
-    if _serial_thread is not None and _serial_thread.is_alive():
-        return _serial_thread
-
-    _serial_stop.clear()
-    _serial_thread = threading.Thread(
-        target=run_serial_loop,
-        args=(
-            config.get("serial") or {},
-            handle_serial_message,
-            _update_serial_status,
-            _serial_stop,
-        ),
-        daemon=True,
-        name="orbbridge-serial",
-    )
-    _serial_thread.start()
-    return _serial_thread
+def start_devices() -> threading.Thread | None:
+    """input_mode와 무관하게 Master·Dot Matrix 자동 검색을 시작한다."""
+    thread = get_device_manager().start()
+    _sync_matrix_display()
+    return thread
 
 
-def stop_serial_input() -> None:
-    """프로세스 종료 시 시리얼 재연결 루프를 중단한다."""
-    global _serial_thread
-    _serial_stop.set()
-    thread = _serial_thread
-    _serial_thread = None
-    if thread is not None and thread is not threading.current_thread():
-        thread.join(timeout=2.0)
+def stop_devices() -> None:
+    get_device_manager().stop()
+
+
+def rescan_devices() -> dict:
+    """Admin 요청으로 누락된 COM의 handshake 검색을 즉시 실행한다."""
+    return {
+        "ok": True,
+        "hardware": get_device_manager().request_rescan(),
+        "matrix_display": get_matrix_display().status(),
+    }
 
 # ── 진입점 ─────────────────────────────────────────────
 def run_main() -> None:
@@ -1029,17 +1065,19 @@ def run_main() -> None:
         on_game_dfesta=request_dfesta,
         on_admin_collect_orbs=collect_all_orbs,
         on_admin_auto_complete=auto_complete_game,
+        on_admin_rescan_devices=rescan_devices,
     )
 
-    start_serial_input()
+    start_devices()
 
     try:
         while True:
+            _sync_matrix_display()
             time.sleep(1)
     except KeyboardInterrupt:
         print("종료")
     finally:
-        stop_serial_input()
+        stop_devices()
         stop_websocket_service()
         runtime.close()
         with _scheduler_lock:

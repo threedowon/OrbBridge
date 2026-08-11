@@ -56,6 +56,7 @@ def start_http_server(
     on_game_dfesta=None,
     on_admin_collect_orbs=None,
     on_admin_auto_complete=None,
+    on_admin_rescan_devices=None,
 ) -> None:
     host = cfg.get("host", "127.0.0.1")
     port = cfg.get("port", 8080)
@@ -265,6 +266,10 @@ def start_http_server(
 
             if self.path == "/api/admin/game/auto-complete":
                 self._run_callback(on_admin_auto_complete)
+                return
+
+            if self.path == "/api/admin/devices/rescan":
+                self._run_callback(on_admin_rescan_devices)
                 return
 
             if self.path == "/api/admin/midi/reconnect":
