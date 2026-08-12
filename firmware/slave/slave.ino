@@ -27,11 +27,12 @@
 #define SLAVE_ID     6      // 보드마다 고유하게 (1,2,3…)
 #define HEARTBEAT_MS 2000
 
-// LED 데이터선 2개: 슬롯 1~8(버스 0~7)은 RING_PIN_LOW, 슬롯 9~16(버스 8~15)은 RING_PIN_HIGH.
-// 각 선에 8슬롯 × 10 LED = 80 LED 가 DI-DO 로 체인.
-#define RING_PIN_HIGH   38     // 슬롯 9~16
-#define RING_PIN_LOW    39     // 슬롯 1~8  ← 실제 연결한 빈 GPIO 로 변경
+// LED 데이터선 2개. 슬롯별 LED 위치는 아래 LED_MAP 으로 배선에 맞게 직접 지정한다.
+#define RING_PIN_LOW    39     // LED 스트립 A (지금 슬롯 5~8 연결)
+#define RING_PIN_HIGH   38     // LED 스트립 B
 #define LEDS_PER_RING   10     // 슬롯당 LED 수
+#define LED_COUNT_LOW   40     // 스트립 A 총 LED 수 (지금 슬롯 5~8 = 4×10)
+#define LED_COUNT_HIGH  40     // 스트립 B 총 LED 수 (실제 연결 수에 맞게)
 // 임시 stopgap: 밝기 낮춰 전류↓. 외부 5V 전원 달면 32~50 으로.
 #define RING_BRIGHTNESS 8
 
@@ -59,9 +60,20 @@ OneWire buses[BUS_COUNT] = {
   OneWire(11), OneWire(12), OneWire(13), OneWire(14)
 };
 
-// 두 데이터선: ringLow=슬롯1~8(버스0~7), ringHigh=슬롯9~16(버스8~15). 각 80 LED.
-Adafruit_NeoPixel ringLow (8 * LEDS_PER_RING, RING_PIN_LOW,  NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel ringHigh(8 * LEDS_PER_RING, RING_PIN_HIGH, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel ringLow (LED_COUNT_LOW,  RING_PIN_LOW,  NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel ringHigh(LED_COUNT_HIGH, RING_PIN_HIGH, NEO_GRB + NEO_KHZ800);
+
+// ── 슬롯(버스) → LED 위치 표 ──  배선이 바뀌면 여기만 고친다.
+//   strip: 0=스트립A(RING_PIN_LOW), 1=스트립B(RING_PIN_HIGH), -1=LED 없음
+//   offset: 그 스트립에서 이 슬롯의 첫 LED 인덱스 (슬롯당 LEDS_PER_RING 개)
+// 인덱스 = 버스 index (0=슬롯1 … 15=슬롯16)
+struct LedMap { int8_t strip; int16_t offset; };
+const LedMap LED_MAP[BUS_COUNT] = {
+  {-1,  0}, {-1,  0}, {-1,  0}, {-1,  0},   // 슬롯 1~4  : LED 없음
+  { 0,  0}, { 0, 10}, { 0, 20}, { 0, 30},   // 슬롯 5~8  : 스트립A(GPIO39) 0/10/20/30
+  {-1,  0}, {-1,  0}, {-1,  0}, {-1,  0},   // 슬롯 9~12 : LED 없음
+  {-1,  0}, {-1,  0}, {-1,  0}, {-1,  0},   // 슬롯 13~16: (연결하면 여기 채우기)
+};
 
 byte lastAddr[BUS_COUNT][8];
 bool hasLast[BUS_COUNT] = {false};
@@ -145,12 +157,10 @@ void updateLed() {
 }
 
 void setRing(int busIndex, uint32_t color) {
-  // 버스 0~7 = 슬롯 1~8 → ringLow, 버스 8~15 = 슬롯 9~16 → ringHigh.
-  // 각 스트립 안에서 슬롯 n → LED [n*10 … n*10+9].
-  Adafruit_NeoPixel& strip = (busIndex < 8) ? ringLow : ringHigh;
-  int slot = (busIndex < 8) ? busIndex : (busIndex - 8);
-  int base = slot * LEDS_PER_RING;
-  for (int j = 0; j < LEDS_PER_RING; j++) strip.setPixelColor(base + j, color);
+  const LedMap& m = LED_MAP[busIndex];
+  if (m.strip < 0) return;                        // 이 슬롯은 LED 없음 → 무시
+  Adafruit_NeoPixel& strip = (m.strip == 0) ? ringLow : ringHigh;
+  for (int j = 0; j < LEDS_PER_RING; j++) strip.setPixelColor(m.offset + j, color);
   strip.show();
 }
 
