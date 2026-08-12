@@ -33,8 +33,8 @@
 #define LEDS_PER_RING   10     // 슬롯당 LED 수
 #define LED_COUNT_LOW   40     // 스트립 A 총 LED 수 (지금 슬롯 5~8 = 4×10)
 #define LED_COUNT_HIGH  40     // 스트립 B 총 LED 수 (실제 연결 수에 맞게)
-// 임시 stopgap: 밝기 낮춰 전류↓. 외부 5V 전원 달면 32~50 으로.
-#define RING_BRIGHTNESS 8
+// 지금 40 LED(슬롯5~8)만 연결이라 50 으로 올림(~0.4A). LED 많이 늘리면 외부 5V + 밝기 조정.
+#define RING_BRIGHTNESS 50
 
 #define DEBUG_USB    0
 
