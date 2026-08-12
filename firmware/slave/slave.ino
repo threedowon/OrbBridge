@@ -28,8 +28,8 @@
 #define HEARTBEAT_MS 2000
 
 // LED 데이터선 2개. 슬롯별 LED 위치는 아래 LED_MAP 으로 배선에 맞게 직접 지정한다.
-#define RING_PIN_LOW    39     // LED 스트립 A (지금 슬롯 5~8 연결)
-#define RING_PIN_HIGH   38     // LED 스트립 B
+#define RING_PIN_LOW    38     // LED 스트립 A ← 슬롯 5~8 이 여기(GPIO 38)에 연결됨
+#define RING_PIN_HIGH   39     // LED 스트립 B (아직 미사용 — 두 번째 스트립용)
 #define LEDS_PER_RING   10     // 슬롯당 LED 수
 #define LED_COUNT_LOW   40     // 스트립 A 총 LED 수 (지금 슬롯 5~8 = 4×10)
 #define LED_COUNT_HIGH  40     // 스트립 B 총 LED 수 (실제 연결 수에 맞게)
