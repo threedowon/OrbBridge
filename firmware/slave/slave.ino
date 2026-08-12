@@ -27,9 +27,12 @@
 #define SLAVE_ID     6      // 보드마다 고유하게 (1,2,3…)
 #define HEARTBEAT_MS 2000
 
-#define RING_PIN        38
-#define LEDS_PER_RING   12
-// 임시 stopgap: 밝기 낮춰 전류↓. 외부 5V 전원 달면 32로.
+// LED 데이터선 2개: 슬롯 1~8(버스 0~7)은 RING_PIN_LOW, 슬롯 9~16(버스 8~15)은 RING_PIN_HIGH.
+// 각 선에 8슬롯 × 10 LED = 80 LED 가 DI-DO 로 체인.
+#define RING_PIN_HIGH   38     // 슬롯 9~16
+#define RING_PIN_LOW    39     // 슬롯 1~8  ← 실제 연결한 빈 GPIO 로 변경
+#define LEDS_PER_RING   10     // 슬롯당 LED 수
+// 임시 stopgap: 밝기 낮춰 전류↓. 외부 5V 전원 달면 32~50 으로.
 #define RING_BRIGHTNESS 8
 
 #define DEBUG_USB    0
@@ -56,7 +59,9 @@ OneWire buses[BUS_COUNT] = {
   OneWire(11), OneWire(12), OneWire(13), OneWire(14)
 };
 
-Adafruit_NeoPixel ring(BUS_COUNT * LEDS_PER_RING, RING_PIN, NEO_GRB + NEO_KHZ800);
+// 두 데이터선: ringLow=슬롯1~8(버스0~7), ringHigh=슬롯9~16(버스8~15). 각 80 LED.
+Adafruit_NeoPixel ringLow (8 * LEDS_PER_RING, RING_PIN_LOW,  NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel ringHigh(8 * LEDS_PER_RING, RING_PIN_HIGH, NEO_GRB + NEO_KHZ800);
 
 byte lastAddr[BUS_COUNT][8];
 bool hasLast[BUS_COUNT] = {false};
@@ -140,9 +145,13 @@ void updateLed() {
 }
 
 void setRing(int busIndex, uint32_t color) {
-  int base = busIndex * LEDS_PER_RING;
-  for (int j = 0; j < LEDS_PER_RING; j++) ring.setPixelColor(base + j, color);
-  ring.show();
+  // 버스 0~7 = 슬롯 1~8 → ringLow, 버스 8~15 = 슬롯 9~16 → ringHigh.
+  // 각 스트립 안에서 슬롯 n → LED [n*10 … n*10+9].
+  Adafruit_NeoPixel& strip = (busIndex < 8) ? ringLow : ringHigh;
+  int slot = (busIndex < 8) ? busIndex : (busIndex - 8);
+  int base = slot * LEDS_PER_RING;
+  for (int j = 0; j < LEDS_PER_RING; j++) strip.setPixelColor(base + j, color);
+  strip.show();
 }
 
 bool sameAddr(const byte a[8], const byte b[8]) {
@@ -169,7 +178,7 @@ bool readBus(int i, byte addr[8]) {
 }
 
 void onAdded(int i, const byte addr[8]) {
-  setRing(i, ring.Color(255, 147, 41));
+  setRing(i, Adafruit_NeoPixel::Color(255, 147, 41));   // 감지 → 주황 점등
   flashRed();
   sendFrame(T_ADDED, i + 1, addr, 0);
 }
@@ -212,10 +221,15 @@ void setup() {
   led.clear();
   led.show();
 
-  ring.begin();
-  ring.setBrightness(RING_BRIGHTNESS);
-  ring.clear();
-  ring.show();
+  ringLow.begin();
+  ringLow.setBrightness(RING_BRIGHTNESS);
+  ringLow.clear();
+  ringLow.show();
+
+  ringHigh.begin();
+  ringHigh.setBrightness(RING_BRIGHTNESS);
+  ringHigh.clear();
+  ringHigh.show();
 
   RS485.begin(RS485_BAUD, SERIAL_8N1, RX_PIN, TX_PIN);
 
