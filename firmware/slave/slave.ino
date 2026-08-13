@@ -28,11 +28,11 @@
 #define HEARTBEAT_MS 2000
 
 // LED 데이터선 2개. 슬롯별 LED 위치는 아래 LED_MAP 으로 배선에 맞게 직접 지정한다.
-#define RING_PIN_LOW    38     // LED 스트립 A ← 슬롯 5~8 이 여기(GPIO 38)에 연결됨
-#define RING_PIN_HIGH   39     // LED 스트립 B (아직 미사용 — 두 번째 스트립용)
+#define RING_PIN_LOW    38     // LED 스트립 A = 슬롯 1~8  (GPIO 38)
+#define RING_PIN_HIGH   39     // LED 스트립 B = 슬롯 9~16 (GPIO 39)
 #define LEDS_PER_RING   10     // 슬롯당 LED 수
-#define LED_COUNT_LOW   40     // 스트립 A 총 LED 수 (지금 슬롯 5~8 = 4×10)
-#define LED_COUNT_HIGH  40     // 스트립 B 총 LED 수 (실제 연결 수에 맞게)
+#define LED_COUNT_LOW   80     // 스트립 A 총 LED 수 (슬롯 1~8 = 8×10)
+#define LED_COUNT_HIGH  80     // 스트립 B 총 LED 수 (슬롯 9~16 = 8×10)
 // 지금 40 LED(슬롯5~8)만 연결이라 50 으로 올림(~0.4A). LED 많이 늘리면 외부 5V + 밝기 조정.
 #define RING_BRIGHTNESS 50
 
@@ -69,10 +69,10 @@ Adafruit_NeoPixel ringHigh(LED_COUNT_HIGH, RING_PIN_HIGH, NEO_GRB + NEO_KHZ800);
 // 인덱스 = 버스 index (0=슬롯1 … 15=슬롯16)
 struct LedMap { int8_t strip; int16_t offset; };
 const LedMap LED_MAP[BUS_COUNT] = {
-  {-1,  0}, {-1,  0}, {-1,  0}, {-1,  0},   // 슬롯 1~4  : LED 없음
-  { 0,  0}, { 0, 10}, { 0, 20}, { 0, 30},   // 슬롯 5~8  : 스트립A(GPIO39) 0/10/20/30
-  {-1,  0}, {-1,  0}, {-1,  0}, {-1,  0},   // 슬롯 9~12 : LED 없음
-  { 1,  0}, { 1, 10}, { 1, 20}, { 1, 30},   // 슬롯 13~16: 스트립B(GPIO39) 0/10/20/30
+  { 0,  0}, { 0, 10}, { 0, 20}, { 0, 30},   // 슬롯 1~4  : 스트립A(GPIO38) 0/10/20/30
+  { 0, 40}, { 0, 50}, { 0, 60}, { 0, 70},   // 슬롯 5~8  : 스트립A(GPIO38) 40/50/60/70
+  { 1,  0}, { 1, 10}, { 1, 20}, { 1, 30},   // 슬롯 9~12 : 스트립B(GPIO39) 0/10/20/30
+  { 1, 40}, { 1, 50}, { 1, 60}, { 1, 70},   // 슬롯 13~16: 스트립B(GPIO39) 40/50/60/70
 };
 
 byte lastAddr[BUS_COUNT][8];
