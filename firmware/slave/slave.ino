@@ -81,6 +81,15 @@ unsigned long lastHeartbeatMs = 0;
 unsigned long lastBusRxMs = 0;
 unsigned long ledOffAt = 0;
 
+// LED 테스트 이펙트 (master 가 debug 도구에서 "C<n>" 명령을 RS485 로 브로드캐스트).
+//   0=일반(오브 감지)  1=흰색전체  2=끄기  3=빨강 4=초록 5=파랑
+//   6=무지개(정지)  7=체이스(움직임)  8=숨쉬기  9=무지개(회전)
+int ledEffect = 0;
+unsigned long effectStart = 0;
+unsigned long lastAnimMs = 0;
+String cmdLine;
+void applyEffectOnce();   // 전방 선언
+
 // Dallas/Maxim CRC8 (OneWire 와 동일 다항식)
 uint8_t crc8(const uint8_t* data, int len) {
   uint8_t crc = 0;
@@ -96,10 +105,23 @@ uint8_t crc8(const uint8_t* data, int len) {
   return crc;
 }
 
+// RS485 수신 처리: carrier-sense 활동 감지 + master LED 명령("C<n>\n") 파싱.
+// slave→master 바이너리 프레임(STX=0x02)은 'C' 로 시작 안 하므로 명령으로 오검출 안 됨.
 void drainBus() {
   while (RS485.available()) {
-    RS485.read();
+    char c = (char)RS485.read();
     lastBusRxMs = millis();
+    if (c == '\n') {
+      if (cmdLine.length() >= 2 && cmdLine[0] == 'C') {
+        ledEffect = cmdLine.substring(1).toInt();
+        effectStart = millis();
+        applyEffectOnce();
+      }
+      cmdLine = "";
+    } else if (c != '\r') {
+      if (cmdLine.length() < 8) cmdLine += c;
+      else cmdLine = "";     // 너무 긴 줄(바이너리 프레임 등) → 명령 아님
+    }
   }
 }
 
@@ -164,6 +186,67 @@ void setRing(int busIndex, uint32_t color) {
   strip.show();
 }
 
+// ── LED 테스트 이펙트 ───────────────────────────────────
+void fillAll(uint32_t color) {
+  for (uint16_t i = 0; i < LED_COUNT_LOW; i++)  ringLow.setPixelColor(i, color);
+  for (uint16_t i = 0; i < LED_COUNT_HIGH; i++) ringHigh.setPixelColor(i, color);
+  ringLow.show();
+  ringHigh.show();
+}
+
+void rainbowStatic() {
+  for (uint16_t i = 0; i < LED_COUNT_LOW; i++)
+    ringLow.setPixelColor(i, Adafruit_NeoPixel::ColorHSV((uint16_t)(i * 65536L / LED_COUNT_LOW)));
+  for (uint16_t i = 0; i < LED_COUNT_HIGH; i++)
+    ringHigh.setPixelColor(i, Adafruit_NeoPixel::ColorHSV((uint16_t)(i * 65536L / LED_COUNT_HIGH)));
+  ringLow.show();
+  ringHigh.show();
+}
+
+// 명령 받은 즉시 적용되는 정적 이펙트. 애니메이션(7~9)은 loop 의 runEffectAnim 에서 갱신.
+void applyEffectOnce() {
+  switch (ledEffect) {
+    case 0: fillAll(0); break;                                        // 일반 복귀(끔)
+    case 1: fillAll(Adafruit_NeoPixel::Color(255, 255, 255)); break;  // 전체 흰색
+    case 2: fillAll(0); break;                                        // 전체 끄기
+    case 3: fillAll(Adafruit_NeoPixel::Color(255, 0, 0)); break;      // 빨강
+    case 4: fillAll(Adafruit_NeoPixel::Color(0, 255, 0)); break;      // 초록
+    case 5: fillAll(Adafruit_NeoPixel::Color(0, 0, 255)); break;      // 파랑
+    case 6: rainbowStatic(); break;                                   // 무지개(정지)
+    default: break;                                                   // 7~9: 애니메이션
+  }
+}
+
+// 애니메이션 이펙트 (loop 에서 ~30ms 마다 호출)
+void runEffectAnim() {
+  if (ledEffect < 7) return;
+  if (millis() - lastAnimMs < 30) return;
+  lastAnimMs = millis();
+  unsigned long t = millis() - effectStart;
+
+  if (ledEffect == 7) {                 // 체이스 (흐르는 빛)
+    int total = LED_COUNT_LOW;
+    int pos = (t / 60) % total;
+    uint32_t on = Adafruit_NeoPixel::Color(0, 180, 255);
+    for (uint16_t i = 0; i < LED_COUNT_LOW; i++)
+      ringLow.setPixelColor(i, ((int)i == pos || (int)i == (pos + 1) % total) ? on : 0);
+    for (uint16_t i = 0; i < LED_COUNT_HIGH; i++)
+      ringHigh.setPixelColor(i, ((int)i == pos || (int)i == (pos + 1) % total) ? on : 0);
+    ringLow.show(); ringHigh.show();
+  } else if (ledEffect == 8) {          // 숨쉬기 (밝기 fade)
+    float ph = (t % 2000) / 2000.0f;
+    int b = (int)((0.5f - 0.5f * cos(ph * 2 * PI)) * 255);
+    fillAll(Adafruit_NeoPixel::Color((b * 60) / 255, (b * 120) / 255, (uint8_t)b));
+  } else if (ledEffect == 9) {          // 무지개 회전
+    uint16_t base = (uint16_t)(t * 8);
+    for (uint16_t i = 0; i < LED_COUNT_LOW; i++)
+      ringLow.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(base + (uint16_t)(i * 65536L / LED_COUNT_LOW)));
+    for (uint16_t i = 0; i < LED_COUNT_HIGH; i++)
+      ringHigh.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(base + (uint16_t)(i * 65536L / LED_COUNT_HIGH)));
+    ringLow.show(); ringHigh.show();
+  }
+}
+
 bool sameAddr(const byte a[8], const byte b[8]) {
   for (int i = 0; i < 8; i++) if (a[i] != b[i]) return false;
   return true;
@@ -188,13 +271,13 @@ bool readBus(int i, byte addr[8]) {
 }
 
 void onAdded(int i, const byte addr[8]) {
-  setRing(i, Adafruit_NeoPixel::Color(255, 147, 41));   // 감지 → 주황 점등
+  if (ledEffect == 0) setRing(i, Adafruit_NeoPixel::Color(255, 147, 41));  // 일반 모드일 때만 점등
   flashRed();
   sendFrame(T_ADDED, i + 1, addr, 0);
 }
 
 void onRemoved(int i, const byte addr[8]) {
-  setRing(i, 0);
+  if (ledEffect == 0) setRing(i, 0);
   sendFrame(T_REMOVED, i + 1, addr, 0);
 }
 
@@ -261,6 +344,7 @@ void loop() {
     lastHeartbeatMs = millis();
   }
 
+  runEffectAnim();   // 애니메이션 이펙트(7~9) 갱신
   updateLed();
   delay(1);
 }

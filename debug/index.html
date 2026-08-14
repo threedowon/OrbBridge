@@ -35,6 +35,8 @@
     border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px}
   button:hover{border-color:var(--accent)}
   button.primary{background:var(--accent);color:#04101f;border-color:var(--accent);font-weight:600}
+  .ledbtns{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+  .ledbtns button{padding:8px 14px}
   select{background:var(--panel2);color:var(--text);border:1px solid var(--border);
     border-radius:6px;padding:6px 10px;font-size:13px;max-width:340px}
   table{width:100%;border-collapse:collapse}
@@ -111,6 +113,23 @@
   </div>
 
   <!-- 슬레이브 -->
+  <div class="card" style="margin-top:16px">
+    <h2>💡 LED 테스트 (모든 slave 브로드캐스트)</h2>
+    <div class="ledbtns">
+      <button data-eff="1">전체 켜기(흰색)</button>
+      <button data-eff="2">전체 끄기</button>
+      <button data-eff="3" style="color:#f87171">빨강</button>
+      <button data-eff="4" style="color:#4ade80">초록</button>
+      <button data-eff="5" style="color:#60a5fa">파랑</button>
+      <button data-eff="6">🌈 무지개</button>
+      <button data-eff="7">➡️ 체이스</button>
+      <button data-eff="8">💨 숨쉬기</button>
+      <button data-eff="9">🌀 무지개 회전</button>
+      <button data-eff="0" class="primary">일반 모드 복귀</button>
+    </div>
+    <div id="ledStatus" class="empty">master 연결 후 사용하세요 (명령은 master→RS485 브로드캐스트)</div>
+  </div>
+
   <div class="card" style="margin-top:16px">
     <h2>슬레이브 (RS485 · SLAVE_ID)</h2>
     <div id="slaves"></div>
@@ -287,6 +306,22 @@ $("resetBtn").onclick = async ()=>{
   await fetch("/api/reset",{method:"POST"});
   lastRawTs = 0; firstLoad = true; poll();
 };
+
+// LED 테스트 버튼 → /api/led (master 로 "C<n>" 전송)
+document.querySelectorAll(".ledbtns button").forEach(btn=>{
+  btn.onclick = async ()=>{
+    const eff = btn.getAttribute("data-eff");
+    const st = $("ledStatus");
+    try{
+      const r = await fetch("/api/led",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({effect:Number(eff)})});
+      const d = await r.json();
+      st.textContent = d.ok ? `전송됨: ${btn.textContent.trim()} (effect ${eff})`
+                            : `실패: ${d.error||"master 미연결"}`;
+      st.style.color = d.ok ? "#4ade80" : "#f87171";
+    }catch(e){ st.textContent = "전송 오류: "+e; st.style.color="#f87171"; }
+  };
+});
 
 loadPorts();
 poll();
