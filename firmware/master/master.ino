@@ -159,6 +159,29 @@ void pollRs485() {
   }
 }
 
+// PC(debug 도구)가 USB 로 보낸 LED 명령("C<n>")을 RS485 로 브로드캐스트.
+// slave 응답과 충돌해도 괜찮게 여러 번 반복 전송(멱등한 LED 명령).
+String usbLine;
+void pollUsbCommand() {
+  while (Serial.available()) {
+    char c = (char)Serial.read();
+    if (c == '\n') {
+      if (usbLine.length() >= 2 && usbLine[0] == 'C') {
+        for (int r = 0; r < 5; r++) {
+          RS485.print(usbLine);
+          RS485.print('\n');
+          RS485.flush();
+          delay(3);
+        }
+      }
+      usbLine = "";
+    } else if (c != '\r') {
+      if (usbLine.length() < 16) usbLine += c;
+      else usbLine = "";
+    }
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   delay(1500);
@@ -180,6 +203,7 @@ void setup() {
 
 void loop() {
   pollRs485();
+  pollUsbCommand();   // PC → RS485 LED 명령 전달
   pollButtons();
   updateLed();
 
