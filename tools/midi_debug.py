@@ -7,8 +7,8 @@ import threading
 import time
 from copy import deepcopy
 
-from app import midi_out
-from app.voice_catalog import list_catalog_voices
+from server import midi_out
+from server.voice_catalog import list_catalog_voices
 
 
 _job_lock = threading.Lock()

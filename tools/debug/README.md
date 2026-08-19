@@ -16,6 +16,6 @@ py -m tools.debug --no-open
 Windows에서는 `tools\debug\debug.bat`를 더블클릭해도 된다. 대시보드는
 `http://127.0.0.1:8090/`에서 열린다.
 
-COM 포트는 한 프로세스만 열 수 있으므로 진단 전 `app.launcher`를 종료해야
+COM 포트는 한 프로세스만 열 수 있으므로 진단 전 `server.launcher`를 종료해야
 한다. 게임 중 간단한 상태 확인은 `/admin`, 오프라인 심층 진단은 이 도구를
 사용한다.

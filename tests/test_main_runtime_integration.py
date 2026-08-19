@@ -69,10 +69,10 @@ def _load_main_module():
 
     sys.modules["serial"] = serial_module
     sys.path.insert(0, str(PROJECT_ROOT))
-    sys.modules.pop("app.main", None)
-    sys.modules.pop("app.serial_io", None)
+    sys.modules.pop("server.main", None)
+    sys.modules.pop("server.serial_io", None)
 
-    module = importlib.import_module("app.main")
+    module = importlib.import_module("server.main")
     module._playback_scheduler = FakeScheduler()
     module._websocket_service = FakeWebSocketService()
     return module
@@ -81,12 +81,18 @@ def _load_main_module():
 def test_main_routes_web_event_through_runtime_snapshot_and_midi():
     main = _load_main_module()
     midi_calls = []
-    midi_module = types.ModuleType("app.midi_out")
+    matrix_calls = []
+    main._matrix_display = types.SimpleNamespace(
+        show_voice=lambda voice, snapshot: matrix_calls.append(
+            (voice, snapshot["state"])
+        )
+    )
+    midi_module = types.ModuleType("server.midi_out")
     midi_module.cell_to_pitch = lambda cell: (int(cell) - 1) % 8
     midi_module.trigger = lambda voice, pitch, **kwargs: midi_calls.append(
         (voice, pitch, kwargs)
     ) or {"ok": True}
-    sys.modules["app.midi_out"] = midi_module
+    sys.modules["server.midi_out"] = midi_module
 
     placements = [
         ("AA:00:00:00:00:00:00:01", 1, 1, "aespa_1"),
@@ -117,6 +123,7 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
         assert placed["result"] == "correct"
         assert placed["game"]["state"] == "RUNNING"
         assert midi_calls == [(voice, 0, {"duration_ms": 320})]
+        assert matrix_calls == [(voice, "RUNNING")]
 
         game = main.get_game_state()
         cells = main.get_cells()
@@ -189,7 +196,7 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial", "app.midi_out"):
+        for name in ("server.main", "server.serial_io", "serial", "server.midi_out"):
             sys.modules.pop(name, None)
 
 
@@ -213,7 +220,7 @@ def test_manual_end_enters_resetting_directly():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("server.main", "server.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -275,7 +282,7 @@ def test_admin_auto_complete_and_collect_use_runtime_state():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("server.main", "server.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -319,7 +326,7 @@ def test_listen_play_and_dfesta_use_python_scheduler():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("server.main", "server.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -361,7 +368,7 @@ def test_serial_game_controls_use_the_canonical_action_literals():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("server.main", "server.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -382,7 +389,7 @@ def test_heartbeat_uses_occupancy_mask_instead_of_game_state_field():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("server.main", "server.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -415,7 +422,7 @@ def test_state_log_uses_authoritative_state_names_only():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("server.main", "server.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -464,7 +471,7 @@ def test_idle_transition_log_matches_runtime_until_reset_is_complete():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("server.main", "server.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -484,7 +491,7 @@ def test_melody_rules_expose_120_second_time_over_and_30_second_idle_timers():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("server.main", "server.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -502,7 +509,7 @@ def test_playback_requests_are_ignored_outside_active_game_states():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("server.main", "server.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -521,7 +528,7 @@ def test_resetting_state_cancels_active_scheduler_without_blocking_runtime():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("server.main", "server.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -551,7 +558,7 @@ def test_main_fans_out_events_and_builds_complete_web_snapshot():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("server.main", "server.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -577,7 +584,7 @@ def test_playback_beat_websocket_contains_display_data_only():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("server.main", "server.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -602,7 +609,7 @@ def test_start_publishes_the_active_melody_before_running_state():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("server.main", "server.serial_io", "serial"):
             sys.modules.pop(name, None)
 
 
@@ -631,5 +638,5 @@ def test_successive_games_follow_the_configured_melody_sequence():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
-        for name in ("app.main", "app.serial_io", "serial"):
+        for name in ("server.main", "server.serial_io", "serial"):
             sys.modules.pop(name, None)

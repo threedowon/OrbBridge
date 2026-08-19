@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from app.melody_manager import MelodyManager, rotation_plan_from_config
+from server.melody_manager import MelodyManager, rotation_plan_from_config
 
 
 AVAILABLE = ["dynamite", "Iam", "biplane"]

@@ -2,23 +2,24 @@ import threading
 import time
 from copy import deepcopy
 
-from app.app_paths import ensure_data_files, melodies_dir
-from app.data_store import find_orb, load_config, load_mapping
-from app.game_engine import (
+from server.app_paths import ensure_data_files, melodies_dir
+from server.data_store import find_orb, load_config, load_mapping
+from server.game_engine import (
     EndReason,
     GameEngine,
     GameState,
     InvalidTransition,
     PlacementResult,
 )
-from app.game_runtime import GameRuntime, RuntimeResult
-from app.melody_manager import (
+from server.game_runtime import GameRuntime, RuntimeResult
+from server.matrix_display import MatrixDisplay
+from server.melody_manager import (
     MelodyManager,
     answer_sequence_from_melody,
     game_rules_from_melody,
 )
-from app.scheduler import PlaybackMode, PlaybackScheduler, parse_melody
-from app.serial_io import run_serial_loop
+from server.scheduler import PlaybackMode, PlaybackScheduler, parse_melody
+from server.serial_io import run_serial_loop
 
 ensure_data_files()
 
@@ -59,6 +60,7 @@ EVENT_LOG_LIMIT = 100
 _serial_status = {"connected": False, "port": "", "error": ""}
 _serial_stop = threading.Event()
 _serial_thread: threading.Thread | None = None
+_matrix_display: MatrixDisplay | None = None
 
 # ── 게임 런타임 (Serial/HTTP 입력의 단일 writer) ───────
 _runtime_lock = threading.Lock()
@@ -148,7 +150,7 @@ def _scheduler_send_notes(notes: list[dict]) -> list[dict]:
     if not notes:
         return []
 
-    from app.midi_out import trigger_many
+    from server.midi_out import trigger_many
 
     results = trigger_many(notes)
     failures = [result for result in results if not result.get("ok")]
@@ -375,7 +377,7 @@ def start_websocket_service():
         if _websocket_service is not None and _websocket_service.running:
             return _websocket_service
 
-        from app.websocket_service import WebSocketService
+        from server.websocket_service import WebSocketService
 
         ws_cfg = config.get("websocket") or {}
         host = str(
@@ -823,8 +825,10 @@ def handle_event(event: dict) -> dict:
 
         # 실제 음향 출력은 Python MIDI 경로 하나만 사용한다.
         if runtime_result.value is not PlacementResult.INACTIVE:
+            if _matrix_display is not None:
+                _matrix_display.show_voice(voice, runtime_result.snapshot)
             try:
-                from app.midi_out import cell_to_pitch, trigger as midi_trigger
+                from server.midi_out import cell_to_pitch, trigger as midi_trigger
 
                 midi_result = midi_trigger(
                     voice,
@@ -988,7 +992,9 @@ def stop_serial_input() -> None:
 
 # ── 진입점 ─────────────────────────────────────────────
 def run_main() -> None:
+    global _matrix_display
     runtime = get_game_runtime()
+    _matrix_display = MatrixDisplay(config.get("matrix_display") or {})
     start_websocket_service()
     print(f"[stage {current_stage}] 정답 시퀀스: {answer_sequence}")
     print(f"[melody] {melody_id}")
@@ -1001,7 +1007,7 @@ def run_main() -> None:
     print(f"[http] http://127.0.0.1:{web_config.get('port', 8080)}/admin")
 
     try:
-        from app.midi_out import ensure_init
+        from server.midi_out import ensure_init
 
         ok, err = ensure_init()
         if ok:
@@ -1011,7 +1017,7 @@ def run_main() -> None:
     except Exception as exc:
         print(f"[midi] WARN: init failed: {exc}")
 
-    from app.web_server import start_http_server
+    from server.web_server import start_http_server
 
     start_http_server(
         web_config,
@@ -1035,18 +1041,20 @@ def run_main() -> None:
 
     try:
         while True:
+            _matrix_display.update(get_game_state())
             time.sleep(1)
     except KeyboardInterrupt:
         print("종료")
     finally:
         stop_serial_input()
+        _matrix_display.close()
         stop_websocket_service()
         runtime.close()
         with _scheduler_lock:
             scheduler = _playback_scheduler
         if scheduler is not None:
             scheduler.close()
-        from app.midi_out import shutdown
+        from server.midi_out import shutdown
 
         shutdown()
 

@@ -51,6 +51,6 @@ READY
 
 ## M1 완료 범위
 
-- 구현: `app/game_engine.py`
+- 구현: `server/game_engine.py`
 - 자동 테스트: `tests/test_game_engine.py`
 - 런타임 연결: M2

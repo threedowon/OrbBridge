@@ -6,7 +6,7 @@ import json
 import re
 from pathlib import Path
 
-from app.app_paths import data_dir, ensure_data_files
+from server.app_paths import data_dir, ensure_data_files
 
 VOICE_RE = re.compile(r"^([a-z0-9]+)_(\d+)$", re.I)
 

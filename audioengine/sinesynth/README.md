@@ -6,13 +6,13 @@
 
 ```text
 <프로젝트 루트>/
-  app/app_paths.py
+  server/app_paths.py
   audioengine/sinesynth.py
   audioengine/sinesynth_settings.json  # 실행 후 저장되는 설정
   data/portmapping.json
 ```
 
-스크립트는 `app/app_paths.py`의 `data_dir()`를 우선 사용한다.
+스크립트는 `server/app_paths.py`의 `data_dir()`를 우선 사용한다.
 
 - 개발 모드: `<repo_root>/data/portmapping.json`
 - PyInstaller 빌드: `<exe 위치>/data/portmapping.json`

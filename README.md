@@ -7,13 +7,14 @@
 
 ```text
 OrbBridge/
-├── app/                     공연 중 실행되는 Python 본체
+├── server/                  공연 중 실행되는 Python 본체
 │   ├── launcher.py          전체 실행 진입점
 │   ├── main.py              모듈 연결과 게임 이벤트 처리
 │   ├── game_engine.py       상태·셀·정답·타이머 순수 로직
 │   ├── game_runtime.py      입력 Queue와 단일 writer
 │   ├── scheduler.py         Listen·Play·DFesta 재생 스케줄
 │   ├── serial_io.py         ESP USB 시리얼 입력
+│   ├── matrix_display.py    192×32 도트매트릭스 출력
 │   ├── midi_out.py          Ableton MIDI 출력
 │   ├── web_server.py        HTTP API와 정적 파일 제공
 │   ├── websocket_service.py 실시간 이벤트와 재접속 snapshot
@@ -37,7 +38,7 @@ OrbBridge/
 │   ├── portmapping.json
 │   ├── voice_catalog.json
 │   └── melodies/
-├── firmware/                ESP master·slave·등록기 펌웨어
+├── firmware/                ESP master·slave·dotmatrix·등록기 펌웨어
 ├── audioengine/             loopMIDI·Ableton 운영 파일
 ├── tests/                   자동 회귀 테스트
 ├── docs/                    M1–M6 설계 기록
@@ -48,7 +49,7 @@ OrbBridge/
 
 ```bash
 python -m pip install -r requirements.txt
-python -m app.launcher
+python -m server.launcher
 ```
 
 브라우저 주소는 다음과 같다.
@@ -101,6 +102,11 @@ READY → RUNNING → RESETTING → READY
   "serial": {
     "port": "COM5",
     "baudrate": 115200
+  },
+  "matrix_display": {
+    "enabled": true,
+    "port": "COM6",
+    "baudrate": 115200
   }
 }
 ```
@@ -114,6 +120,7 @@ READY → RUNNING → RESETTING → READY
 | `web` | HTTP 바인딩 주소와 포트 |
 | `websocket.host` | 선택값이며 없으면 `web.host` 사용 |
 | `serial` | ESP 마스터 COM 포트와 baudrate |
+| `matrix_display` | 도트매트릭스 사용 여부와 COM 포트 |
 
 `config.table.json`, 별도 debug 설정, `sounds/` 샘플 경로는 사용하지 않는다.
 

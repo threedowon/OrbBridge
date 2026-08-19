@@ -6,7 +6,7 @@ import sys
 import time
 import webbrowser
 
-from app.app_paths import is_frozen
+from server.app_paths import is_frozen
 
 
 def _open_browser() -> None:
@@ -19,7 +19,7 @@ def _open_browser() -> None:
 
 
 def main() -> None:
-    from app.main import run_main
+    from server.main import run_main
 
     if is_frozen():
         import threading

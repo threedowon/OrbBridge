@@ -20,7 +20,7 @@ data/config.json
 - `game_rules`가 TimeOver·Idle·DFesta 입력 횟수를 함께 보관한다.
 - `current_stage`는 기존 운영 표시값으로 `data/config.json`에 유지한다.
 - 여러 멜로디는 `melody_rotation.playlist` 순서로 게임마다 순환한다.
-- 로드·규칙 검증·순번 관리는 `app/melody_manager.py` 하나가 담당한다.
+- 로드·규칙 검증·순번 관리는 `server/melody_manager.py` 하나가 담당한다.
 
 ## 런타임 갱신
 

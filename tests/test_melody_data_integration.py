@@ -4,8 +4,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-from app.app_paths import data_dir, melodies_dir
-from app.melody_manager import (
+from server.app_paths import data_dir, melodies_dir
+from server.melody_manager import (
     answer_sequence_from_melody,
     game_rules_from_melody,
     load_melody_document,
@@ -14,22 +14,22 @@ from tools.melody_register_core import normalize_melody, to_save_payload
 import tools.melody_register_core as melody_register_core
 
 
-def test_runtime_json_lives_under_data_except_midi_test_rig_settings():
-    midi_rig_settings = (
-        ROOT / "audioengine" / "midi_test_rig" / "midi_test_rig_settings.json"
+def test_runtime_json_lives_under_data_except_sinesynth_settings():
+    sinesynth_settings = (
+        ROOT / "audioengine" / "sinesynth" / "sinesynth_settings.json"
     )
     json_files = [
         path
         for path in ROOT.rglob("*.json")
-        if ".pytest_cache" not in path.parts and path != midi_rig_settings
+        if ".pytest_cache" not in path.parts and path != sinesynth_settings
     ]
 
     assert json_files
     assert all(path.is_relative_to(ROOT / "data") for path in json_files)
-    assert midi_rig_settings.is_file()
+    assert sinesynth_settings.is_file()
     assert data_dir() == ROOT / "data"
     assert melodies_dir() == ROOT / "data" / "melodies"
-    assert not (ROOT / "app" / "stage_data.json").exists()
+    assert not (ROOT / "server" / "stage_data.json").exists()
 
 
 def test_one_melody_document_drives_answer_playback_and_rules():

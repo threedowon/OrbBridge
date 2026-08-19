@@ -17,5 +17,10 @@
   "serial": {
     "port": "COM5",
     "baudrate": 115200
+  },
+  "matrix_display": {
+    "enabled": true,
+    "port": "COM6",
+    "baudrate": 115200
   }
 }

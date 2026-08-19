@@ -15,7 +15,7 @@ OrbBridge 진단 도구
   "slave" 필드(SLAVE_ID)로만 감지한다.
   펌웨어가 약 3초마다 heartbeat 를 보내므로 오브가 없어도 생존을 알 수 있다.
   → 슬레이브 online/offline 은 "마지막 heartbeat 이후 경과 시간"으로 판단한다.
-  (게임 실행 중 실시간 판정은 app/main.py가 같은 로직으로 /admin에 노출)
+  (게임 실행 중 실시간 판정은 server/main.py가 같은 로직으로 /admin에 노출)
 
 사용:
   python -m tools.debug                 # config.json의 serial.port로 자동 연결
@@ -24,7 +24,7 @@ OrbBridge 진단 도구
 
   브라우저: http://127.0.0.1:8090/
 
-주의: app.launcher가 실행 중이면 같은 COM 포트를 동시에 열 수 없다.
+주의: server.launcher가 실행 중이면 같은 COM 포트를 동시에 열 수 없다.
       진단할 때는 런타임을 종료하고 이 도구를 실행한다.
 """
 
@@ -39,7 +39,7 @@ from socketserver import ThreadingMixIn
 import serial
 import serial.tools.list_ports
 
-from app.app_paths import data_dir
+from server.app_paths import data_dir
 
 HERE = Path(__file__).resolve().parent
 CONFIG_PATH = data_dir() / "config.json"

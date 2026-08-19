@@ -8,7 +8,7 @@ from tkinter import messagebox, ttk
 
 from datetime import datetime
 
-from app.data_store import load_mapping, suggest_voice
+from server.data_store import load_mapping, suggest_voice
 from tools.orb_register_core import (
     RegisterState,
     SerialManager,

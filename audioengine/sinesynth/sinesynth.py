@@ -39,10 +39,10 @@ except ImportError:
 
 
 def _load_app_paths_module():
-    """상위 폴더에서 app/app_paths.py를 찾아 파일 경로로 직접 로드한다."""
+    """상위 폴더에서 server/app_paths.py를 찾아 파일 경로로 직접 로드한다."""
     here = Path(__file__).resolve().parent
     for ancestor in [here, *here.parents]:
-        candidate = ancestor / "app" / "app_paths.py"
+        candidate = ancestor / "server" / "app_paths.py"
         if candidate.is_file():
             spec = importlib.util.spec_from_file_location("app_paths", candidate)
             if spec is None or spec.loader is None:
@@ -67,7 +67,7 @@ _app_paths_module, _found_root = _load_app_paths_module()
 if _app_paths_module is not None:
     _DEFAULT_CONFIG_PATH = _app_paths_module.data_dir() / "portmapping.json"
 else:
-    print("[경고] app/app_paths.py를 찾지 못했다. data/portmapping.json을 직접 탐색한다.")
+    print("[경고] server/app_paths.py를 찾지 못했다. data/portmapping.json을 직접 탐색한다.")
     _fallback = _find_existing_portmapping()
     if _fallback is not None:
         _DEFAULT_CONFIG_PATH = _fallback

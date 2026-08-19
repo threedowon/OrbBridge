@@ -9,7 +9,7 @@ from pathlib import Path
 from socketserver import ThreadingMixIn
 from typing import Callable
 
-from app.app_paths import repo_root
+from server.app_paths import repo_root
 
 ROOT = repo_root()
 WEB_ROOT = ROOT / "web"
@@ -130,7 +130,7 @@ def start_http_server(
                 return
 
             if path == "/api/voices":
-                from app.voice_catalog import voice_api_payload
+                from server.voice_catalog import voice_api_payload
 
                 self._json(200, voice_api_payload())
                 return
@@ -145,7 +145,7 @@ def start_http_server(
                 return
 
             if path == "/api/orbs":
-                from app.data_store import load_mapping
+                from server.data_store import load_mapping
 
                 mapping = load_mapping()
                 orbs = [{"id": oid, **info} for oid, info in mapping.items()]

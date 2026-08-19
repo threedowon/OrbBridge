@@ -53,7 +53,7 @@ def _mapping_file(tmp_path, groups):
 def _load_midi(monkeypatch, names, barrier=None):
     fake_mido = FakeMido(names, barrier)
     monkeypatch.setitem(sys.modules, "mido", fake_mido)
-    import app.midi_out as midi_out
+    import server.midi_out as midi_out
 
     midi_out.shutdown()
     module = importlib.reload(midi_out)

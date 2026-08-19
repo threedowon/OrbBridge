@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from math import isfinite
 from pathlib import Path
 
-from app.app_paths import data_dir
+from server.app_paths import data_dir
 
 
 PORTMAPPING_PATH = data_dir() / "portmapping.json"
@@ -274,7 +274,7 @@ def resolve_route(voice: str) -> tuple[str, int] | None:
 
     # voice_catalog의 실제 이름이 portmapping의 멤버 키와 같으면 그 채널을 우선한다.
     try:
-        from app.voice_catalog import load_voice_catalog, normalize_profile
+        from server.voice_catalog import load_voice_catalog, normalize_profile
 
         profile = normalize_profile(
             load_voice_catalog().get("voices", {}).get(voice) or {}

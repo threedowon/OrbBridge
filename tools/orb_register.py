@@ -1,13 +1,13 @@
 """DS2431 시리얼 감지와 데스크톱 오브 등록 도구를 실행한다."""
 
 import argparse
-from app.data_store import (
+from server.data_store import (
     MAPPING_PATH,
     ensure_register_data,
     load_config,
     load_mapping,
 )
-from app.voice_catalog import ensure_voice_catalog_file
+from server.voice_catalog import ensure_voice_catalog_file
 
 
 def print_orb_list() -> None:

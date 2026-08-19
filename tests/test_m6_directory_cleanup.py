@@ -1,18 +1,20 @@
 import json
 from pathlib import Path
 
-from app import web_server
-from app.serial_io import run_serial_loop
-from app.voice_catalog import list_catalog_voices, voice_api_payload
+from server import web_server
+from server.serial_io import run_serial_loop
+from server.voice_catalog import list_catalog_voices, voice_api_payload
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_m6_directories_match_runtime_roles():
-    assert (ROOT / "app" / "main.py").is_file()
-    assert (ROOT / "app" / "serial_io.py").is_file()
-    assert (ROOT / "app" / "web_server.py").is_file()
+    assert (ROOT / "server" / "main.py").is_file()
+    assert (ROOT / "server" / "serial_io.py").is_file()
+    assert (ROOT / "server" / "matrix_display.py").is_file()
+    assert (ROOT / "server" / "web_server.py").is_file()
+    assert (ROOT / "firmware" / "dotmatrix" / "dotmatrix.ino").is_file()
     assert (ROOT / "web" / "screen" / "index.html").is_file()
     assert (ROOT / "web" / "admin" / "index.html").is_file()
     assert (ROOT / "web" / "admin" / "table" / "index.html").is_file()
@@ -27,7 +29,7 @@ def test_m6_directories_match_runtime_roles():
     assert (ROOT / "tools" / "debug" / "__main__.py").is_file()
     assert (ROOT / "audioengine" / "loopmidi_portsetup.reg").is_file()
 
-    for legacy in ("server", "screen", "table", "admin", "debug"):
+    for legacy in ("app", "screen", "table", "admin", "debug"):
         assert not (ROOT / legacy).exists()
 
 
@@ -39,22 +41,23 @@ def test_config_has_one_source_and_uses_web_name():
     assert "mock" not in config
     assert "debug" not in config
     assert "audio_output" not in config
+    assert config["matrix_display"]["baudrate"] == 115200
 
 
 def test_removed_sample_and_editor_paths_do_not_return():
     assert not (ROOT / "data" / "sounds").exists()
     assert not list(ROOT.rglob("*voice_register*"))
     assert not list(ROOT.rglob("*melody_editor*"))
-    assert not (ROOT / "app" / "melody_store.py").exists()
-    assert not (ROOT / "app" / "melody_rotation.py").exists()
-    assert not (ROOT / "app" / "voice_store.py").exists()
-    assert (ROOT / "app" / "melody_manager.py").is_file()
-    assert (ROOT / "app" / "voice_catalog.py").is_file()
+    assert not (ROOT / "server" / "melody_store.py").exists()
+    assert not (ROOT / "server" / "melody_rotation.py").exists()
+    assert not (ROOT / "server" / "voice_store.py").exists()
+    assert (ROOT / "server" / "melody_manager.py").is_file()
+    assert (ROOT / "server" / "voice_catalog.py").is_file()
     assert not (ROOT / "web" / "screen" / "js" / "audio.js").exists()
 
     runtime_text = "\n".join(
         path.read_text(encoding="utf-8")
-        for folder in (ROOT / "app", ROOT / "tools", ROOT / "web")
+        for folder in (ROOT / "server", ROOT / "tools", ROOT / "web")
         for path in folder.rglob("*")
         if path.is_file() and path.suffix in {".py", ".js", ".html"}
     )
@@ -104,14 +107,14 @@ def test_windows_launchers_use_module_entrypoints_without_removed_paths():
     assert "bridge\\bridge.py" not in text
     assert "python main.py" not in text
     assert "melody_editor" not in text
-    assert "-m app.launcher" in text
+    assert "-m server.launcher" in text
     assert "-m tools.melody_register" in text
     assert "-m tools.debug" in text
     assert "-m tools.midi_debug" in text
 
 
 def test_admin_exposes_midi_debug_without_screen_midi_legacy():
-    server = (ROOT / "app" / "web_server.py").read_text(encoding="utf-8")
+    server = (ROOT / "server" / "web_server.py").read_text(encoding="utf-8")
     admin = (
         ROOT / "web" / "admin" / "control" / "index.html"
     ).read_text(encoding="utf-8")
@@ -140,7 +143,7 @@ def test_admin_combines_screen_table_and_control_in_one_monitor():
     screen_js = (ROOT / "web" / "screen" / "js" / "app.js").read_text(
         encoding="utf-8"
     )
-    server = (ROOT / "app" / "web_server.py").read_text(encoding="utf-8")
+    server = (ROOT / "server" / "web_server.py").read_text(encoding="utf-8")
 
     assert 'src="/screen"' in monitor
     assert 'src="/admin/table/"' in monitor
@@ -202,7 +205,7 @@ def test_serial_reader_forwards_json_and_reports_status(monkeypatch):
         Serial=lambda *args, **kwargs: device,
         SerialException=RuntimeError,
     )
-    monkeypatch.setattr("app.serial_io.serial", fake_serial)
+    monkeypatch.setattr("server.serial_io.serial", fake_serial)
 
     def on_message(message):
         messages.append(message)

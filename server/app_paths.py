@@ -19,7 +19,9 @@ _DEFAULT_DOCUMENTS = {
         '"melody_rotation":{"mode":"sequence","playlist":'
         '["dynamite","Iam","biplane"]},'
         '"web":{"host":"127.0.0.1","port":8080},'
-        '"serial":{"port":"COM5","baudrate":115200}}\n'
+        '"serial":{"port":"COM5","baudrate":115200},'
+        '"matrix_display":{"enabled":true,"port":"COM6",'
+        '"baudrate":115200}}\n'
     ),
     "orb_mapping.json": "{}\n",
     "voice_catalog.json": '{"voices":{}}\n',

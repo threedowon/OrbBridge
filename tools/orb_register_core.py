@@ -9,7 +9,7 @@ from typing import Callable
 
 import serial
 
-from app.data_store import (
+from server.data_store import (
     MAPPING_PATH,
     list_groups,
     load_mapping,
@@ -18,7 +18,7 @@ from app.data_store import (
     save_mapping,
     validate_voice,
 )
-from app.voice_catalog import ensure_voice_profile, sync_mapping_voices_to_catalog
+from server.voice_catalog import ensure_voice_profile, sync_mapping_voices_to_catalog
 
 DETECT_TYPES = {"ds2431", "ds2431_detected", "detect", "orb_detect", "orb_id"}
 LOG_LIMIT = 80

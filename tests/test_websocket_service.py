@@ -3,7 +3,7 @@ import json
 
 import websockets
 
-from app.websocket_service import WebSocketService, event_message, snapshot_message
+from server.websocket_service import WebSocketService, event_message, snapshot_message
 
 
 def test_wire_messages_validate_and_preserve_the_browser_event_shape():

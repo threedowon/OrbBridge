@@ -7,7 +7,7 @@ block_cipher = None
 
 build_dir = Path(SPECPATH)
 root_dir = build_dir.parent
-app_dir = root_dir / "app"
+server_dir = root_dir / "server"
 
 
 def _collect_datas():
@@ -21,7 +21,7 @@ def _collect_datas():
 
 
 a = Analysis(
-    [str(app_dir / "launcher.py")],
+    [str(server_dir / "launcher.py")],
     pathex=[str(root_dir)],
     binaries=[],
     datas=_collect_datas(),

@@ -5,8 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 
-from app.app_paths import data_dir
-from app.data_store import MAPPING_PATH, load_mapping
+from server.app_paths import data_dir
+from server.data_store import MAPPING_PATH, load_mapping
 
 
 VOICE_CATALOG_PATH = data_dir() / "voice_catalog.json"
