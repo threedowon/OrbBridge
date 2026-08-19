@@ -4,22 +4,22 @@ from copy import deepcopy
 
 from server.app_paths import ensure_data_files, melodies_dir
 from server.data_store import find_orb, load_config, load_mapping
-from server.game_engine import (
+from server.game.game_engine import (
     EndReason,
     GameEngine,
     GameState,
     InvalidTransition,
     PlacementResult,
 )
-from server.game_runtime import GameRuntime, RuntimeResult
-from server.matrix_display import MatrixDisplay
-from server.melody_manager import (
+from server.game.game_runtime import GameRuntime, RuntimeResult
+from server.inout.matrix_display import MatrixDisplay
+from server.game.melody_manager import (
     MelodyManager,
     answer_sequence_from_melody,
     game_rules_from_melody,
 )
-from server.scheduler import PlaybackMode, PlaybackScheduler, parse_melody
-from server.serial_io import run_serial_loop
+from server.game.scheduler import PlaybackMode, PlaybackScheduler, parse_melody
+from server.inout.serial_io import run_serial_loop
 
 ensure_data_files()
 
@@ -150,7 +150,7 @@ def _scheduler_send_notes(notes: list[dict]) -> list[dict]:
     if not notes:
         return []
 
-    from server.midi_out import trigger_many
+    from server.inout.midi_out import trigger_many
 
     results = trigger_many(notes)
     failures = [result for result in results if not result.get("ok")]
@@ -377,7 +377,7 @@ def start_websocket_service():
         if _websocket_service is not None and _websocket_service.running:
             return _websocket_service
 
-        from server.websocket_service import WebSocketService
+        from server.web.websocket_service import WebSocketService
 
         ws_cfg = config.get("websocket") or {}
         host = str(
@@ -828,7 +828,7 @@ def handle_event(event: dict) -> dict:
             if _matrix_display is not None:
                 _matrix_display.show_voice(voice, runtime_result.snapshot)
             try:
-                from server.midi_out import cell_to_pitch, trigger as midi_trigger
+                from server.inout.midi_out import cell_to_pitch, trigger as midi_trigger
 
                 midi_result = midi_trigger(
                     voice,
@@ -1005,10 +1005,9 @@ def run_main() -> None:
     web_config = config.get("web") or {"host": "127.0.0.1", "port": 8080}
     print(f"[http] http://127.0.0.1:{web_config.get('port', 8080)}/admin")
     print(f"[http] http://127.0.0.1:{web_config.get('port', 8080)}/admin/software")
-    print(f"[http] http://127.0.0.1:{web_config.get('port', 8080)}/admin/display")
 
     try:
-        from server.midi_out import ensure_init
+        from server.inout.midi_out import ensure_init
 
         ok, err = ensure_init()
         if ok:
@@ -1018,7 +1017,7 @@ def run_main() -> None:
     except Exception as exc:
         print(f"[midi] WARN: init failed: {exc}")
 
-    from server.web_server import start_http_server
+    from server.web.web_server import start_http_server
 
     start_http_server(
         web_config,
@@ -1055,7 +1054,7 @@ def run_main() -> None:
             scheduler = _playback_scheduler
         if scheduler is not None:
             scheduler.close()
-        from server.midi_out import shutdown
+        from server.inout.midi_out import shutdown
 
         shutdown()
 

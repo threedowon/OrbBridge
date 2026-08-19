@@ -3,14 +3,14 @@ import time
 
 import pytest
 
-from server.game_engine import (
+from server.game.game_engine import (
     EndReason,
     GameEngine,
     GameState,
     InvalidTransition,
     PlacementResult,
 )
-from server.game_runtime import GameRuntime
+from server.game.game_runtime import GameRuntime
 
 
 class FakeClock:
@@ -321,3 +321,4 @@ def test_runtime_preserves_end_reason_in_snapshot():
         assert result.snapshot["end_reason"] == "manual"
     finally:
         runtime.close()
+

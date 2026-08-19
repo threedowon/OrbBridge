@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 from server.app_paths import data_dir, melodies_dir
-from server.melody_manager import (
+from server.game.melody_manager import (
     answer_sequence_from_melody,
     game_rules_from_melody,
     load_melody_document,

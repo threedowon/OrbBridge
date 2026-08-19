@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from server.game_engine import (
+from server.game.game_engine import (
     CellAddress,
     EndReason,
     GameEngine,
@@ -486,3 +486,4 @@ def test_backwards_clock_is_rejected():
 
     with pytest.raises(RuntimeError, match="backwards"):
         engine.snapshot()
+

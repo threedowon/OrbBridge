@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from server.melody_manager import MelodyManager, rotation_plan_from_config
+from server.game.melody_manager import MelodyManager, rotation_plan_from_config
 
 
 AVAILABLE = ["dynamite", "Iam", "biplane"]
@@ -63,3 +63,4 @@ def test_invalid_rotation_settings_are_rejected(rotation, message):
             {"melody": "dynamite", "melody_rotation": rotation},
             AVAILABLE,
         )
+

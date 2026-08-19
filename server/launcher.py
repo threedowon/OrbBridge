@@ -14,7 +14,6 @@ def _open_browser() -> None:
     urls = (
         "http://127.0.0.1:8080/admin",
         "http://127.0.0.1:8080/admin/software",
-        "http://127.0.0.1:8080/admin/display",
     )
     for url in urls:
         try:

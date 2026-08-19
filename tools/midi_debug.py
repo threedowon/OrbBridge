@@ -7,7 +7,7 @@ import threading
 import time
 from copy import deepcopy
 
-from server import midi_out
+from server.inout import midi_out
 from server.voice_catalog import list_catalog_voices
 
 

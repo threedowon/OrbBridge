@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
 
-from server import web_server
-from server.serial_io import run_serial_loop
+from server.web import web_server
+from server.inout.serial_io import run_serial_loop
 from server.voice_catalog import list_catalog_voices, voice_api_payload
 
 
@@ -11,9 +11,27 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_m6_directories_match_runtime_roles():
     assert (ROOT / "server" / "main.py").is_file()
-    assert (ROOT / "server" / "serial_io.py").is_file()
-    assert (ROOT / "server" / "matrix_display.py").is_file()
-    assert (ROOT / "server" / "web_server.py").is_file()
+    assert (ROOT / "server" / "game" / "game_engine.py").is_file()
+    assert (ROOT / "server" / "game" / "game_runtime.py").is_file()
+    assert (ROOT / "server" / "game" / "scheduler.py").is_file()
+    assert (ROOT / "server" / "game" / "melody_manager.py").is_file()
+    assert (ROOT / "server" / "inout" / "serial_io.py").is_file()
+    assert (ROOT / "server" / "inout" / "matrix_display.py").is_file()
+    assert (ROOT / "server" / "inout" / "midi_out.py").is_file()
+    assert (ROOT / "server" / "web" / "web_server.py").is_file()
+    assert (ROOT / "server" / "web" / "websocket_service.py").is_file()
+    for moved in (
+        "game_engine.py",
+        "game_runtime.py",
+        "scheduler.py",
+        "melody_manager.py",
+        "serial_io.py",
+        "matrix_display.py",
+        "midi_out.py",
+        "web_server.py",
+        "websocket_service.py",
+    ):
+        assert not (ROOT / "server" / moved).exists()
     assert (ROOT / "firmware" / "dotmatrix" / "dotmatrix.ino").is_file()
     assert (ROOT / "web" / "screen" / "index.html").is_file()
     assert (ROOT / "web" / "admin" / "index.html").is_file()
@@ -51,7 +69,7 @@ def test_removed_sample_and_editor_paths_do_not_return():
     assert not (ROOT / "server" / "melody_store.py").exists()
     assert not (ROOT / "server" / "melody_rotation.py").exists()
     assert not (ROOT / "server" / "voice_store.py").exists()
-    assert (ROOT / "server" / "melody_manager.py").is_file()
+    assert (ROOT / "server" / "game" / "melody_manager.py").is_file()
     assert (ROOT / "server" / "voice_catalog.py").is_file()
     assert not (ROOT / "web" / "screen" / "js" / "audio.js").exists()
 
@@ -114,7 +132,9 @@ def test_windows_launchers_use_module_entrypoints_without_removed_paths():
 
 
 def test_admin_exposes_midi_debug_without_screen_midi_legacy():
-    server = (ROOT / "server" / "web_server.py").read_text(encoding="utf-8")
+    server = (
+        ROOT / "server" / "web" / "web_server.py"
+    ).read_text(encoding="utf-8")
     admin = (
         ROOT / "web" / "admin" / "control" / "index.html"
     ).read_text(encoding="utf-8")
@@ -132,7 +152,7 @@ def test_admin_exposes_midi_debug_without_screen_midi_legacy():
     assert "AudioContext" not in screen
 
 
-def test_admin_separates_controls_and_combines_screen_with_table():
+def test_software_admin_combines_display_and_control():
     display = (ROOT / "web" / "admin" / "index.html").read_text(encoding="utf-8")
     control = (
         ROOT / "web" / "admin" / "control" / "index.html"
@@ -146,15 +166,17 @@ def test_admin_separates_controls_and_combines_screen_with_table():
     screen_js = (ROOT / "web" / "screen" / "js" / "app.js").read_text(
         encoding="utf-8"
     )
-    server = (ROOT / "server" / "web_server.py").read_text(encoding="utf-8")
+    server = (
+        ROOT / "server" / "web" / "web_server.py"
+    ).read_text(encoding="utf-8")
 
     assert 'src="/screen"' in display
     assert 'src="/admin/table/"' in display
-    assert 'src="/admin/control/"' not in display
+    assert 'src="/admin/control/?mode=software"' in display
     assert "data-mode=\"hardware\"" in control
     assert "data-mode=\"software\"" in control
     assert 'href="/admin/software"' in control
-    assert 'href="/admin/display"' in control
+    assert 'href="/admin/display"' not in control
     assert "status-dots" not in table
     assert "conn-dot" not in screen_html
     assert '"/admin/software"' in server
@@ -172,11 +194,12 @@ def test_admin_separates_controls_and_combines_screen_with_table():
 def test_browser_tabs_open_in_operator_order():
     launcher = (ROOT / "server" / "launcher.py").read_text(encoding="utf-8")
     windows = (ROOT / "start.bat").read_text(encoding="utf-8")
-    paths = ("/admin", "/admin/software", "/admin/display")
+    paths = ("/admin", "/admin/software")
 
     for text in (launcher, windows):
         positions = [text.index(path) for path in paths]
         assert positions == sorted(positions)
+        assert "8080/admin/display" not in text
         assert "8080/screen" not in text
 
 
@@ -227,7 +250,7 @@ def test_serial_reader_forwards_json_and_reports_status(monkeypatch):
         Serial=lambda *args, **kwargs: device,
         SerialException=RuntimeError,
     )
-    monkeypatch.setattr("server.serial_io.serial", fake_serial)
+    monkeypatch.setattr("server.inout.serial_io.serial", fake_serial)
 
     def on_message(message):
         messages.append(message)

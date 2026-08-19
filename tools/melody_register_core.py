@@ -10,7 +10,7 @@ from typing import Any, Callable
 
 from server.app_paths import melodies_dir
 from server.data_store import load_config, save_config
-from server.melody_manager import (
+from server.game.melody_manager import (
     MODE_FIXED,
     MODE_SEQUENCE,
     game_rules_from_melody,

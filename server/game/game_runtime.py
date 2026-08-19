@@ -14,7 +14,7 @@ from queue import Empty, Queue
 import threading
 from typing import Any, Callable
 
-from server.game_engine import GameEngine
+from server.game.game_engine import GameEngine
 
 
 StateCallback = Callable[[str, str, dict], None]

@@ -3,7 +3,7 @@ import json
 
 import websockets
 
-from server.websocket_service import WebSocketService, event_message, snapshot_message
+from server.web.websocket_service import WebSocketService, event_message, snapshot_message
 
 
 def test_wire_messages_validate_and_preserve_the_browser_event_shape():
@@ -69,3 +69,4 @@ def test_each_connection_receives_a_fresh_snapshot_before_live_events():
         service.close()
 
     assert service.running is False
+

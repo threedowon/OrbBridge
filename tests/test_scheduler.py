@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from server.scheduler import (
+from server.game.scheduler import (
     PLAYBACK_LEAD_S,
     Melody,
     PlaybackMode,
@@ -179,3 +179,4 @@ def test_close_is_idempotent_and_rejects_new_playback():
 
     with pytest.raises(RuntimeError, match="closed"):
         scheduler.start("listen", parse_melody(melody_raw()))
+

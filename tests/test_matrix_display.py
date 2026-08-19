@@ -1,6 +1,6 @@
 import json
 
-from server.matrix_display import MatrixDisplay
+from server.inout.matrix_display import MatrixDisplay
 
 
 class FakeDevice:

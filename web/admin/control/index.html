@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OrbBridge — Hardware Admin</title>
   <script>
-    const CONTROL_MODE = location.pathname.startsWith('/admin/software')
+    const CONTROL_MODE = (
+      location.pathname.startsWith('/admin/software')
+      || new URLSearchParams(location.search).get('mode') === 'software'
+    )
       ? 'software'
       : 'hardware';
     document.documentElement.dataset.mode = CONTROL_MODE;
@@ -533,9 +536,8 @@
         <span id="lbl-midi">MIDI —</span>
       </div>
       <div class="links">
-        <a href="/admin" data-control-mode="hardware">Hardware</a>
-        <a href="/admin/software" data-control-mode="software">Software</a>
-        <a href="/admin/display">Screen + Table</a>
+        <a href="/admin" target="_top" data-control-mode="hardware">Hardware</a>
+        <a href="/admin/software" target="_top" data-control-mode="software">Software</a>
       </div>
     </div>
   </header>

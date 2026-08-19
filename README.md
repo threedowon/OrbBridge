@@ -1,6 +1,6 @@
 # OrbBridge
 
-물리 오브 테이블과 Screen·Admin을 연결하는 Python 런타임이다. Admin 한 화면에서
+물리 오브 테이블과 Screen·Admin을 연결하는 Python 런타임이다. Software Admin에서
 관객 화면, 테이블 시뮬레이터, 운영 제어를 함께 모니터링할 수 있다.
 
 ## 구조
@@ -10,18 +10,21 @@ OrbBridge/
 ├── server/                  공연 중 실행되는 Python 본체
 │   ├── launcher.py          전체 실행 진입점
 │   ├── main.py              모듈 연결과 게임 이벤트 처리
-│   ├── game_engine.py       상태·셀·정답·타이머 순수 로직
-│   ├── game_runtime.py      입력 Queue와 단일 writer
-│   ├── scheduler.py         Listen·Play·DFesta 재생 스케줄
-│   ├── serial_io.py         ESP USB 시리얼 입력
-│   ├── matrix_display.py    192×32 도트매트릭스 출력
-│   ├── midi_out.py          Ableton MIDI 출력
-│   ├── web_server.py        HTTP API와 정적 파일 제공
-│   ├── websocket_service.py 실시간 이벤트와 재접속 snapshot
 │   ├── data_store.py        설정·오브 매핑 입출력
-│   ├── melody_manager.py    멜로디 로드·규칙·게임별 순회
 │   ├── voice_catalog.py     voice 표시색·이름 메타데이터
-│   └── app_paths.py         개발판·배포판 경로 처리
+│   ├── app_paths.py         개발판·배포판 경로 처리
+│   ├── game/                게임 규칙과 진행
+│   │   ├── game_engine.py
+│   │   ├── game_runtime.py
+│   │   ├── scheduler.py
+│   │   └── melody_manager.py
+│   ├── inout/               외부 장치 송수신
+│   │   ├── serial_io.py
+│   │   ├── matrix_display.py
+│   │   └── midi_out.py
+│   └── web/                 브라우저 통신
+│       ├── web_server.py
+│       └── websocket_service.py
 ├── web/
 │   ├── screen/              관객용 화면
 │   └── admin/               통합 모니터
@@ -57,13 +60,12 @@ python -m server.launcher
 | 주소 | 역할 |
 |---|---|
 | `http://127.0.0.1:8080/admin` | 하드웨어·셀·슬레이브 진단 |
-| `http://127.0.0.1:8080/admin/software` | 게임·이벤트·MIDI 진단 |
-| `http://127.0.0.1:8080/admin/display` | Screen·Table 통합 화면 |
+| `http://127.0.0.1:8080/admin/software` | Screen·Table·게임·이벤트·MIDI 통합 |
 
 macOS에서는 프로젝트 루트의 `start.command`를 실행해도 된다. 실행 스크립트는
 의존성을 자동 설치하지 않으므로 처음 한 번은 위 설치 명령이 필요하다.
-Windows에서는 `start.bat`를 실행하면 하드웨어 Admin, 소프트웨어 Admin,
-Screen·Table 통합 화면 순서로 열린다.
+Windows에서는 `start.bat`를 실행하면 하드웨어 Admin과 소프트웨어 Admin 순서로
+열린다.
 
 ## 게임 계약
 

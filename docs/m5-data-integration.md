@@ -20,7 +20,7 @@ data/config.json
 - `game_rules`가 TimeOver·Idle·DFesta 입력 횟수를 함께 보관한다.
 - `current_stage`는 기존 운영 표시값으로 `data/config.json`에 유지한다.
 - 여러 멜로디는 `melody_rotation.playlist` 순서로 게임마다 순환한다.
-- 로드·규칙 검증·순번 관리는 `server/melody_manager.py` 하나가 담당한다.
+- 로드·규칙 검증·순번 관리는 `server/game/melody_manager.py` 하나가 담당한다.
 
 ## 런타임 갱신
 
@@ -59,3 +59,4 @@ data/config.json
 - `stage_data.json`, 편집기 동기화 옵션, `/screen/melodies` 경로가 남지 않는다.
 - WebSocket 재접속 시 게임 상태와 같은 멜로디를 복구한다.
 - PyInstaller 배포물도 `data/` 구조를 그대로 사용한다.
+
