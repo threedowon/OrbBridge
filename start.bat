@@ -9,4 +9,3 @@ start "OrbBridge Server" cmd /k "%PYTHON_CMD% -m server.launcher"
 timeout /t 2 /nobreak >nul
 
 start "" http://127.0.0.1:8080/admin
-start "" http://127.0.0.1:8080/admin/software
