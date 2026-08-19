@@ -8,9 +8,9 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg: #ececec;
-      --surface: #fff;
-      --ink: #1a1a1a;
+      --bg: #f3f3f3;
+      --surface: #fafafa;
+      --ink: #252525;
       --accent: #5b8def;
       --orb-idle: #b4b8c0;
       --orb-idle-border: #8a8f98;
@@ -30,7 +30,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 12px;
+      padding: 6px;
     }
 
     .table-wrap {
@@ -39,9 +39,9 @@
       flex-direction: column;
       align-items: stretch;
       gap: clamp(6px, 1vh, 10px);
-      width: min(calc(100vw - 24px), calc((100vh - 24px) * 24 / 10));
-      height: calc(100vh - 24px);
-      max-height: calc(100vh - 24px);
+      width: min(calc(100vw - 12px), calc((100vh - 12px) * 24 / 10));
+      height: calc(100vh - 12px);
+      max-height: calc(100vh - 12px);
       --cell: 32px;
       --gap-x: 14px;
       --gap-y: 10px;
@@ -50,8 +50,8 @@
 
     .ui-box {
       background: var(--surface);
-      border: 2px solid var(--ink);
-      border-radius: 10px;
+      border: 1px solid #d5d7dc;
+      border-radius: 6px;
     }
 
     .orb-palette {
@@ -61,8 +61,8 @@
       display: flex;
       justify-content: center;
       align-items: center;
-      background: #1e3a5f;
-      border-radius: 8px;
+      background: #e8ebf0;
+      border-radius: 6px;
     }
 
     .orb-palette.drop-target {
@@ -80,26 +80,6 @@
       min-height: 0;
       width: 100%;
     }
-
-    .status-dots {
-      position: absolute;
-      top: 2.5%;
-      right: 3%;
-      display: flex;
-      gap: 6px;
-    }
-
-    .dot-status {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      border: 1.5px solid var(--ink);
-      background: var(--surface);
-    }
-
-    .dot-status.ok { background: #4ade80; border-color: #16a34a; }
-    .dot-status.wait { background: #facc15; border-color: #ca8a04; }
-    .dot-status.err { background: #f87171; border-color: #dc2626; }
 
     .orb-row {
       display: flex;
@@ -356,11 +336,6 @@
 <body>
   <div class="table-wrap">
     <section class="ui-box play-panel" id="play-panel">
-      <div class="status-dots">
-        <span class="dot-status wait" id="status-dot" title="대기 중"></span>
-        <span class="dot-status" id="ws-dot" title="WS"></span>
-      </div>
-
       <div class="playfield">
         <div class="grid-stack">
           <div class="grid" id="grid"></div>
@@ -415,8 +390,6 @@
     const gridEl = document.getElementById('grid');
     const beatLampsEl = document.getElementById('beat-lamps');
     const orbTrayEl = document.getElementById('orb-tray');
-    const statusDot = document.getElementById('status-dot');
-    const wsDot = document.getElementById('ws-dot');
     const btnPlay = document.getElementById('btn-play');
     const btnDFesta = document.getElementById('btn-dfesta');
     const btnListen = document.getElementById('btn-listen');
@@ -740,10 +713,6 @@
 
       document.body.classList.toggle('state-ready', !running && !resetting);
       document.body.classList.toggle('resetting', resetting);
-      statusDot.className = 'dot-status ' + (running ? 'ok' : 'wait');
-      statusDot.title = running
-        ? 'RUNNING'
-        : (resetting ? 'RESETTING — 오브를 모두 제거하세요' : gameState);
       btnPlay.disabled = !running;
       btnListen.disabled = !running;
       if (!running) btnDFesta.disabled = true;
@@ -779,11 +748,6 @@
         el.classList.toggle('disabled', !running && !removable);
         el.draggable = filled && canRemoveOrbs();
       });
-    }
-
-    function setWsStatus(ok) {
-      wsDot.className = 'dot-status ' + (ok ? 'ok' : 'err');
-      wsDot.title = ok ? 'WS 연결됨' : 'WS 끊김';
     }
 
     async function applyWebSocketSnapshot(snapshot) {
@@ -1230,7 +1194,6 @@
       ws = new WebSocket(WS_URL);
       wsSnapshotReceived = false;
       ws.onopen = () => {
-        setWsStatus(true);
         // 서버가 전체 상태를 먼저 보내며 HTTP는 시작 경합용 지연 fallback이다.
         setTimeout(() => {
           if (!wsSnapshotReceived && ws?.readyState === WebSocket.OPEN) {
@@ -1239,10 +1202,8 @@
         }, 750);
       };
       ws.onclose = () => {
-        setWsStatus(false);
         setTimeout(connectWs, 2000);
       };
-      ws.onerror = () => setWsStatus(false);
       ws.onmessage = (e) => {
         let message;
         try {
@@ -1304,7 +1265,7 @@
     });
     void syncStateFromServer();
     connectWs();
-    loadOrbs().catch(() => setWsStatus(false));
+    loadOrbs().catch(error => console.warn('orb catalog unavailable', error));
   </script>
 </body>
 </html>

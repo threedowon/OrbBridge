@@ -35,16 +35,6 @@ function getBeats() {
   return currentMelody ? beatCount(currentMelody) : 0;
 }
 
-const connEl = document.getElementById('conn-dot');
-
-function setConn(on) {
-  const label = on ? 'Connected' : 'Disconnected';
-  if (!connEl) return;
-  connEl.className = 'conn-dot' + (on ? ' on' : '');
-  connEl.title = label;
-  connEl.setAttribute('aria-label', label);
-}
-
 function prepareMelody(document) {
   currentMelody = parseMelodyJson(
     document,
@@ -269,7 +259,6 @@ function connectWs() {
   ws = new WebSocket(WS_URL);
   wsSnapshotReceived = false;
   ws.onopen = () => {
-    setConn(true);
     // 서버가 즉시 전체 snapshot을 보낸다. 시작 경합에 대비해 지연 HTTP
     // fallback 하나만 유지한다.
     setTimeout(() => {
@@ -279,10 +268,8 @@ function connectWs() {
     }, 750);
   };
   ws.onclose = () => {
-    setConn(false);
     setTimeout(connectWs, 2000);
   };
-  ws.onerror = () => setConn(false);
   ws.onmessage = event => {
     let message;
     try {

@@ -3,71 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OrbBridge — Admin Monitor</title>
+  <title>OrbBridge — Screen + Table</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
-
-    :root {
-      --bg: #090b10;
-      --panel: #11141c;
-      --bar: #171b25;
-      --border: #303647;
-      --ink: #e8eaef;
-      --muted: #8b92a8;
-      --gap: clamp(8px, 0.7vw, 14px);
-      --bar-height: 30px;
-    }
 
     html, body {
       width: 100%;
       height: 100%;
       margin: 0;
       overflow: hidden;
-      background: var(--bg);
-      color: var(--ink);
-      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #0f1117;
     }
 
-    body { padding: var(--gap); }
-
-    .monitor {
-      width: 100%;
-      height: 100%;
+    main {
+      width: min(100vw, calc(100vh * 8 / 9));
+      height: 100vh;
+      margin: 0 auto;
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1.04fr);
-      gap: var(--gap);
-    }
-
-    .left-column {
-      min-width: 0;
-      min-height: 0;
-      display: grid;
-      grid-template-rows: minmax(0, 1fr) minmax(0, 1.05fr);
-      gap: var(--gap);
-    }
-
-    .panel {
-      min-width: 0;
-      min-height: 0;
-      overflow: hidden;
-      display: grid;
-      grid-template-rows: var(--bar-height) minmax(0, 1fr);
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-    }
-
-    .panel-title {
-      display: flex;
-      align-items: center;
-      padding: 0 11px;
-      background: var(--bar);
-      border-bottom: 1px solid var(--border);
-      color: var(--muted);
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.09em;
-      text-transform: uppercase;
+      grid-template-rows: repeat(2, minmax(0, 1fr));
+      gap: 1px;
+      background: #cfd2d8;
     }
 
     iframe {
@@ -75,38 +30,16 @@
       width: 100%;
       height: 100%;
       border: 0;
-      background: #fff;
     }
 
-    @media (max-width: 1100px), (max-aspect-ratio: 4 / 3) {
-      body { overflow: auto; }
-      .monitor {
-        height: auto;
-        grid-template-columns: 1fr;
-      }
-      .left-column { grid-template-rows: repeat(2, minmax(420px, 48vh)); }
-      .panel.control { min-height: 760px; }
-    }
+    .screen { background: #f5f2e9; }
+    .table { background: #f3f3f3; }
   </style>
 </head>
 <body>
-  <main class="monitor">
-    <div class="left-column">
-      <section class="panel">
-        <div class="panel-title">Screen</div>
-        <iframe src="/screen" title="관객 화면 모니터" loading="eager"></iframe>
-      </section>
-
-      <section class="panel">
-        <div class="panel-title">Table</div>
-        <iframe src="/admin/table/" title="테이블 시뮬레이터" loading="eager"></iframe>
-      </section>
-    </div>
-
-    <section class="panel control">
-      <div class="panel-title">Admin Control</div>
-      <iframe src="/admin/control/" title="관리자 제어 화면" loading="eager"></iframe>
-    </section>
+  <main>
+    <iframe class="screen" src="/screen" title="관객 화면"></iframe>
+    <iframe class="table" src="/admin/table/" title="테이블 시뮬레이터"></iframe>
   </main>
 </body>
 </html>

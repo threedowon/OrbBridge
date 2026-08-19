@@ -56,12 +56,14 @@ python -m server.launcher
 
 | 주소 | 역할 |
 |---|---|
-| `http://127.0.0.1:8080/screen` | 관객용 악보·진행 표시 |
-| `http://127.0.0.1:8080/admin` | Screen·Table·Control 통합 모니터 |
+| `http://127.0.0.1:8080/admin` | 하드웨어·셀·슬레이브 진단 |
+| `http://127.0.0.1:8080/admin/software` | 게임·이벤트·MIDI 진단 |
+| `http://127.0.0.1:8080/admin/display` | Screen·Table 통합 화면 |
 
 macOS에서는 프로젝트 루트의 `start.command`를 실행해도 된다. 실행 스크립트는
 의존성을 자동 설치하지 않으므로 처음 한 번은 위 설치 명령이 필요하다.
-Windows에서는 `start.bat`를 실행하면 서버, Screen, Admin이 함께 열린다.
+Windows에서는 `start.bat`를 실행하면 하드웨어 Admin, 소프트웨어 Admin,
+Screen·Table 통합 화면 순서로 열린다.
 
 ## 게임 계약
 
@@ -159,12 +161,12 @@ py -m tools.midi_debug --list
 심층 시리얼 진단은 `tools/debug/`에서 실행한다. 게임 런타임과 같은 COM 포트를
 동시에 열 수 없으므로 둘 중 하나만 실행해야 한다. loopMIDI 포트 복구 파일은
 `audioengine/loopmidi_portsetup.reg`이다. MIDI 단음·8음 순회·전체 voice 동시
-테스트는 `/admin`의 MIDI 진단에서도 실행할 수 있다.
+테스트는 `/admin/software`의 MIDI 진단에서도 실행할 수 있다.
 
 ## 웹 동기화
 
 - UI → Python: HTTP `POST /api/...`
-- Python → Screen·Admin 내부 UI: WebSocket `8765`
+- Python → Screen·Admin UI: WebSocket `8765`
 - 연결 직후: 게임·멜로디·셀·상태·로그 전체 snapshot
 - 이후: 동일 연결에서 실시간 이벤트 순서 보장
 

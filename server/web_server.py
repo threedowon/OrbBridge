@@ -172,13 +172,21 @@ def start_http_server(
                 self._json(200, get_events())
                 return
 
-            if path in ("/admin", "/admin/"):
+            if path in ("/admin", "/admin/", "/admin/hardware", "/admin/hardware/"):
+                self._serve_file(ADMIN_CONTROL_UI / "index.html")
+                return
+
+            if path in ("/admin/software", "/admin/software/"):
+                self._serve_file(ADMIN_CONTROL_UI / "index.html")
+                return
+
+            if path in ("/admin/display", "/admin/display/"):
                 self._serve_file(ADMIN_UI / "index.html")
                 return
 
             if path in ("/table", "/table/"):
                 self.send_response(302)
-                self.send_header("Location", "/admin")
+                self.send_header("Location", "/admin/display")
                 self.end_headers()
                 return
 
@@ -300,7 +308,8 @@ def start_http_server(
             traceback.print_exc()
             return
         print(f"[http] http://{host}:{port}/admin")
-        print(f"[http] http://{host}:{port}/screen")
+        print(f"[http] http://{host}:{port}/admin/software")
+        print(f"[http] http://{host}:{port}/admin/display")
         try:
             server.serve_forever()
         except Exception:

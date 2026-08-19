@@ -11,7 +11,12 @@ from server.app_paths import is_frozen
 
 def _open_browser() -> None:
     time.sleep(1.2)
-    for url in ("http://127.0.0.1:8080/screen", "http://127.0.0.1:8080/admin"):
+    urls = (
+        "http://127.0.0.1:8080/admin",
+        "http://127.0.0.1:8080/admin/software",
+        "http://127.0.0.1:8080/admin/display",
+    )
+    for url in urls:
         try:
             webbrowser.open(url)
         except OSError:

@@ -314,23 +314,6 @@ body {
   background: transparent;
 }
 
-.conn-dot {
-  position: fixed;
-  top: 28px;
-  right: 28px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, .12);
-  transition: background .25s, box-shadow .25s;
-  z-index: 10;
-}
-
-.conn-dot.on {
-  background: var(--success);
-  box-shadow: 0 0 10px rgba(42, 157, 106, .5);
-}
-
 /* ── Orb placed toast ── */
 .orb-toast {
   position: fixed;

@@ -1003,8 +1003,9 @@ def run_main() -> None:
     print("[audio] midi")
     print("admin에서 start를 누르면 게임이 시작됩니다.")
     web_config = config.get("web") or {"host": "127.0.0.1", "port": 8080}
-    print(f"[http] http://127.0.0.1:{web_config.get('port', 8080)}/screen")
     print(f"[http] http://127.0.0.1:{web_config.get('port', 8080)}/admin")
+    print(f"[http] http://127.0.0.1:{web_config.get('port', 8080)}/admin/software")
+    print(f"[http] http://127.0.0.1:{web_config.get('port', 8080)}/admin/display")
 
     try:
         from server.midi_out import ensure_init

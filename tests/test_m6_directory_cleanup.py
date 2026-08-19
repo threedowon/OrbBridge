@@ -132,10 +132,13 @@ def test_admin_exposes_midi_debug_without_screen_midi_legacy():
     assert "AudioContext" not in screen
 
 
-def test_admin_combines_screen_table_and_control_in_one_monitor():
-    monitor = (ROOT / "web" / "admin" / "index.html").read_text(encoding="utf-8")
+def test_admin_separates_controls_and_combines_screen_with_table():
+    display = (ROOT / "web" / "admin" / "index.html").read_text(encoding="utf-8")
     control = (
         ROOT / "web" / "admin" / "control" / "index.html"
+    ).read_text(encoding="utf-8")
+    table = (
+        ROOT / "web" / "admin" / "table" / "index.html"
     ).read_text(encoding="utf-8")
     screen_html = (ROOT / "web" / "screen" / "index.html").read_text(
         encoding="utf-8"
@@ -145,9 +148,17 @@ def test_admin_combines_screen_table_and_control_in_one_monitor():
     )
     server = (ROOT / "server" / "web_server.py").read_text(encoding="utf-8")
 
-    assert 'src="/screen"' in monitor
-    assert 'src="/admin/table/"' in monitor
-    assert 'src="/admin/control/"' in monitor
+    assert 'src="/screen"' in display
+    assert 'src="/admin/table/"' in display
+    assert 'src="/admin/control/"' not in display
+    assert "data-mode=\"hardware\"" in control
+    assert "data-mode=\"software\"" in control
+    assert 'href="/admin/software"' in control
+    assert 'href="/admin/display"' in control
+    assert "status-dots" not in table
+    assert "conn-dot" not in screen_html
+    assert '"/admin/software"' in server
+    assert '"/admin/display"' in server
     assert "/api/admin/game/auto-complete" in control
     assert "/api/admin/orbs/collect" in control
     assert "/api/admin/game/auto-complete" in server
@@ -156,6 +167,17 @@ def test_admin_combines_screen_table_and_control_in_one_monitor():
     assert "/api/game/start" not in screen_js
     assert "/api/game/reset" not in screen_js
     assert "/api/game/end" not in screen_js
+
+
+def test_browser_tabs_open_in_operator_order():
+    launcher = (ROOT / "server" / "launcher.py").read_text(encoding="utf-8")
+    windows = (ROOT / "start.bat").read_text(encoding="utf-8")
+    paths = ("/admin", "/admin/software", "/admin/display")
+
+    for text in (launcher, windows):
+        positions = [text.index(path) for path in paths]
+        assert positions == sorted(positions)
+        assert "8080/screen" not in text
 
 
 def test_loopmidi_registry_ports_match_portmapping():
