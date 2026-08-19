@@ -20,7 +20,7 @@
   },
   "matrix_display": {
     "enabled": true,
-    "port": "COM6",
+    "port": "COM13",
     "baudrate": 115200
   }
 }
