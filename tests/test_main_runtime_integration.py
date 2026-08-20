@@ -394,9 +394,9 @@ def test_heartbeat_uses_occupancy_mask_instead_of_game_state_field():
 
 
 def test_admin_keeps_start_and_reset_but_hides_manual_end():
-    html = (
-        ROOT / "web" / "admin" / "control" / "index.html"
-    ).read_text(encoding="utf-8")
+    html = (ROOT / "admin" / "software" / "index.html").read_text(
+        encoding="utf-8"
+    )
 
     for action in ("start", "reset"):
         assert f'data-game-action="{action}">{action}</button>' in html

@@ -130,11 +130,11 @@ def test_melody_register_round_trip_preserves_game_rules():
 
 
 def test_web_clients_load_the_server_melody_contract():
-    screen = (ROOT / "web" / "screen" / "js" / "melody-loader.js").read_text(
-        encoding="utf-8"
-    )
+    screen = (
+        ROOT / "admin" / "simulation" / "screen" / "js" / "melody-loader.js"
+    ).read_text(encoding="utf-8")
     table = (
-        ROOT / "web" / "admin" / "table" / "index.html"
+        ROOT / "admin" / "simulation" / "table" / "index.html"
     ).read_text(encoding="utf-8")
 
     assert "/api/melody" in screen

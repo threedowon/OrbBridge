@@ -31,3 +31,4 @@ export function voiceDisplay(voiceName) {
 
   return { voice: id, kr, en, primary, secondary, color };
 }
+

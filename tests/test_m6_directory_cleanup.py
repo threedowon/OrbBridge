@@ -33,21 +33,18 @@ def test_m6_directories_match_runtime_roles():
     ):
         assert not (ROOT / "server" / moved).exists()
     assert (ROOT / "firmware" / "dotmatrix" / "dotmatrix.ino").is_file()
-    assert (ROOT / "web" / "screen" / "index.html").is_file()
-    assert (ROOT / "web" / "admin" / "index.html").is_file()
-    assert (ROOT / "web" / "admin" / "table" / "index.html").is_file()
-    assert (ROOT / "web" / "admin" / "control" / "index.html").is_file()
-    assert not (ROOT / "web" / "table").exists()
-    assert {
-        path.name for path in (ROOT / "web").iterdir() if path.is_dir()
-    } == {"screen", "admin"}
+    assert (ROOT / "admin" / "hardware" / "index.html").is_file()
+    assert (ROOT / "admin" / "software" / "index.html").is_file()
+    assert (ROOT / "admin" / "simulation" / "screen" / "index.html").is_file()
+    assert (ROOT / "admin" / "simulation" / "table" / "index.html").is_file()
+    assert not (ROOT / "web").exists()
     assert (ROOT / "tools" / "orb_register.py").is_file()
     assert (ROOT / "tools" / "melody_register.py").is_file()
     assert (ROOT / "tools" / "midi_debug.py").is_file()
     assert (ROOT / "tools" / "debug" / "__main__.py").is_file()
     assert (ROOT / "audioengine" / "loopmidi_portsetup.reg").is_file()
 
-    for legacy in ("app", "screen", "table", "admin", "debug"):
+    for legacy in ("app", "screen", "table", "debug"):
         assert not (ROOT / legacy).exists()
 
 
@@ -71,11 +68,13 @@ def test_removed_sample_and_editor_paths_do_not_return():
     assert not (ROOT / "server" / "voice_store.py").exists()
     assert (ROOT / "server" / "game" / "melody_manager.py").is_file()
     assert (ROOT / "server" / "voice_catalog.py").is_file()
-    assert not (ROOT / "web" / "screen" / "js" / "audio.js").exists()
+    assert not (
+        ROOT / "admin" / "simulation" / "screen" / "js" / "audio.js"
+    ).exists()
 
     runtime_text = "\n".join(
         path.read_text(encoding="utf-8")
-        for folder in (ROOT / "server", ROOT / "tools", ROOT / "web")
+        for folder in (ROOT / "server", ROOT / "tools", ROOT / "admin")
         for path in folder.rglob("*")
         if path.is_file() and path.suffix in {".py", ".js", ".html"}
     )
@@ -101,12 +100,12 @@ def test_explicit_empty_mapping_does_not_reload_saved_mapping():
     assert voice_api_payload({}) == {"voices": [], "index": {}}
 
 
-def test_web_server_uses_the_m6_static_root():
-    assert web_server.WEB_ROOT == ROOT / "web"
-    assert web_server.GAME_UI == ROOT / "web" / "screen"
-    assert web_server.ADMIN_UI == ROOT / "web" / "admin"
-    assert web_server.TABLE_UI == ROOT / "web" / "admin" / "table"
-    assert web_server.ADMIN_CONTROL_UI == ROOT / "web" / "admin" / "control"
+def test_web_server_uses_the_admin_static_root():
+    assert web_server.ADMIN_ROOT == ROOT / "admin"
+    assert web_server.HARDWARE_ADMIN_UI == ROOT / "admin" / "hardware"
+    assert web_server.SOFTWARE_ADMIN_UI == ROOT / "admin" / "software"
+    assert web_server.SCREEN_SIM_UI == ROOT / "admin" / "simulation" / "screen"
+    assert web_server.TABLE_SIM_UI == ROOT / "admin" / "simulation" / "table"
 
 
 def test_windows_launchers_use_module_entrypoints_without_removed_paths():
@@ -135,12 +134,12 @@ def test_admin_exposes_midi_debug_without_screen_midi_legacy():
     server = (
         ROOT / "server" / "web" / "web_server.py"
     ).read_text(encoding="utf-8")
-    admin = (
-        ROOT / "web" / "admin" / "control" / "index.html"
-    ).read_text(encoding="utf-8")
+    admin = (ROOT / "admin" / "software" / "index.html").read_text(
+        encoding="utf-8"
+    )
     screen = "\n".join(
         path.read_text(encoding="utf-8")
-        for path in (ROOT / "web" / "screen").rglob("*.js")
+        for path in (ROOT / "admin" / "simulation" / "screen").rglob("*.js")
     )
 
     assert "/api/admin/midi/status" in server
@@ -153,36 +152,40 @@ def test_admin_exposes_midi_debug_without_screen_midi_legacy():
 
 
 def test_software_admin_combines_display_and_control():
-    display = (ROOT / "web" / "admin" / "index.html").read_text(encoding="utf-8")
-    control = (
-        ROOT / "web" / "admin" / "control" / "index.html"
-    ).read_text(encoding="utf-8")
+    hardware = (ROOT / "admin" / "hardware" / "index.html").read_text(
+        encoding="utf-8"
+    )
+    software = (ROOT / "admin" / "software" / "index.html").read_text(
+        encoding="utf-8"
+    )
     table = (
-        ROOT / "web" / "admin" / "table" / "index.html"
+        ROOT / "admin" / "simulation" / "table" / "index.html"
     ).read_text(encoding="utf-8")
-    screen_html = (ROOT / "web" / "screen" / "index.html").read_text(
-        encoding="utf-8"
-    )
-    screen_js = (ROOT / "web" / "screen" / "js" / "app.js").read_text(
-        encoding="utf-8"
-    )
+    screen_html = (
+        ROOT / "admin" / "simulation" / "screen" / "index.html"
+    ).read_text(encoding="utf-8")
+    screen_js = (
+        ROOT / "admin" / "simulation" / "screen" / "js" / "app.js"
+    ).read_text(encoding="utf-8")
     server = (
         ROOT / "server" / "web" / "web_server.py"
     ).read_text(encoding="utf-8")
 
-    assert 'src="/screen"' in display
-    assert 'src="/admin/table/"' in display
-    assert 'src="/admin/control/?mode=software"' in display
-    assert "data-mode=\"hardware\"" in control
-    assert "data-mode=\"software\"" in control
-    assert 'href="/admin/software"' in control
-    assert 'href="/admin/display"' not in control
+    assert hardware != software
+    assert "const CONTROL_MODE = 'hardware'" in hardware
+    assert "const CONTROL_MODE = 'software'" in software
+    assert "/admin/simulation/screen/" not in hardware
+    assert 'src="/admin/simulation/screen/"' in software
+    assert 'src="/admin/simulation/table/"' in software
+    assert 'href="/admin/software"' in hardware
+    assert 'href="/admin"' in software
+    assert 'href="/admin/display"' not in hardware + software
     assert "status-dots" not in table
     assert "conn-dot" not in screen_html
     assert '"/admin/software"' in server
     assert '"/admin/display"' in server
-    assert "/api/admin/game/auto-complete" in control
-    assert "/api/admin/orbs/collect" in control
+    assert "/api/admin/game/auto-complete" in software
+    assert "/api/admin/orbs/collect" in software
     assert "/api/admin/game/auto-complete" in server
     assert "/api/admin/orbs/collect" in server
     assert "btn-enter" not in screen_html

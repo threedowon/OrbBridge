@@ -1,4 +1,4 @@
-"""정적 UI(/screen, /admin)와 REST API를 제공하는 HTTP 서버이다."""
+"""Admin UI와 REST API를 제공하는 HTTP 서버이다."""
 
 import json
 import socket
@@ -12,11 +12,11 @@ from typing import Callable
 from server.app_paths import repo_root
 
 ROOT = repo_root()
-WEB_ROOT = ROOT / "web"
-GAME_UI = WEB_ROOT / "screen"
-ADMIN_UI = WEB_ROOT / "admin"
-TABLE_UI = ADMIN_UI / "table"
-ADMIN_CONTROL_UI = ADMIN_UI / "control"
+ADMIN_ROOT = ROOT / "admin"
+HARDWARE_ADMIN_UI = ADMIN_ROOT / "hardware"
+SOFTWARE_ADMIN_UI = ADMIN_ROOT / "software"
+SCREEN_SIM_UI = ADMIN_ROOT / "simulation" / "screen"
+TABLE_SIM_UI = ADMIN_ROOT / "simulation" / "table"
 
 MIME = {
     ".html": "text/html; charset=utf-8",
@@ -173,45 +173,48 @@ def start_http_server(
                 return
 
             if path in ("/admin", "/admin/", "/admin/hardware", "/admin/hardware/"):
-                self._serve_file(ADMIN_CONTROL_UI / "index.html")
+                self._serve_file(HARDWARE_ADMIN_UI / "index.html")
                 return
 
             if path in ("/admin/software", "/admin/software/"):
-                self._serve_file(ADMIN_UI / "index.html")
+                self._serve_file(SOFTWARE_ADMIN_UI / "index.html")
                 return
 
-            if path in ("/admin/display", "/admin/display/"):
+            if path in (
+                "/admin/simulation/screen",
+                "/admin/simulation/screen/",
+            ):
+                self._serve_file(SCREEN_SIM_UI / "index.html")
+                return
+
+            if path in (
+                "/admin/simulation/table",
+                "/admin/simulation/table/",
+            ):
+                self._serve_file(TABLE_SIM_UI / "index.html")
+                return
+
+            compatibility_routes = {
+                "/admin/display": "/admin/software",
+                "/admin/display/": "/admin/software",
+                "/admin/control": "/admin",
+                "/admin/control/": "/admin",
+                "/admin/table": "/admin/simulation/table/",
+                "/admin/table/": "/admin/simulation/table/",
+                "/screen": "/admin/simulation/screen/",
+                "/screen/": "/admin/simulation/screen/",
+                "/table": "/admin/simulation/table/",
+                "/table/": "/admin/simulation/table/",
+            }
+            if path in compatibility_routes:
                 self.send_response(302)
-                self.send_header("Location", "/admin/software")
+                self.send_header("Location", compatibility_routes[path])
                 self.end_headers()
-                return
-
-            if path in ("/table", "/table/"):
-                self.send_response(302)
-                self.send_header("Location", "/admin/software")
-                self.end_headers()
-                return
-
-            if path in ("/screen", "/screen/"):
-                self._serve_file(GAME_UI / "index.html")
-                return
-
-            if path in ("/admin/table", "/admin/table/"):
-                self._serve_file(TABLE_UI / "index.html")
-                return
-
-            if path in ("/admin/control", "/admin/control/"):
-                self._serve_file(ADMIN_CONTROL_UI / "index.html")
                 return
 
             if path.startswith("/admin/"):
                 rel = path[len("/admin/"):]
-                self._serve_asset(ADMIN_UI, rel)
-                return
-
-            if path.startswith("/screen/"):
-                rel = path[len("/screen/"):]
-                self._serve_asset(GAME_UI, rel)
+                self._serve_asset(ADMIN_ROOT, rel)
                 return
 
             self._send(404, b"Not found", "text/plain")

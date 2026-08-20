@@ -68,3 +68,4 @@ export async function loadActiveMelody() {
   const raw = await res.json();
   return parseMelodyJson(raw, raw.songId ?? 'custom');
 }
+

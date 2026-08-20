@@ -110,3 +110,4 @@ export function melodyBeatCount(melody) {
 export function beatCount(melody) {
   return BEAT_COLS;
 }
+

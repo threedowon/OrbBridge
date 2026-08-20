@@ -5,12 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OrbBridge — Hardware Admin</title>
   <script>
-    const CONTROL_MODE = (
-      location.pathname.startsWith('/admin/software')
-      || new URLSearchParams(location.search).get('mode') === 'software'
-    )
-      ? 'software'
-      : 'hardware';
+    const CONTROL_MODE = 'hardware';
     document.documentElement.dataset.mode = CONTROL_MODE;
     document.title = CONTROL_MODE === 'software'
       ? 'OrbBridge — Software Admin'

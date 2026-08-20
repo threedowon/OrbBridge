@@ -1,7 +1,7 @@
 # OrbBridge
 
-물리 오브 테이블과 Screen·Admin을 연결하는 Python 런타임이다. Software Admin에서
-관객 화면, 테이블 시뮬레이터, 운영 제어를 함께 모니터링할 수 있다.
+물리 오브 테이블과 Admin을 연결하는 Python 런타임이다. Software Admin에서
+도트매트릭스 화면과 테이블을 시뮬레이션하고 운영 상태를 모니터링할 수 있다.
 
 ## 구조
 
@@ -25,10 +25,11 @@ OrbBridge/
 │   └── web/                 브라우저 통신
 │       ├── web_server.py
 │       └── websocket_service.py
-├── web/
-│   ├── screen/              관객용 화면
-│   └── admin/               통합 모니터
-│       ├── control/         운영 상태·로그·제어
+├── admin/                   운영·시뮬레이션 UI
+│   ├── hardware/            하드웨어 진단 Admin
+│   ├── software/            게임·이벤트·MIDI Admin
+│   └── simulation/
+│       ├── screen/          도트매트릭스 화면 시뮬레이션
 │       └── table/           하드웨어 없는 테이블 입력
 ├── tools/
 │   ├── orb_register.py      DS2431 오브 등록
@@ -60,7 +61,7 @@ python -m server.launcher
 | 주소 | 역할 |
 |---|---|
 | `http://127.0.0.1:8080/admin` | 하드웨어·셀·슬레이브 진단 |
-| `http://127.0.0.1:8080/admin/software` | Screen·Table·게임·이벤트·MIDI 통합 |
+| `http://127.0.0.1:8080/admin/software` | Screen·Table 시뮬레이션과 게임·이벤트·MIDI 통합 |
 
 macOS에서는 프로젝트 루트의 `start.command`를 실행해도 된다. 실행 스크립트는
 의존성을 자동 설치하지 않으므로 처음 한 번은 위 설치 명령이 필요하다.
@@ -168,7 +169,7 @@ py -m tools.midi_debug --list
 ## 웹 동기화
 
 - UI → Python: HTTP `POST /api/...`
-- Python → Screen·Admin UI: WebSocket `8765`
+- Python → Admin 시뮬레이션·제어 UI: WebSocket `8765`
 - 연결 직후: 게임·멜로디·셀·상태·로그 전체 snapshot
 - 이후: 동일 연결에서 실시간 이벤트 순서 보장
 

@@ -44,3 +44,4 @@ function frame() {
   if (parts.length) requestAnimationFrame(frame);
   else cx.clearRect(0, 0, cv.width, cv.height);
 }
+

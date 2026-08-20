@@ -1,4 +1,4 @@
-# PyInstaller 설정 — Python 런타임과 Screen·Admin UI를 묶는다.
+# PyInstaller 설정 — Python 런타임과 Admin UI를 묶는다.
 # 빌드: pyinstaller build/orbbridge.spec --noconfirm
 
 from pathlib import Path
@@ -12,7 +12,7 @@ server_dir = root_dir / "server"
 
 def _collect_datas():
     datas = [
-        (str(root_dir / "web"), "web"),
+        (str(root_dir / "admin"), "admin"),
     ]
     data = root_dir / "data"
     if data.is_dir():
