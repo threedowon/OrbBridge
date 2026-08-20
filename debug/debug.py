@@ -239,6 +239,22 @@ def list_serial_ports() -> list[dict]:
 # ── 시리얼 수신 스레드 ───────────────────────────────────
 _serial_stop = threading.Event()
 _serial_thread: threading.Thread | None = None
+_ser: "serial.Serial | None" = None   # LED 명령 전송용 (수신 스레드가 채움)
+
+
+def send_led(effect: int) -> bool:
+    """master 로 LED 이펙트 명령 'C<n>' 전송 → master 가 RS485 로 브로드캐스트."""
+    with _lock:
+        s = _ser
+    if s is None:
+        return False
+    try:
+        s.write(f"C{int(effect)}\n".encode())
+        s.flush()
+        return True
+    except Exception as e:
+        print(f"[led] 전송 실패: {e}")
+        return False
 
 
 def _serial_loop(port: str, baud: int) -> None:
@@ -257,8 +273,10 @@ def _serial_loop(port: str, baud: int) -> None:
             continue
 
         print(f"[serial] 연결됨: {port} @ {baud}")
+        global _ser
         with _lock:
             _master.update({"open": True, "error": ""})
+            _ser = ser
 
         try:
             while not _serial_stop.is_set():
@@ -273,6 +291,8 @@ def _serial_loop(port: str, baud: int) -> None:
                 _master.update({"open": False, "error": str(e)})
             print(f"[serial] 끊김 ({port}): {e}")
         finally:
+            with _lock:
+                _ser = None
             try:
                 ser.close()
             except Exception:
@@ -382,6 +402,14 @@ def make_handler():
                         "last_rx_ms": 0.0, "started_ms": now_ms(),
                     })
                 self._json(200, {"ok": True})
+                return
+
+            if self.path == "/api/led":
+                effect = int(data.get("effect", 0))
+                ok = send_led(effect)
+                self._json(200 if ok else 503,
+                           {"ok": ok, "effect": effect,
+                            "error": "" if ok else "master 미연결(포트 열림 확인)"})
                 return
 
             self._send(404, b"Not found", "text/plain")

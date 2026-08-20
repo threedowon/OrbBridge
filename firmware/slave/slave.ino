@@ -27,10 +27,14 @@
 #define SLAVE_ID     6      // 보드마다 고유하게 (1,2,3…)
 #define HEARTBEAT_MS 2000
 
-#define RING_PIN        38
-#define LEDS_PER_RING   12
-// 임시 stopgap: 밝기 낮춰 전류↓. 외부 5V 전원 달면 32로.
-#define RING_BRIGHTNESS 8
+// LED 데이터선 2개. 슬롯별 LED 위치는 아래 LED_MAP 으로 배선에 맞게 직접 지정한다.
+#define RING_PIN_LOW    38     // LED 스트립 A = 슬롯 1~8  (GPIO 38)
+#define RING_PIN_HIGH   39     // LED 스트립 B = 슬롯 9~16 (GPIO 39)
+#define LEDS_PER_RING   10     // 슬롯당 LED 수
+#define LED_COUNT_LOW   80     // 스트립 A 총 LED 수 (슬롯 1~8 = 8×10)
+#define LED_COUNT_HIGH  80     // 스트립 B 총 LED 수 (슬롯 9~16 = 8×10)
+// 지금 40 LED(슬롯5~8)만 연결이라 50 으로 올림(~0.4A). LED 많이 늘리면 외부 5V + 밝기 조정.
+#define RING_BRIGHTNESS 50
 
 #define DEBUG_USB    0
 
@@ -56,13 +60,35 @@ OneWire buses[BUS_COUNT] = {
   OneWire(11), OneWire(12), OneWire(13), OneWire(14)
 };
 
-Adafruit_NeoPixel ring(BUS_COUNT * LEDS_PER_RING, RING_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel ringLow (LED_COUNT_LOW,  RING_PIN_LOW,  NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel ringHigh(LED_COUNT_HIGH, RING_PIN_HIGH, NEO_GRB + NEO_KHZ800);
+
+// ── 슬롯(버스) → LED 위치 표 ──  배선이 바뀌면 여기만 고친다.
+//   strip: 0=스트립A(RING_PIN_LOW), 1=스트립B(RING_PIN_HIGH), -1=LED 없음
+//   offset: 그 스트립에서 이 슬롯의 첫 LED 인덱스 (슬롯당 LEDS_PER_RING 개)
+// 인덱스 = 버스 index (0=슬롯1 … 15=슬롯16)
+struct LedMap { int8_t strip; int16_t offset; };
+const LedMap LED_MAP[BUS_COUNT] = {
+  { 0,  0}, { 0, 10}, { 0, 20}, { 0, 30},   // 슬롯 1~4  : 스트립A(GPIO38) 0/10/20/30
+  { 0, 40}, { 0, 50}, { 0, 60}, { 0, 70},   // 슬롯 5~8  : 스트립A(GPIO38) 40/50/60/70
+  { 1,  0}, { 1, 10}, { 1, 20}, { 1, 30},   // 슬롯 9~12 : 스트립B(GPIO39) 0/10/20/30
+  { 1, 40}, { 1, 50}, { 1, 60}, { 1, 70},   // 슬롯 13~16: 스트립B(GPIO39) 40/50/60/70
+};
 
 byte lastAddr[BUS_COUNT][8];
 bool hasLast[BUS_COUNT] = {false};
 unsigned long lastHeartbeatMs = 0;
 unsigned long lastBusRxMs = 0;
 unsigned long ledOffAt = 0;
+
+// LED 테스트 이펙트 (master 가 debug 도구에서 "C<n>" 명령을 RS485 로 브로드캐스트).
+//   0=일반(오브 감지)  1=흰색전체  2=끄기  3=빨강 4=초록 5=파랑
+//   6=무지개(정지)  7=체이스(움직임)  8=숨쉬기  9=무지개(회전)
+int ledEffect = 0;
+unsigned long effectStart = 0;
+unsigned long lastAnimMs = 0;
+String cmdLine;
+void applyEffectOnce();   // 전방 선언
 
 // Dallas/Maxim CRC8 (OneWire 와 동일 다항식)
 uint8_t crc8(const uint8_t* data, int len) {
@@ -79,10 +105,23 @@ uint8_t crc8(const uint8_t* data, int len) {
   return crc;
 }
 
+// RS485 수신 처리: carrier-sense 활동 감지 + master LED 명령("C<n>\n") 파싱.
+// slave→master 바이너리 프레임(STX=0x02)은 'C' 로 시작 안 하므로 명령으로 오검출 안 됨.
 void drainBus() {
   while (RS485.available()) {
-    RS485.read();
+    char c = (char)RS485.read();
     lastBusRxMs = millis();
+    if (c == '\n') {
+      if (cmdLine.length() >= 2 && cmdLine[0] == 'C') {
+        ledEffect = cmdLine.substring(1).toInt();
+        effectStart = millis();
+        applyEffectOnce();
+      }
+      cmdLine = "";
+    } else if (c != '\r') {
+      if (cmdLine.length() < 8) cmdLine += c;
+      else cmdLine = "";     // 너무 긴 줄(바이너리 프레임 등) → 명령 아님
+    }
   }
 }
 
@@ -91,7 +130,8 @@ void csSendBytes(const uint8_t* buf, int len) {
   for (int t = 0; t < CS_MAX_TRIES; t++) {
     drainBus();
     if (millis() - lastBusRxMs >= BUS_IDLE_MS) {
-      unsigned long backoff = 1 + (unsigned long)random(0, 8) + SLAVE_ID;
+      // 백오프는 순수 랜덤(ID 편향 X → 공정). de-sync 는 보드별 randomSeed 로 이미 확보.
+      unsigned long backoff = 1 + (unsigned long)random(0, 12);
       unsigned long t0 = millis();
       while (millis() - t0 < backoff) drainBus();
       if (millis() - lastBusRxMs >= BUS_IDLE_MS) {
@@ -139,9 +179,72 @@ void updateLed() {
 }
 
 void setRing(int busIndex, uint32_t color) {
-  int base = busIndex * LEDS_PER_RING;
-  for (int j = 0; j < LEDS_PER_RING; j++) ring.setPixelColor(base + j, color);
-  ring.show();
+  const LedMap& m = LED_MAP[busIndex];
+  if (m.strip < 0) return;                        // 이 슬롯은 LED 없음 → 무시
+  Adafruit_NeoPixel& strip = (m.strip == 0) ? ringLow : ringHigh;
+  for (int j = 0; j < LEDS_PER_RING; j++) strip.setPixelColor(m.offset + j, color);
+  strip.show();
+}
+
+// ── LED 테스트 이펙트 ───────────────────────────────────
+void fillAll(uint32_t color) {
+  for (uint16_t i = 0; i < LED_COUNT_LOW; i++)  ringLow.setPixelColor(i, color);
+  for (uint16_t i = 0; i < LED_COUNT_HIGH; i++) ringHigh.setPixelColor(i, color);
+  ringLow.show();
+  ringHigh.show();
+}
+
+void rainbowStatic() {
+  for (uint16_t i = 0; i < LED_COUNT_LOW; i++)
+    ringLow.setPixelColor(i, Adafruit_NeoPixel::ColorHSV((uint16_t)(i * 65536L / LED_COUNT_LOW)));
+  for (uint16_t i = 0; i < LED_COUNT_HIGH; i++)
+    ringHigh.setPixelColor(i, Adafruit_NeoPixel::ColorHSV((uint16_t)(i * 65536L / LED_COUNT_HIGH)));
+  ringLow.show();
+  ringHigh.show();
+}
+
+// 명령 받은 즉시 적용되는 정적 이펙트. 애니메이션(7~9)은 loop 의 runEffectAnim 에서 갱신.
+void applyEffectOnce() {
+  switch (ledEffect) {
+    case 0: fillAll(0); break;                                        // 일반 복귀(끔)
+    case 1: fillAll(Adafruit_NeoPixel::Color(255, 255, 255)); break;  // 전체 흰색
+    case 2: fillAll(0); break;                                        // 전체 끄기
+    case 3: fillAll(Adafruit_NeoPixel::Color(255, 0, 0)); break;      // 빨강
+    case 4: fillAll(Adafruit_NeoPixel::Color(0, 255, 0)); break;      // 초록
+    case 5: fillAll(Adafruit_NeoPixel::Color(0, 0, 255)); break;      // 파랑
+    case 6: rainbowStatic(); break;                                   // 무지개(정지)
+    default: break;                                                   // 7~9: 애니메이션
+  }
+}
+
+// 애니메이션 이펙트 (loop 에서 ~30ms 마다 호출)
+void runEffectAnim() {
+  if (ledEffect < 7) return;
+  if (millis() - lastAnimMs < 30) return;
+  lastAnimMs = millis();
+  unsigned long t = millis() - effectStart;
+
+  if (ledEffect == 7) {                 // 체이스 (흐르는 빛)
+    int total = LED_COUNT_LOW;
+    int pos = (t / 60) % total;
+    uint32_t on = Adafruit_NeoPixel::Color(0, 180, 255);
+    for (uint16_t i = 0; i < LED_COUNT_LOW; i++)
+      ringLow.setPixelColor(i, ((int)i == pos || (int)i == (pos + 1) % total) ? on : 0);
+    for (uint16_t i = 0; i < LED_COUNT_HIGH; i++)
+      ringHigh.setPixelColor(i, ((int)i == pos || (int)i == (pos + 1) % total) ? on : 0);
+    ringLow.show(); ringHigh.show();
+  } else if (ledEffect == 8) {          // 숨쉬기 (밝기 fade)
+    float ph = (t % 2000) / 2000.0f;
+    int b = (int)((0.5f - 0.5f * cos(ph * 2 * PI)) * 255);
+    fillAll(Adafruit_NeoPixel::Color((b * 60) / 255, (b * 120) / 255, (uint8_t)b));
+  } else if (ledEffect == 9) {          // 무지개 회전
+    uint16_t base = (uint16_t)(t * 8);
+    for (uint16_t i = 0; i < LED_COUNT_LOW; i++)
+      ringLow.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(base + (uint16_t)(i * 65536L / LED_COUNT_LOW)));
+    for (uint16_t i = 0; i < LED_COUNT_HIGH; i++)
+      ringHigh.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(base + (uint16_t)(i * 65536L / LED_COUNT_HIGH)));
+    ringLow.show(); ringHigh.show();
+  }
 }
 
 bool sameAddr(const byte a[8], const byte b[8]) {
@@ -168,13 +271,13 @@ bool readBus(int i, byte addr[8]) {
 }
 
 void onAdded(int i, const byte addr[8]) {
-  setRing(i, ring.Color(255, 147, 41));
+  if (ledEffect == 0) setRing(i, Adafruit_NeoPixel::Color(255, 147, 41));  // 일반 모드일 때만 점등
   flashRed();
   sendFrame(T_ADDED, i + 1, addr, 0);
 }
 
 void onRemoved(int i, const byte addr[8]) {
-  setRing(i, 0);
+  if (ledEffect == 0) setRing(i, 0);
   sendFrame(T_REMOVED, i + 1, addr, 0);
 }
 
@@ -211,10 +314,15 @@ void setup() {
   led.clear();
   led.show();
 
-  ring.begin();
-  ring.setBrightness(RING_BRIGHTNESS);
-  ring.clear();
-  ring.show();
+  ringLow.begin();
+  ringLow.setBrightness(RING_BRIGHTNESS);
+  ringLow.clear();
+  ringLow.show();
+
+  ringHigh.begin();
+  ringHigh.setBrightness(RING_BRIGHTNESS);
+  ringHigh.clear();
+  ringHigh.show();
 
   RS485.begin(RS485_BAUD, SERIAL_8N1, RX_PIN, TX_PIN);
 
@@ -236,6 +344,7 @@ void loop() {
     lastHeartbeatMs = millis();
   }
 
+  runEffectAnim();   // 애니메이션 이펙트(7~9) 갱신
   updateLed();
   delay(1);
 }

@@ -67,7 +67,11 @@ def start_http_server(
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
-            print(f"[http] {args[0]}")
+            msg = args[0]
+            # admin/table 이 1초마다 폴링하는 상태 요청은 노이즈 → 숨김
+            if "/api/status" in msg:
+                return
+            print(f"[http] {msg}")
 
         def _send(self, code: int, body: bytes, content_type: str) -> None:
             self.send_response(code)
