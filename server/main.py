@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import serial
 import threading
 import time
@@ -383,6 +384,7 @@ def reconcile_slave_state(slave_id: int, state: int) -> None:
 def serial_loop():
     port     = config["serial"]["port"]
     baudrate = config["serial"]["baudrate"]
+    _last_master_bad = [0]   # 마지막으로 본 누적 bad 카운트
 
     while True:
         with _state_lock:
@@ -406,8 +408,16 @@ def serial_loop():
                 if not line:
                     continue
                 if line.startswith("#"):
-                    # master 진단(alive/relay) — 평소엔 조용히, 깨진 프레임(bad≠0)일 때만 노출
-                    if "alive" in line and "bad=0" in line:
+                    # master 진단(alive/relay) — 평소엔 조용히.
+                    # 깨진 프레임(bad)이 '새로 늘어난' 순간에만 한 줄 노출.
+                    if "alive" in line:
+                        m = re.search(r"bad=(\d+)", line)
+                        bad = int(m.group(1)) if m else 0
+                        if bad < _last_master_bad[0]:
+                            _last_master_bad[0] = 0   # 마스터 재부팅 → 카운터 리셋
+                        if bad > _last_master_bad[0]:
+                            print(f"[master] 깨진 프레임 감지 (누적 bad={bad})")
+                            _last_master_bad[0] = bad
                         continue
                     print(f"[master] {line}")
                     continue

@@ -5,7 +5,7 @@
  *   - CRC 검증 후 JSON 으로 변환해 PC USB Serial 로 relay (PC 포맷 무변경)
  *   - 깨진 프레임은 CRC 불일치로 버림 + 다음 STX 로 resync.
  * USB Serial → PC (main.py), 115200
- * 버튼: 시작 / 디페스타 / 다시듣기 (INPUT_PULLUP — 핀↔GND, 외부저항 불필요)
+ * 버튼: 다시듣기(40) / 시작(41) / 디페스타(42) (INPUT_PULLUP — 핀↔GND, 외부저항 불필요)
  *
  * 프레임(13B): [STX=0x02][TYPE][SLAVE][CELL][UID 8B][CRC8]  (heartbeat 는 UID 첫 2B=state)
  * RS485 핀·속도: TX=20, RX=21, 9600 8N1  (master 는 RS485 송신 안 함)
