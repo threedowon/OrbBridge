@@ -406,7 +406,10 @@ def serial_loop():
                 if not line:
                     continue
                 if line.startswith("#"):
-                    print(f"[master] {line}")   # master 진단 출력 (폴링 생존/relay 카운트)
+                    # master 진단(alive/relay) — 평소엔 조용히, 깨진 프레임(bad≠0)일 때만 노출
+                    if "alive" in line and "bad=0" in line:
+                        continue
+                    print(f"[master] {line}")
                     continue
                 if not line.startswith("{"):
                     continue  # ESP 부트 로그, 디버그 println 등 — 무시

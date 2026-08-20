@@ -20,9 +20,9 @@
 #define LED_BRIGHTNESS 32
 #define RS485_BAUD   9600
 
-#define PIN_BTN_START    40   // 시작
-#define PIN_BTN_DISPENSA 41   // 디페스타
-#define PIN_BTN_LISTEN   42   // 다시듣기
+#define PIN_BTN_LISTEN   40   // 다시듣기
+#define PIN_BTN_START    41   // 시작
+#define PIN_BTN_DISPENSA 42   // 디페스타
 #define BTN_COOLDOWN     350
 
 #define FRAME_LEN 13
