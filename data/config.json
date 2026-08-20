@@ -9,7 +9,7 @@
       "biplane"
     ]
   },
-  "input_mode": "table",
+  "input_mode": "serial",
   "web": {
     "host": "127.0.0.1",
     "port": 8080
@@ -20,7 +20,7 @@
   },
   "matrix_display": {
     "enabled": true,
-    "port": "COM13",
+    "port": "COM17",
     "baudrate": 115200
   }
 }
