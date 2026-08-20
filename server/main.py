@@ -243,7 +243,11 @@ def handle_serial_message(event: dict) -> None:
 
     if t == "game":
         action = str(event.get("action", "")).lower()
-        if action == "listen":
+        if action == "start":
+            start_game()
+        elif action == "dispensa":
+            request_dispensa()
+        elif action == "listen":
             request_listen()
         elif action == "play":
             request_play()
