@@ -6,6 +6,7 @@
  *   - 깨진 프레임은 CRC 불일치로 버림 + 다음 STX 로 resync.
  * USB Serial → PC (main.py), 115200
  * 버튼: 다시듣기(40) / 시작(41) / 디페스타(42) (INPUT_PULLUP — 핀↔GND, 외부저항 불필요)
+ * 출력: 디페스타 LED(39) — 디페스타 버튼 누를 때마다 HIGH/LOW 토글
  *
  * 프레임(13B): [STX=0x02][TYPE][SLAVE][CELL][UID 8B][CRC8]  (heartbeat 는 UID 첫 2B=state)
  * RS485 핀·속도: TX=20, RX=21, 9600 8N1  (master 는 RS485 송신 안 함)
@@ -23,6 +24,7 @@
 #define PIN_BTN_LISTEN   40   // 다시듣기
 #define PIN_BTN_START    41   // 시작
 #define PIN_BTN_DISPENSA 42   // 디페스타
+#define PIN_DISPENSA_OUT 39   // 디페스타 출력(LED) — 누를 때마다 HIGH/LOW 토글
 #define BTN_COOLDOWN     350
 
 #define FRAME_LEN 13
@@ -40,6 +42,7 @@ unsigned long lastListenMs = 0;
 bool startWasDown = false;
 bool dispensaWasDown = false;
 bool listenWasDown = false;
+bool dispensaOutOn = false;   // GPIO39 현재 출력 상태(토글)
 unsigned long ledOffAt = 0;
 
 // 진단
@@ -85,22 +88,30 @@ void sendGameAction(const char* action) {
   pcSendLine(String("{\"type\":\"game\",\"action\":\"") + action + "\"}");
 }
 
-void fireGameButton(const char* action, unsigned long& lastFire) {
+bool fireGameButton(const char* action, unsigned long& lastFire) {
   const unsigned long now = millis();
-  if (now - lastFire < BTN_COOLDOWN) return;
+  if (now - lastFire < BTN_COOLDOWN) return false;
   sendGameAction(action);
   lastFire = now;
+  return true;
 }
 
-void pollButton(int pin, bool& wasDown, unsigned long& lastFire, const char* action) {
+// 반환값: 이 호출에서 실제로 눌림 엣지가 발화했는지
+bool pollButton(int pin, bool& wasDown, unsigned long& lastFire, const char* action) {
   const bool down = digitalRead(pin) == LOW;
-  if (down && !wasDown) fireGameButton(action, lastFire);
+  bool fired = false;
+  if (down && !wasDown) fired = fireGameButton(action, lastFire);
   wasDown = down;
+  return fired;
 }
 
 void pollButtons() {
   pollButton(PIN_BTN_START, startWasDown, lastStartMs, "start");
-  pollButton(PIN_BTN_DISPENSA, dispensaWasDown, lastDispensaMs, "dispensa");
+  if (pollButton(PIN_BTN_DISPENSA, dispensaWasDown, lastDispensaMs, "dispensa")) {
+    // 디페스타 누를 때마다 GPIO39 출력 토글 (LED on/off)
+    dispensaOutOn = !dispensaOutOn;
+    digitalWrite(PIN_DISPENSA_OUT, dispensaOutOn ? HIGH : LOW);
+  }
   pollButton(PIN_BTN_LISTEN, listenWasDown, lastListenMs, "listen");
 }
 
@@ -198,6 +209,9 @@ void setup() {
   pinMode(PIN_BTN_START, INPUT_PULLUP);
   pinMode(PIN_BTN_DISPENSA, INPUT_PULLUP);
   pinMode(PIN_BTN_LISTEN, INPUT_PULLUP);
+
+  pinMode(PIN_DISPENSA_OUT, OUTPUT);
+  digitalWrite(PIN_DISPENSA_OUT, LOW);   // 시작 시 LED 꺼짐
 
   RS485.begin(RS485_BAUD, SERIAL_8N1, RX_PIN, TX_PIN);
 
