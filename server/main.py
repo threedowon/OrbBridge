@@ -19,7 +19,7 @@ from server.game.melody_manager import (
     game_rules_from_melody,
 )
 from server.game.scheduler import PlaybackMode, PlaybackScheduler, parse_melody
-from server.inout.serial_io import run_serial_loop
+from server.inout.serial_io import SerialWriter, run_serial_loop
 
 ensure_data_files()
 
@@ -252,6 +252,8 @@ def _state_payload(snapshot: dict, previous_state: str | None = None) -> list:
 
 def _on_state_change(previous: str, current: str, snapshot: dict) -> None:
     """기준 상태 전이 하나를 발행하고 유효하지 않은 재생을 중단한다."""
+    # 타이머 만료처럼 tick 이 만든 전이도 표시등에 반영한다.
+    _sync_dfesta_led(snapshot)
     with _scheduler_lock:
         scheduler = _playback_scheduler
     playback = scheduler.snapshot() if scheduler is not None else {}
@@ -448,10 +450,35 @@ def reload_melody_data() -> None:
     print(f"[melody] 재로드 — {melody_id}, 정답 시퀀스: {answer_sequence}")
 
 
+# 마스터 GPIO39 디페스타 표시등. 평소 LOW, 디페스타 버튼이 유효한 동안만 HIGH.
+_serial_writer = SerialWriter()
+_dfesta_led_lock = threading.Lock()
+_dfesta_led_state: bool | None = None   # None = 미전송(연결 직후 강제 재전송)
+
+
+def _sync_dfesta_led(snapshot: dict) -> None:
+    """디페스타 버튼이 유효한 동안에만 표시등을 켠다.
+
+    조건은 snapshot의 `waiting_for_dfesta`(RUNNING이면서 정답 상태)이다.
+    버튼을 눌러 완료되면 RESETTING으로 넘어가 조건이 풀리므로 자동으로 꺼진다.
+    값이 바뀔 때만 보내고, 전송이 실패하면 기록을 남기지 않아 다음 기회에 재시도한다.
+    """
+
+    global _dfesta_led_state
+    completion = snapshot.get("completion") or {}
+    desired = bool(completion.get("waiting_for_dfesta"))
+    with _dfesta_led_lock:
+        if desired == _dfesta_led_state:
+            return
+        if _serial_writer.send_line("D1" if desired else "D0"):
+            _dfesta_led_state = desired
+
+
 def _publish_transition(result: RuntimeResult) -> dict:
     """RuntimeResult의 상태 전이를 발행하고 snapshot을 반환한다."""
 
     get_game_runtime().publish_state_change(result)
+    _sync_dfesta_led(result.snapshot)
     return result.snapshot
 
 
@@ -951,10 +978,20 @@ def reconcile_occupancy_mask(slave_id: int, occupancy_mask: int) -> None:
 # ── 시리얼 하드웨어 입력 ───────────────────────────────
 def _update_serial_status(connected: bool, port: str, error: str) -> None:
     """SerialReader 상태를 Admin snapshot에 반영한다."""
+    global _dfesta_led_state
     with _state_lock:
         _serial_status.update(
             {"connected": connected, "port": port, "error": error}
         )
+    if not connected:
+        return
+    # ESP 가 재부팅하면 표시등이 LOW 로 돌아가므로 현재 상태를 다시 보낸다.
+    with _dfesta_led_lock:
+        _dfesta_led_state = None
+    try:
+        _sync_dfesta_led(get_game_state())
+    except Exception as exc:  # 표시등 실패가 입력 스레드를 죽이면 안 된다.
+        print(f"[WARN] 디페스타 표시등 동기화 실패: {exc}")
 
 
 def start_serial_input() -> threading.Thread | None:
@@ -974,6 +1011,7 @@ def start_serial_input() -> threading.Thread | None:
             _update_serial_status,
             _serial_stop,
         ),
+        kwargs={"writer": _serial_writer},
         daemon=True,
         name="orbbridge-serial",
     )
