@@ -5,7 +5,7 @@
  *   - CRC 검증 후 JSON 으로 변환해 PC USB Serial 로 relay (PC 포맷 무변경)
  *   - 깨진 프레임은 CRC 불일치로 버림 + 다음 STX 로 resync.
  * USB Serial → PC (main.py), 115200
- * 버튼: 다시듣기(41) / 디페스타(42) (INPUT_PULLUP — 핀↔GND, 외부저항 불필요)
+ * 버튼: 다시듣기(40) / 시작(41) / 디페스타(42) (INPUT_PULLUP — 핀↔GND, 외부저항 불필요)
  *
  * 프레임(13B): [STX=0x02][TYPE][SLAVE][CELL][UID 8B][CRC8]  (heartbeat 는 UID 첫 2B=state)
  * RS485 핀·속도: TX=20, RX=21, 9600 8N1  (master 는 RS485 송신 안 함)
@@ -20,7 +20,8 @@
 #define LED_BRIGHTNESS 32
 #define RS485_BAUD   9600
 
-#define PIN_BTN_LISTEN   41   // 다시듣기
+#define PIN_BTN_LISTEN   40   // 다시듣기
+#define PIN_BTN_START    41   // 시작
 #define PIN_BTN_DISPENSA 42   // 디페스타
 #define BTN_COOLDOWN     350
 
@@ -33,8 +34,10 @@
 Adafruit_NeoPixel led(1, RGB_PIN, NEO_GRB + NEO_KHZ800);
 HardwareSerial RS485(1);
 
+unsigned long lastStartMs = 0;
 unsigned long lastDispensaMs = 0;
 unsigned long lastListenMs = 0;
+bool startWasDown = false;
 bool dispensaWasDown = false;
 bool listenWasDown = false;
 unsigned long ledOffAt = 0;
@@ -96,6 +99,7 @@ void pollButton(int pin, bool& wasDown, unsigned long& lastFire, const char* act
 }
 
 void pollButtons() {
+  pollButton(PIN_BTN_START, startWasDown, lastStartMs, "start");
   pollButton(PIN_BTN_DISPENSA, dispensaWasDown, lastDispensaMs, "dispensa");
   pollButton(PIN_BTN_LISTEN, listenWasDown, lastListenMs, "listen");
 }
@@ -191,6 +195,7 @@ void setup() {
   led.clear();
   led.show();
 
+  pinMode(PIN_BTN_START, INPUT_PULLUP);
   pinMode(PIN_BTN_DISPENSA, INPUT_PULLUP);
   pinMode(PIN_BTN_LISTEN, INPUT_PULLUP);
 
