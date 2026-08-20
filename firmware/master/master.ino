@@ -6,7 +6,8 @@
  *   - 깨진 프레임은 CRC 불일치로 버림 + 다음 STX 로 resync.
  * USB Serial → PC (main.py), 115200
  * 버튼: 다시듣기(40) / 시작(41) / 디페스타(42) (INPUT_PULLUP — 핀↔GND, 외부저항 불필요)
- * 출력: 디페스타 LED(39) — 디페스타 버튼 누를 때마다 HIGH/LOW 토글
+ * 출력: 디페스타 LED(39) — PC(main.py)가 '정답 완성' 상태를 D1/D0 명령으로 지시.
+ *        정답 유지 중 HIGH, 오답/게임종료 시 LOW.
  *
  * 프레임(13B): [STX=0x02][TYPE][SLAVE][CELL][UID 8B][CRC8]  (heartbeat 는 UID 첫 2B=state)
  * RS485 핀·속도: TX=20, RX=21, 9600 8N1  (master 는 RS485 송신 안 함)
@@ -24,7 +25,7 @@
 #define PIN_BTN_LISTEN   40   // 다시듣기
 #define PIN_BTN_START    41   // 시작
 #define PIN_BTN_DISPENSA 42   // 디페스타
-#define PIN_DISPENSA_OUT 39   // 디페스타 출력(LED) — 누를 때마다 HIGH/LOW 토글
+#define PIN_DISPENSA_OUT 39   // 디페스타 출력(LED) — PC 명령(D1/D0)으로 HIGH/LOW
 #define BTN_COOLDOWN     350
 
 #define FRAME_LEN 13
@@ -42,7 +43,6 @@ unsigned long lastListenMs = 0;
 bool startWasDown = false;
 bool dispensaWasDown = false;
 bool listenWasDown = false;
-bool dispensaOutOn = false;   // GPIO39 현재 출력 상태(토글)
 unsigned long ledOffAt = 0;
 
 // 진단
@@ -88,30 +88,22 @@ void sendGameAction(const char* action) {
   pcSendLine(String("{\"type\":\"game\",\"action\":\"") + action + "\"}");
 }
 
-bool fireGameButton(const char* action, unsigned long& lastFire) {
+void fireGameButton(const char* action, unsigned long& lastFire) {
   const unsigned long now = millis();
-  if (now - lastFire < BTN_COOLDOWN) return false;
+  if (now - lastFire < BTN_COOLDOWN) return;
   sendGameAction(action);
   lastFire = now;
-  return true;
 }
 
-// 반환값: 이 호출에서 실제로 눌림 엣지가 발화했는지
-bool pollButton(int pin, bool& wasDown, unsigned long& lastFire, const char* action) {
+void pollButton(int pin, bool& wasDown, unsigned long& lastFire, const char* action) {
   const bool down = digitalRead(pin) == LOW;
-  bool fired = false;
-  if (down && !wasDown) fired = fireGameButton(action, lastFire);
+  if (down && !wasDown) fireGameButton(action, lastFire);
   wasDown = down;
-  return fired;
 }
 
 void pollButtons() {
   pollButton(PIN_BTN_START, startWasDown, lastStartMs, "start");
-  if (pollButton(PIN_BTN_DISPENSA, dispensaWasDown, lastDispensaMs, "dispensa")) {
-    // 디페스타 누를 때마다 GPIO39 출력 토글 (LED on/off)
-    dispensaOutOn = !dispensaOutOn;
-    digitalWrite(PIN_DISPENSA_OUT, dispensaOutOn ? HIGH : LOW);
-  }
+  pollButton(PIN_BTN_DISPENSA, dispensaWasDown, lastDispensaMs, "dispensa");
   pollButton(PIN_BTN_LISTEN, listenWasDown, lastListenMs, "listen");
 }
 
@@ -174,8 +166,9 @@ void pollRs485() {
   }
 }
 
-// PC(debug 도구)가 USB 로 보낸 LED 명령("C<n>")을 RS485 로 브로드캐스트.
-// slave 응답과 충돌해도 괜찮게 여러 번 반복 전송(멱등한 LED 명령).
+// PC 가 USB 로 보낸 명령 처리:
+//   "C<n>" — LED 테스트: RS485 로 브로드캐스트(멱등하게 여러 번 반복 전송)
+//   "D1"/"D0" — 디페스타 LED(GPIO39) HIGH/LOW (정답 완성 표시등)
 String usbLine;
 void pollUsbCommand() {
   while (Serial.available()) {
@@ -188,6 +181,8 @@ void pollUsbCommand() {
           RS485.flush();
           delay(3);
         }
+      } else if (usbLine.length() >= 2 && usbLine[0] == 'D') {
+        digitalWrite(PIN_DISPENSA_OUT, usbLine[1] == '1' ? HIGH : LOW);
       }
       usbLine = "";
     } else if (c != '\r') {

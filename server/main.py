@@ -43,6 +43,12 @@ _event_log: list[dict] = []
 EVENT_LOG_LIMIT = 100
 _serial_status = {"connected": False, "port": "", "error": ""}
 
+# ── master 로 명령 전송 (디페스타 LED 등) ──────────────
+# serial_loop 가 연 시리얼 핸들을 공유해 PC→master 로 짧은 명령("D1"/"D0")을 쓴다.
+_master_ser = None
+_master_ser_lock = threading.Lock()
+_dispensa_out = False   # 현재 디페스타 LED(GPIO39) 출력 상태 캐시 (변할 때만 전송)
+
 # ── 슬레이브 생존 추적 (heartbeat 기반 online/offline) ──
 # slave.ino 가 3초(HEARTBEAT_MS)마다 heartbeat 를 보낸다. 이 시간(주기의 ~2.5배)
 # 안에 heartbeat 가 없으면 offline 으로 본다. 몇 개 놓쳐도 깜빡이지 않도록 여유.
@@ -163,6 +169,50 @@ def judge(slave: int, cell: int) -> str:
         return "invalid"
     return "correct" if note == answer else "wrong"
 
+# ── 디페스타 LED (정답 완성 표시등, master GPIO39) ─────
+def send_master_command(cmd: str) -> None:
+    """PC→master USB 로 짧은 명령 한 줄 전송 (예: 'D1'/'D0')."""
+    with _master_ser_lock:
+        ser = _master_ser
+    if ser is None:
+        return
+    try:
+        ser.write((cmd + "\n").encode("ascii"))
+    except Exception as e:
+        print(f"[master] 명령 전송 실패({cmd}): {e}")
+
+
+def _dispensa_ready_locked() -> bool:
+    """디페스타 활성(정답 완성) 여부. _state_lock 을 이미 잡은 상태에서 호출.
+
+    조건: 게임 활성 + 점유된 칸이 모두 correct + 모든 정답 위치가 채워짐.
+    오답/미상 칸이 하나라도 있으면 비활성.
+    """
+    if not game_active:
+        return False
+    if not answer_sequence:
+        return False
+    satisfied = set()
+    for key, c in _cells.items():
+        if c.get("result") != "correct":
+            return False  # 오답·미상 칸 존재 → 비활성
+        slave_s, cell_s = key.split(":")
+        q, _note = parse_cell(int(cell_s))
+        satisfied.add(str(q + (int(slave_s) - 1) * 2))
+    return all(q_actual in satisfied for q_actual in answer_sequence)
+
+
+def update_dispensa_output() -> None:
+    """정답 완성 상태가 바뀌면 master 로 D1/D0 전송해 GPIO39 를 갱신."""
+    global _dispensa_out
+    with _state_lock:
+        ready = _dispensa_ready_locked()
+    if ready != _dispensa_out:
+        _dispensa_out = ready
+        send_master_command("D1" if ready else "D0")
+        print(f"[dispensa] LED {'ON(정답 완성)' if ready else 'OFF'}")
+
+
 # ── ready / game lifecycle ─────────────────────────────
 def set_ready(ready: bool) -> None:
     osc.send_message("/game/ready", [1 if ready else 0])
@@ -192,6 +242,7 @@ def start_game() -> bool:
     game_active = True
     print(f"[game] 시작 — stage {current_stage}, melody={melody_id}")
     set_ready(True)
+    update_dispensa_output()   # 새 게임 시작 → 디페스타 LED 초기화(OFF)
     osc.send_message("/game/start", [current_stage, 0])
     osc.send_message("/game/listen", [])
     return True
@@ -201,6 +252,7 @@ def end_game(reason: str = "complete") -> None:
     game_active = False
     clear_cells()
     set_ready(False)
+    update_dispensa_output()   # 게임 종료 → 디페스타 LED 끄기
     print(f"[game] 종료 — {reason}")
     osc.send_message("/game/end", [reason])
 
@@ -261,10 +313,12 @@ def handle_serial_message(event: dict) -> None:
         if sid is not None and "state" in event:
             try:
                 reconcile_slave_state(sid, int(event["state"]))
+                update_dispensa_output()  # 자가복구로 칸이 바뀌었을 수 있음
             except (TypeError, ValueError):
                 pass  # 이상한 state 값은 reconcile 만 건너뜀
         return
     handle_event(event)
+    update_dispensa_output()  # added/removed 로 정답 완성 상태가 바뀌면 LED 갱신
 
 # ── 이벤트 처리 ────────────────────────────────────────
 def handle_event(event: dict):
@@ -402,6 +456,10 @@ def serial_loop():
         print(f"[serial] 연결됨: {port}")
         with _state_lock:
             _serial_status.update({"connected": True, "port": port, "error": ""})
+        global _master_ser, _dispensa_out
+        with _master_ser_lock:
+            _master_ser = ser        # PC→master 명령 전송용 핸들 공유
+        _dispensa_out = False        # 재연결 시 상태 캐시 초기화 → 다음 갱신에서 재전송
         try:
             while True:
                 line = ser.readline().decode("utf-8", errors="ignore").strip()
@@ -434,6 +492,8 @@ def serial_loop():
             with _state_lock:
                 _serial_status.update({"connected": False, "port": port, "error": err})
         finally:
+            with _master_ser_lock:
+                _master_ser = None   # 끊긴 핸들로 쓰지 않도록 해제
             ser.close()
         time.sleep(5)
 
