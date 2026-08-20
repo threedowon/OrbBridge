@@ -83,7 +83,9 @@ def run_serial_loop(
     while not stop_event.is_set():
         on_status(False, port, "연결 중…")
         try:
-            device = serial_module.Serial(port, baudrate, timeout=1)
+            device = serial_module.Serial(
+                port, baudrate, timeout=1, write_timeout=1
+            )
         except serial_module.SerialException as exc:
             error = str(exc)
             print(f"[serial] 포트 연결 실패 ({port}): {exc}")

@@ -25,7 +25,10 @@
 #define PIN_BTN_LISTEN   40   // 다시듣기
 #define PIN_BTN_PLAY     41   // 재생
 #define PIN_BTN_DFESTA   42   // 디페스타
-#define PIN_DFESTA_OUT   39   // 디페스타 출력(LED) — PC 명령(D1/D0)으로 HIGH/LOW
+#define PIN_DFESTA_OUT   39   // 디페스타 출력(LED) — PC 명령(D1/D0)으로 점등/소등
+// LED 캐소드가 GPIO39 에 물린 액티브 로우 배선이라 LOW 가 점등이다.
+#define DFESTA_LED_ON    LOW
+#define DFESTA_LED_OFF   HIGH
 #define BTN_COOLDOWN     350
 
 #define FRAME_LEN 13
@@ -182,7 +185,7 @@ void pollUsbCommand() {
           delay(3);
         }
       } else if (usbLine.length() >= 2 && usbLine[0] == 'D') {
-        digitalWrite(PIN_DFESTA_OUT, usbLine[1] == '1' ? HIGH : LOW);
+        digitalWrite(PIN_DFESTA_OUT, usbLine[1] == '1' ? DFESTA_LED_ON : DFESTA_LED_OFF);
       }
       usbLine = "";
     } else if (c != '\r') {
@@ -206,7 +209,7 @@ void setup() {
   pinMode(PIN_BTN_LISTEN, INPUT_PULLUP);
 
   pinMode(PIN_DFESTA_OUT, OUTPUT);
-  digitalWrite(PIN_DFESTA_OUT, LOW);   // 시작 시 LED 꺼짐
+  digitalWrite(PIN_DFESTA_OUT, DFESTA_LED_OFF);   // 시작 시 LED 꺼짐
 
   RS485.begin(RS485_BAUD, SERIAL_8N1, RX_PIN, TX_PIN);
 
