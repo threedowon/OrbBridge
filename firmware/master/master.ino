@@ -23,7 +23,7 @@
 #define RS485_BAUD   9600
 
 #define PIN_BTN_LISTEN   40   // 다시듣기
-#define PIN_BTN_START    41   // 시작
+#define PIN_BTN_PLAY     41   // 재생
 #define PIN_BTN_DFESTA   42   // 디페스타
 #define PIN_DFESTA_OUT   39   // 디페스타 출력(LED) — PC 명령(D1/D0)으로 HIGH/LOW
 #define BTN_COOLDOWN     350
@@ -37,10 +37,10 @@
 Adafruit_NeoPixel led(1, RGB_PIN, NEO_GRB + NEO_KHZ800);
 HardwareSerial RS485(1);
 
-unsigned long lastStartMs = 0;
+unsigned long lastPlayMs = 0;
 unsigned long lastDfestaMs = 0;
 unsigned long lastListenMs = 0;
-bool startWasDown = false;
+bool playWasDown = false;
 bool dfestaWasDown = false;
 bool listenWasDown = false;
 unsigned long ledOffAt = 0;
@@ -102,7 +102,7 @@ void pollButton(int pin, bool& wasDown, unsigned long& lastFire, const char* act
 }
 
 void pollButtons() {
-  pollButton(PIN_BTN_START, startWasDown, lastStartMs, "start");
+  pollButton(PIN_BTN_PLAY, playWasDown, lastPlayMs, "play");
   pollButton(PIN_BTN_DFESTA, dfestaWasDown, lastDfestaMs, "dfesta");
   pollButton(PIN_BTN_LISTEN, listenWasDown, lastListenMs, "listen");
 }
@@ -201,7 +201,7 @@ void setup() {
   led.clear();
   led.show();
 
-  pinMode(PIN_BTN_START, INPUT_PULLUP);
+  pinMode(PIN_BTN_PLAY, INPUT_PULLUP);
   pinMode(PIN_BTN_DFESTA, INPUT_PULLUP);
   pinMode(PIN_BTN_LISTEN, INPUT_PULLUP);
 
