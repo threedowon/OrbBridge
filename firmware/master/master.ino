@@ -5,7 +5,7 @@
  *   - CRC 검증 후 JSON으로 변환해 PC USB Serial로 전달한다.
  *   - 깨진 프레임은 버리고 다음 STX부터 다시 동기화한다.
  * USB Serial 115200bps로 PC의 main.py에 전달한다.
- * 버튼: 다시듣기 / 재생 (INPUT_PULLUP)
+ * 버튼: 다시듣기(40) / 시작(41) / 디페스타(42), INPUT_PULLUP
  *
  * 프레임(13B): [STX=0x02][TYPE][SLAVE][CELL][UID 8B][CRC8]
  * heartbeat는 UID의 첫 2바이트를 점유 마스크로 사용한다.
@@ -21,8 +21,9 @@
 #define LED_BRIGHTNESS 32
 #define RS485_BAUD   9600
 
-#define PIN_BTN_LISTEN 41
-#define PIN_BTN_PLAY   42
+#define PIN_BTN_LISTEN 40
+#define PIN_BTN_START  41
+#define PIN_BTN_DFESTA 42
 #define BTN_COOLDOWN   350
 
 #define FRAME_LEN 13
@@ -34,10 +35,20 @@
 Adafruit_NeoPixel led(1, RGB_PIN, NEO_GRB + NEO_KHZ800);
 HardwareSerial RS485(1);
 
-unsigned long lastListenMs = 0;
-unsigned long lastPlayMs = 0;
-bool listenWasDown = false;
-bool playWasDown = false;
+// 버튼 하나가 GPIO·PC 액션·직전 상태를 함께 들고 있어 배선만 바꾸면 된다.
+struct GameButton {
+  uint8_t pin;
+  const char* action;   // PC로 보내는 {"type":"game","action":...} 값
+  bool wasDown;
+  unsigned long lastFireMs;
+};
+
+GameButton gameButtons[] = {
+  { PIN_BTN_LISTEN, "listen", false, 0 },   // 다시듣기
+  { PIN_BTN_START,  "start",  false, 0 },   // 시작
+  { PIN_BTN_DFESTA, "dfesta", false, 0 },   // 디페스타
+};
+const int GAME_BUTTON_COUNT = sizeof(gameButtons) / sizeof(gameButtons[0]);
 unsigned long ledOffAt = 0;
 
 // 진단
@@ -83,22 +94,21 @@ void sendGameAction(const char* action) {
   pcSendLine(String("{\"type\":\"game\",\"action\":\"") + action + "\"}");
 }
 
-void fireGameButton(const char* action, unsigned long& lastFire) {
-  const unsigned long now = millis();
-  if (now - lastFire < BTN_COOLDOWN) return;
-  sendGameAction(action);
-  lastFire = now;
-}
-
-void pollButton(int pin, bool& wasDown, unsigned long& lastFire, const char* action) {
-  const bool down = digitalRead(pin) == LOW;
-  if (down && !wasDown) fireGameButton(action, lastFire);
-  wasDown = down;
+// 누르는 순간(HIGH→LOW)에 한 번만 보내고 채터링은 쿨다운으로 거른다.
+void pollButton(GameButton& button) {
+  const bool down = digitalRead(button.pin) == LOW;
+  if (down && !button.wasDown) {
+    const unsigned long now = millis();
+    if (now - button.lastFireMs >= BTN_COOLDOWN) {
+      sendGameAction(button.action);
+      button.lastFireMs = now;
+    }
+  }
+  button.wasDown = down;
 }
 
 void pollButtons() {
-  pollButton(PIN_BTN_LISTEN, listenWasDown, lastListenMs, "listen");
-  pollButton(PIN_BTN_PLAY, playWasDown, lastPlayMs, "play");
+  for (int i = 0; i < GAME_BUTTON_COUNT; i++) pollButton(gameButtons[i]);
 }
 
 // 유효 프레임을 JSON으로 변환해 PC로 전달한다.
@@ -170,8 +180,10 @@ void setup() {
   led.clear();
   led.show();
 
-  pinMode(PIN_BTN_LISTEN, INPUT_PULLUP);
-  pinMode(PIN_BTN_PLAY, INPUT_PULLUP);
+  for (int i = 0; i < GAME_BUTTON_COUNT; i++) {
+    pinMode(gameButtons[i].pin, INPUT_PULLUP);
+    gameButtons[i].wasDown = digitalRead(gameButtons[i].pin) == LOW;
+  }
 
   RS485.begin(RS485_BAUD, SERIAL_8N1, RX_PIN, TX_PIN);
 

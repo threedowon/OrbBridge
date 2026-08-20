@@ -52,8 +52,8 @@ def run_serial_loop(
                 line = device.readline().decode("utf-8", errors="ignore").strip()
                 if not line:
                     continue
+                # 펌웨어 진단 주석(#master alive ...)은 콘솔에 출력하지 않는다.
                 if line.startswith("#"):
-                    print(f"[master] {line}")
                     continue
                 if not line.startswith("{"):
                     continue

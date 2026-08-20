@@ -62,7 +62,10 @@ def start_http_server(
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
-            print(f"[http] {args[0]}")
+            """Admin 폴링이 콘솔을 덮지 않도록 요청 한 줄 로그는 남기지 않는다."""
+
+        def log_error(self, fmt, *args):
+            print(f"[http] {fmt % args}")
 
         def _send(self, code: int, body: bytes, content_type: str) -> None:
             self.send_response(code)

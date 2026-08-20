@@ -84,8 +84,20 @@ READY → RUNNING → RESETTING → READY
 - 버튼 이벤트: `listen`, `play`, `dfesta`
 - 종료 사유: `complete`, `idle`, `time_over`, `manual`
 
-게임 시작은 Admin에서만 실행한다. Admin에는 `start`, `reset`, 자동완성,
-모든 오브 회수를 제공한다. `end`는 시리얼·HTTP 외부 제어 호환을 위해 유지한다.
+게임 시작은 Admin과 Master 버튼에서 실행한다. Admin에는 `start`, `reset`,
+자동완성, 모든 오브 회수를 제공한다. `end`는 시리얼·HTTP 외부 제어 호환을 위해
+유지한다.
+
+Master ESP32-S3의 버튼은 `INPUT_PULLUP` 3개이며 눌린 순간 한 번만 보낸다.
+
+| 버튼 | GPIO | Master → Python | 처리 |
+| --- | --- | --- | --- |
+| 다시듣기 | 40 | `{"type":"game","action":"listen"}` | `request_listen()` |
+| 시작 | 41 | `{"type":"game","action":"start"}` | `start_game()` |
+| 디페스타 | 42 | `{"type":"game","action":"dfesta"}` | `request_dfesta()` |
+
+`play`는 하드웨어 버튼이 없고 Table UI에서만 보낸다. 버튼 입력은
+`input_mode`가 `serial`일 때만 게임에 반영된다.
 
 ## 설정
 
