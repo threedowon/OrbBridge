@@ -1,0 +1,20 @@
+﻿Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\Software\Tobias Erichsen\loopMIDI]
+@=""
+"SysexSize"=dword:00000100
+"DetectFeedback"=dword:00000001
+"CommandTreshhold"=dword:00001388
+"TreshholdDuration"=dword:00000005
+
+[HKEY_CURRENT_USER\Software\Tobias Erichsen\loopMIDI\Ports]
+"aespa"=dword:00000001
+"bts"=dword:00000001
+"cortis"=dword:00000001
+"enhypen"=dword:00000001
+"ive"=dword:00000001
+"riize"=dword:00000001
+"skz"=dword:00000001
+"txt"=dword:00000001
+"listen"=dword:00000001
+"event"=dword:00000001

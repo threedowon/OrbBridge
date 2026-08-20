@@ -1,9 +1,9 @@
 /*
- * OrbBridge — Orb Register (ESP32-S3)
+ * OrbBridge — 오브 등록기 (ESP32-S3)
  *
- * 16× OneWire → DS2431. USB Serial(115200) → PC 등록 도구(register_tool.py).
+ * 16× OneWire → DS2431. USB Serial(115200) → PC 등록 도구(tools.orb_register).
  * DS2431 오브를 셀에 올리면 한 번만 JSON 출력 + 온보드 RGB 빨강 깜빡.
- *   {"type":"ds2431","cell":n,"esp_gpio":g,"id":"AA:BB:CC:..."}
+ *   출력 형식: {"type":"ds2431","cell":n,"esp_gpio":g,"id":"AA:BB:CC:..."}
  *
  * 마스터/RS485 없이 이 보드만 PC에 USB로 연결해서 orb ID를 등록한다.
  * register_core.py의 parse_serial_line 이 type=ds2431 + id 필드를 읽는다.
@@ -72,7 +72,8 @@ void sendOrbId(int index, const byte addr[8]) {
   Serial.println("\"}");
 }
 
-// 버스 i 에 오브가 있으면 addr 채우고 true. 매번 reset_search() → 항상 첫 장치 스캔.
+// 버스 i에 오브가 있으면 addr을 채우고 true를 반환한다.
+// 매번 reset_search()를 호출해 첫 장치부터 탐색한다.
 bool readBus(int i, byte addr[8]) {
   buses[i].reset_search();
   if (!buses[i].search(addr)) {

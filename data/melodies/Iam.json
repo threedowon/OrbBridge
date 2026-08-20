@@ -1,0 +1,77 @@
+{
+  "songId": "Iam",
+  "title": "Iam",
+  "artist": "",
+  "bpm": 122,
+  "range": [
+    "C4",
+    "C5"
+  ],
+  "game_rules": {
+    "time_over_s": 120,
+    "idle_s": 30,
+    "dfesta_presses_required": 1
+  },
+  "steps": [
+    {
+      "step": 1,
+      "note": "C5",
+      "duration": 1.0
+    },
+    {
+      "step": 2,
+      "note": "B4",
+      "duration": 1.0
+    },
+    {
+      "step": 3,
+      "note": "F4",
+      "duration": 1.0
+    },
+    {
+      "step": 4,
+      "note": "F4",
+      "duration": 1.0
+    },
+    {
+      "step": 5,
+      "note": "A4",
+      "duration": 0.66
+    },
+    {
+      "step": 6,
+      "note": "G4",
+      "duration": 0.33
+    },
+    {
+      "step": 7,
+      "note": "F4",
+      "duration": 0.33
+    },
+    {
+      "step": 8,
+      "note": "E4",
+      "duration": 0.66
+    },
+    {
+      "step": 9,
+      "note": "D4",
+      "duration": 1.0
+    },
+    {
+      "step": 10,
+      "note": "D4",
+      "duration": 1.0
+    },
+    {
+      "step": 11,
+      "note": "D4",
+      "duration": 1.0
+    },
+    {
+      "step": 12,
+      "note": "REST",
+      "duration": 2.0
+    }
+  ]
+}

@@ -1,0 +1,340 @@
+{
+  "voices": {
+    "aespa_1": {
+      "color": "#f472b6",
+      "labels": {
+        "kr": "닝닝",
+        "en": "NINGNING"
+      }
+    },
+    "aespa_2": {
+      "color": "#5eead4",
+      "labels": {
+        "kr": "윈터",
+        "en": "WINTER"
+      }
+    },
+    "aespa_3": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "지젤",
+        "en": "GISELLE"
+      }
+    },
+    "aespa_4": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "카리나",
+        "en": "KARINA"
+      }
+    },
+    "bts_1": {
+      "color": "#60a5fa",
+      "labels": {
+        "kr": "뷔",
+        "en": "V"
+      }
+    },
+    "bts_2": {
+      "color": "#4ade80",
+      "labels": {
+        "kr": "슈가",
+        "en": "SUGA"
+      }
+    },
+    "bts_3": {
+      "color": "#5eead4",
+      "labels": {
+        "kr": "알엠",
+        "en": "RM"
+      }
+    },
+    "bts_4": {
+      "color": "#5eead4",
+      "labels": {
+        "kr": "정국",
+        "en": "JUNGKOOK"
+      }
+    },
+    "bts_5": {
+      "color": "#5eead4",
+      "labels": {
+        "kr": "제이홉",
+        "en": "j-hope"
+      }
+    },
+    "bts_6": {
+      "color": "#5eead4",
+      "labels": {
+        "kr": "지민",
+        "en": "JIMIN"
+      }
+    },
+    "bts_7": {
+      "color": "#5eead4",
+      "labels": {
+        "kr": "진",
+        "en": "JIN"
+      }
+    },
+    "cortis_1": {
+      "color": "#c084fc",
+      "labels": {
+        "kr": "건호",
+        "en": "KEONHO"
+      }
+    },
+    "cortis_2": {
+      "color": "#f472b6",
+      "labels": {
+        "kr": "마틴",
+        "en": "MARTIN"
+      }
+    },
+    "cortis_3": {
+      "color": "#5eead4",
+      "labels": {
+        "kr": "성현",
+        "en": "SEONGHYEON"
+      }
+    },
+    "cortis_4": {
+      "color": "#5eead4",
+      "labels": {
+        "kr": "제임스",
+        "en": "JAMES"
+      }
+    },
+    "cortis_5": {
+      "color": "#5eead4",
+      "labels": {
+        "kr": "주훈",
+        "en": "JUHOON"
+      }
+    },
+    "enhypen_1": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "니키",
+        "en": "NI-KI"
+      }
+    },
+    "enhypen_2": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "선우",
+        "en": "SUNOO"
+      }
+    },
+    "enhypen_3": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "성훈",
+        "en": "SUNGHOON"
+      }
+    },
+    "enhypen_4": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "정원",
+        "en": "JUNGWON"
+      }
+    },
+    "enhypen_5": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "제이",
+        "en": "JAY"
+      }
+    },
+    "enhypen_6": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "제이크",
+        "en": "JAKE"
+      }
+    },
+    "enhypen_7": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "희승",
+        "en": "HEESEUNG"
+      }
+    },
+    "ive_1": {
+      "color": "#60a5fa",
+      "labels": {
+        "kr": "가을",
+        "en": "GAEUL"
+      }
+    },
+    "ive_2": {
+      "color": "#4ade80",
+      "labels": {
+        "kr": "레이",
+        "en": "REI"
+      }
+    },
+    "ive_3": {
+      "color": "#fb923c",
+      "labels": {
+        "kr": "리즈",
+        "en": "LIZ"
+      }
+    },
+    "ive_4": {
+      "color": "#f87171",
+      "labels": {
+        "kr": "유진",
+        "en": "YUJIN"
+      }
+    },
+    "ive_5": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "이서",
+        "en": "LEESEO"
+      }
+    },
+    "ive_6": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "원영",
+        "en": "WONYOUNG"
+      }
+    },
+    "riize_1": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "성찬",
+        "en": "SUNGCHAN"
+      }
+    },
+    "riize_2": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "소희",
+        "en": "SOHEE"
+      }
+    },
+    "riize_3": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "쇼타로",
+        "en": "SHOTARO"
+      }
+    },
+    "riize_4": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "앤톤",
+        "en": "ANTON"
+      }
+    },
+    "riize_5": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "원빈",
+        "en": "WONBIN"
+      }
+    },
+    "riize_6": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "은석",
+        "en": "EUNSEOK"
+      }
+    },
+    "skz_1": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "리노",
+        "en": "LEE KNOW"
+      }
+    },
+    "skz_2": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "방찬",
+        "en": "BANG CHAN"
+      }
+    },
+    "skz_3": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "승민",
+        "en": "SEUNGMIN"
+      }
+    },
+    "skz_4": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "아이엔",
+        "en": "I.N"
+      }
+    },
+    "skz_5": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "창빈",
+        "en": "CHANGBIN"
+      }
+    },
+    "skz_6": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "필릭스",
+        "en": "FELIX"
+      }
+    },
+    "skz_7": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "한",
+        "en": "HAN"
+      }
+    },
+    "skz_8": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "현진",
+        "en": "HYUNJIN"
+      }
+    },
+    "txt_1": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "범규",
+        "en": "BEOMGYU"
+      }
+    },
+    "txt_2": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "휴닝카이",
+        "en": "HUENINGKAI"
+      }
+    },
+    "txt_3": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "수빈",
+        "en": "SOOBIN"
+      }
+    },
+    "txt_4": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "태현",
+        "en": "TAEHYUN"
+      }
+    },
+    "txt_5": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "연준",
+        "en": "YEONJUN"
+      }
+    }
+  }
+}

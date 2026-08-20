@@ -1,77 +1,39 @@
-# OS
+# 운영체제
 .DS_Store
 Thumbs.db
 Desktop.ini
-ehthumbs.db
 
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-*.egg
 *.egg-info/
-.eggs/
-pip-wheel-metadata/
-dist-info/
-
-# Virtual environments
 .venv/
 venv/
-env/
-ENV/
 
-# PyInstaller — OrbRegister.exe
-server/build/
-server/dist/
-*.manifest
-
-# PyInstaller — Voice Orb Demo (release/build_release.bat)
-release
-release/build/
-release/dist/
-release/OrbBridge/
-
-# PyInstaller — Melody Editor build artifacts
-server/build-melody-editor/
-
-# Test / type / lint caches
+# 검사 도구
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
 htmlcov/
-.tox/
-.nox/
 
-# Node
-node_modules/
-**/node_modules/
+# 빌드 결과
+build/*/
+!build/*.spec
+!build/*.bat
+dist/
+*.manifest
 
-# IDE / editor
+# 편집기와 로컬 설정
 .idea/
 .vscode/
 *.swp
-*.swo
-*~
-.project
-.classpath
-.settings/
-
-# Logs & local env
 *.log
+*.tmp
 .env
 .env.*
 !.env.example
-*.local.json
 
-# Cursor local state
-.cursor/projects/
-.cursor/terminals/
-
-# Archives (OrbBridge.zip 등 배포물)
+# 배포 압축 파일
 *.zip
 *.7z
-*.tar
-*.gz

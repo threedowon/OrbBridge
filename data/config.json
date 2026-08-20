@@ -1,0 +1,26 @@
+{
+  "current_stage": 1,
+  "melody": "dynamite",
+  "melody_rotation": {
+    "mode": "sequence",
+    "playlist": [
+      "dynamite",
+      "Iam",
+      "biplane"
+    ]
+  },
+  "input_mode": "serial",
+  "web": {
+    "host": "127.0.0.1",
+    "port": 8080
+  },
+  "serial": {
+    "port": "COM5",
+    "baudrate": 115200
+  },
+  "matrix_display": {
+    "enabled": true,
+    "port": "COM17",
+    "baudrate": 115200
+  }
+}

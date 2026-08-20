@@ -1,4 +1,4 @@
-"""Dev vs PyInstaller paths — bundle assets + writable data beside exe."""
+"""개발 환경과 PyInstaller 실행 파일의 리소스·쓰기 경로를 관리한다."""
 
 from __future__ import annotations
 
@@ -9,10 +9,24 @@ from pathlib import Path
 _SEED_FILES = (
     "config.json",
     "orb_mapping.json",
-    "stage_data.json",
     "voice_catalog.json",
     "portmapping.json",
 )
+
+_DEFAULT_DOCUMENTS = {
+    "config.json": (
+        '{"current_stage":1,"melody":"dynamite","input_mode":"table",'
+        '"melody_rotation":{"mode":"sequence","playlist":'
+        '["dynamite","Iam","biplane"]},'
+        '"web":{"host":"127.0.0.1","port":8080},'
+        '"serial":{"port":"COM5","baudrate":115200},'
+        '"matrix_display":{"enabled":true,"port":"COM6",'
+        '"baudrate":115200}}\n'
+    ),
+    "orb_mapping.json": "{}\n",
+    "voice_catalog.json": '{"voices":{}}\n',
+    "portmapping.json": "{}\n",
+}
 
 
 def is_frozen() -> bool:
@@ -20,49 +34,38 @@ def is_frozen() -> bool:
 
 
 def repo_root() -> Path:
-    """Bundled UI (screen/, table/, admin/) and server templates."""
+    """번들 UI와 데이터 템플릿이 들어 있는 프로젝트 루트를 반환한다."""
     if is_frozen():
         return Path(sys._MEIPASS)
     return Path(__file__).resolve().parent.parent
 
 
 def data_dir() -> Path:
-    """Writable JSON + user data (server/ in dev, exe folder when frozen)."""
+    """모든 JSON과 사용자 데이터를 보관하는 data 경로를 반환한다."""
     if is_frozen():
-        return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parent
+        return Path(sys.executable).resolve().parent / "data"
+    return repo_root() / "data"
 
 
-def server_bundle_dir() -> Path:
-    """Bundled server defaults (config templates, stage_data seed)."""
-    if is_frozen():
-        return Path(sys._MEIPASS) / "server"
-    return Path(__file__).resolve().parent
-
-
-def sounds_dir() -> Path:
-    bundled = server_bundle_dir() / "sounds"
-    if bundled.is_dir():
-        return bundled
-    return data_dir() / "sounds"
+def bundled_data_dir() -> Path:
+    """실행 파일에 포함된 기본 data 경로를 반환한다."""
+    return repo_root() / "data"
 
 
 def melodies_dir() -> Path:
-    """Writable melodies (exe folder when frozen, screen/melodies in dev)."""
-    if is_frozen():
-        return data_dir() / "melodies"
-    return repo_root() / "screen" / "melodies"
+    """판정·화면·재생이 함께 사용하는 멜로디 단일 원본 경로다."""
+    return data_dir() / "melodies"
 
 
 def bundled_melodies_dir() -> Path:
-    return repo_root() / "screen" / "melodies"
+    return bundled_data_dir() / "melodies"
 
 
 def ensure_data_files() -> None:
-    """Copy default JSON into data_dir on first run (frozen) or create missing files."""
+    """첫 실행 때 기본 JSON을 복사하거나 누락 파일을 생성한다."""
     dest = data_dir()
     dest.mkdir(parents=True, exist_ok=True)
-    bundle = server_bundle_dir()
+    bundle = bundled_data_dir()
 
     for name in _SEED_FILES:
         target = dest / name
@@ -71,27 +74,8 @@ def ensure_data_files() -> None:
         src = bundle / name
         if src.is_file():
             shutil.copy2(src, target)
-        elif name == "orb_mapping.json":
-            target.write_text("{}\n", encoding="utf-8")
-        elif name == "config.json":
-            table_cfg = bundle / "config.table.json"
-            if table_cfg.is_file():
-                shutil.copy2(table_cfg, target)
-            else:
-                target.write_text(
-                    '{"current_stage":1,"melody":"biplane","input_mode":"table",'
-                    '"mock":{"host":"127.0.0.1","port":8080},'
-                    '"serial":{"port":"COM13","baudrate":115200},'
-                    '"osc":{"host":"127.0.0.1","port":9000}}\n',
-                    encoding="utf-8",
-                )
-
-    sounds_dir().mkdir(parents=True, exist_ok=True)
-
-    bundled_sounds = server_bundle_dir() / "sounds"
-    user_sounds = data_dir() / "sounds"
-    if bundled_sounds.is_dir() and not any(user_sounds.glob("*")):
-        shutil.copytree(bundled_sounds, user_sounds, dirs_exist_ok=True)
+        else:
+            target.write_text(_DEFAULT_DOCUMENTS[name], encoding="utf-8")
 
     mdir = melodies_dir()
     mdir.mkdir(parents=True, exist_ok=True)

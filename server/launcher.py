@@ -1,4 +1,4 @@
-"""OrbBridge single-process launcher — bridge + main (PyInstaller entry point)."""
+"""OrbBridge 단일 프로세스 실행기이며 PyInstaller 진입점이다."""
 
 from __future__ import annotations
 
@@ -6,12 +6,16 @@ import sys
 import time
 import webbrowser
 
-from app_paths import ensure_data_files, is_frozen
+from server.app_paths import is_frozen
 
 
 def _open_browser() -> None:
     time.sleep(1.2)
-    for url in ("http://127.0.0.1:8080/screen", "http://127.0.0.1:8080/table"):
+    urls = (
+        "http://127.0.0.1:8080/admin",
+        "http://127.0.0.1:8080/admin/software",
+    )
+    for url in urls:
         try:
             webbrowser.open(url)
         except OSError:
@@ -19,14 +23,7 @@ def _open_browser() -> None:
 
 
 def main() -> None:
-    ensure_data_files()
-
-    from bridge_service import start_bridge_thread
-
-    start_bridge_thread()
-    time.sleep(0.4)
-
-    from main import run_main
+    from server.main import run_main
 
     if is_frozen():
         import threading

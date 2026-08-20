@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OrbBridge — Hardware Admin</title>
+  <script>
+    const CONTROL_MODE = 'hardware';
+    document.documentElement.dataset.mode = CONTROL_MODE;
+    document.title = CONTROL_MODE === 'software'
+      ? 'OrbBridge — Software Admin'
+      : 'OrbBridge — Hardware Admin';
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #242836;
+      --border: #2e3344;
+      --ink: #e8eaef;
+      --muted: #8b92a8;
+      --accent: #5b8def;
+      --ok: #4ade80;
+      --warn: #facc15;
+      --err: #f87171;
+      --empty: #2a2f3d;
+    }
+
+    html, body { height: 100%; }
+
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", system-ui, sans-serif;
+      font-size: 13px;
+      line-height: 1.4;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    header h1 {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    header h1 span { color: var(--muted); font-weight: 400; }
+
+    html[data-mode="hardware"] .software-only,
+    html[data-mode="software"] .hardware-only {
+      display: none !important;
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+
+    .dot.ok { background: var(--ok); box-shadow: 0 0 6px rgba(74, 222, 128, 0.5); }
+    .dot.warn { background: var(--warn); }
+    .dot.err { background: var(--err); box-shadow: 0 0 6px rgba(248, 113, 113, 0.4); }
+
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr min(360px, 32vw);
+      gap: 0;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .panel {
+      padding: 16px 20px;
+      overflow: auto;
+    }
+
+    .grid-panel {
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .side-panel {
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    html[data-mode="software"] main {
+      grid-template-columns: 1fr;
+    }
+
+    html[data-mode="software"] .side-panel {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(360px, 0.8fr);
+      grid-template-rows: auto auto minmax(180px, 1fr);
+      align-content: start;
+    }
+
+    html[data-mode="software"] .system-section { grid-column: 1; grid-row: 1; }
+    html[data-mode="software"] .game-section { grid-column: 1; grid-row: 2; }
+    html[data-mode="software"] .midi-section { grid-column: 2; grid-row: 1 / span 2; }
+    html[data-mode="software"] .log-section { grid-column: 1 / -1; grid-row: 3; }
+    html[data-mode="software"] .stats-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .slave-headers {
+      display: flex;
+      gap: 6px;
+      padding-left: 34px;
+      margin-bottom: 4px;
+    }
+
+    .slave-header {
+      flex: 0 0 calc(2 * 44px + 6px);
+      text-align: center;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+      padding: 4px 0;
+      border-bottom: 2px solid var(--accent);
+      opacity: 0.85;
+    }
+
+    .grid-wrap {
+      display: flex;
+      gap: 6px;
+      align-items: flex-start;
+    }
+
+    .row-labels {
+      display: grid;
+      grid-template-rows: repeat(8, 44px);
+      row-gap: 6px;
+      padding-top: 0;
+    }
+
+    .row-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 44px);
+      grid-template-rows: repeat(8, 44px);
+      column-gap: 6px;
+      row-gap: 6px;
+    }
+
+    .cell {
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      border: 1.5px solid var(--border);
+      background: var(--empty);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1px;
+      padding: 2px;
+      transition: border-color 0.15s, background 0.15s, transform 0.1s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cell:hover { border-color: var(--accent); transform: scale(1.04); z-index: 1; }
+    .cell.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .cell.filled { border-color: rgba(255,255,255,0.2); }
+    .cell.correct { background: rgba(74, 222, 128, 0.25); border-color: var(--ok); }
+    .cell.wrong { background: rgba(248, 113, 113, 0.25); border-color: var(--err); }
+    .cell.inactive { background: rgba(91, 141, 239, 0.2); border-color: var(--accent); }
+    .cell.unknown { background: rgba(250, 204, 21, 0.2); border-color: var(--warn); }
+    /* 자가복구로 추정된 '미상' 칸 — 실제 미등록 오브와 구분되게 점선 테두리 */
+    .cell.synthetic { border-style: dashed; border-color: var(--warn); }
+
+    .cell .note {
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .cell .voice {
+      font-size: 8px;
+      color: var(--muted);
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .cell .slave-cell {
+      position: absolute;
+      top: 2px;
+      right: 3px;
+      font-size: 7px;
+      color: var(--muted);
+      opacity: 0.6;
+    }
+
+    .info-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 3px 0;
+      font-size: 12px;
+    }
+
+    .info-row .label { color: var(--muted); flex-shrink: 0; }
+    .info-row .value {
+      text-align: right;
+      word-break: break-all;
+      font-family: "Cascadia Code", "Consolas", monospace;
+      font-size: 11px;
+    }
+
+    .event-log {
+      flex: 1;
+      min-height: 120px;
+      overflow-y: auto;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      font-family: "Cascadia Code", "Consolas", monospace;
+      font-size: 11px;
+    }
+
+    .log-entry {
+      padding: 4px 0;
+      border-bottom: 1px solid var(--border);
+      line-height: 1.5;
+    }
+
+    .log-entry:last-child { border-bottom: none; }
+
+    .log-time { color: var(--muted); margin-right: 6px; }
+    .log-added { color: var(--ok); }
+    .log-removed { color: var(--err); }
+    .log-warn { color: var(--warn); }
+    .log-info { color: var(--accent); }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .stat-box {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      text-align: center;
+    }
+
+    .stat-box .num {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .stat-box .lbl {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .slave-status {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .slave-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+
+    .slave-row .sid { font-weight: 600; }
+    .slave-row .state-txt { color: var(--muted); }
+    .slave-row.online .state-txt { color: var(--ok); }
+    .slave-row.offline .state-txt { color: var(--err); }
+    .slave-row .age {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 11px;
+      font-family: "Cascadia Code", "Consolas", monospace;
+    }
+
+    .slave-empty {
+      color: var(--muted);
+      font-size: 12px;
+      padding: 4px 2px;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--ink);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s;
+    }
+
+    button:hover { background: var(--border); border-color: var(--muted); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.primary:hover { filter: brightness(1.1); }
+    button.danger { border-color: rgba(248, 113, 113, 0.6); color: var(--err); }
+    button.danger:hover { background: rgba(248, 113, 113, 0.12); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .midi-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+    }
+
+    .midi-summary {
+      color: var(--muted);
+      font-family: "Cascadia Code", "Consolas", monospace;
+      font-size: 10px;
+      line-height: 1.5;
+      margin-bottom: 8px;
+      word-break: break-all;
+    }
+
+    .midi-fields {
+      display: grid;
+      grid-template-columns: 1fr 86px;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .midi-fields label {
+      color: var(--muted);
+      font-size: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    select, input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--ink);
+      border-radius: 5px;
+      padding: 5px 6px;
+      font-size: 11px;
+    }
+
+    .midi-job { color: var(--muted); font-size: 10px; margin-top: 7px; }
+
+    .log-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .links {
+      display: flex;
+      gap: 12px;
+      font-size: 12px;
+    }
+
+    .links a { color: var(--accent); text-decoration: none; }
+    .links a:hover { text-decoration: underline; }
+    html[data-mode="hardware"] [data-control-mode="hardware"],
+    html[data-mode="software"] [data-control-mode="software"] {
+      color: var(--ink);
+      font-weight: 600;
+    }
+
+    @media (max-width: 1150px) {
+      main { grid-template-columns: minmax(520px, 1fr) minmax(280px, 35%); }
+      .panel { padding: 10px 12px; }
+      .slave-headers { gap: 4px; }
+      .slave-header { flex-basis: calc(2 * 36px + 4px); }
+      .row-labels {
+        grid-template-rows: repeat(8, 36px);
+        row-gap: 4px;
+      }
+      .grid {
+        grid-template-columns: repeat(12, 36px);
+        grid-template-rows: repeat(8, 36px);
+        gap: 4px;
+      }
+      .cell { width: 36px; height: 36px; }
+      .cell .voice { font-size: 7px; }
+      header { padding: 9px 12px; }
+      .status-bar { gap: 10px; }
+    }
+
+    @media (max-width: 900px) {
+      main { grid-template-columns: minmax(420px, 1fr) minmax(235px, 36%); }
+      .panel { padding: 8px; }
+      .slave-headers { padding-left: 28px; gap: 3px; }
+      .slave-header { flex-basis: calc(2 * 29px + 3px); font-size: 9px; }
+      .row-labels {
+        grid-template-rows: repeat(8, 29px);
+        row-gap: 3px;
+      }
+      .row-label { width: 24px; font-size: 9px; }
+      .grid-wrap { gap: 4px; }
+      .grid {
+        grid-template-columns: repeat(12, 29px);
+        grid-template-rows: repeat(8, 29px);
+        gap: 3px;
+      }
+      .cell { width: 29px; height: 29px; border-radius: 5px; }
+      .cell .note { font-size: 9px; }
+      .cell .voice { display: none; }
+      .cell .slave-cell { font-size: 6px; }
+      .side-panel { gap: 10px; }
+      html[data-mode="software"] .side-panel {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto;
+      }
+      html[data-mode="software"] .system-section,
+      html[data-mode="software"] .game-section,
+      html[data-mode="software"] .midi-section,
+      html[data-mode="software"] .log-section {
+        grid-column: 1;
+        grid-row: auto;
+      }
+      html[data-mode="software"] .stats-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 650px) {
+      main { grid-template-columns: 1fr; }
+      .grid-panel { border-right: none; border-bottom: 1px solid var(--border); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>OrbBridge <span id="control-mode-label">Hardware Admin</span></h1>
+    <div class="status-bar">
+      <div class="status-item" title="아두이노 시리얼 연결">
+        <span class="dot" id="dot-serial"></span>
+        <span id="lbl-serial">Serial —</span>
+      </div>
+      <div class="status-item" title="Python WebSocket">
+        <span class="dot" id="dot-ws"></span>
+        <span id="lbl-ws">WS —</span>
+      </div>
+      <div class="status-item" title="게임 상태">
+        <span class="dot" id="dot-game"></span>
+        <span id="lbl-game">Game —</span>
+      </div>
+      <div class="status-item software-only" title="MIDI 출력 상태">
+        <span class="dot" id="dot-midi"></span>
+        <span id="lbl-midi">MIDI —</span>
+      </div>
+      <div class="links">
+        <a href="/admin" target="_top" data-control-mode="hardware">Hardware</a>
+        <a href="/admin/software" target="_top" data-control-mode="software">Software</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel grid-panel hardware-only">
+      <div class="slave-headers" id="slave-headers"></div>
+      <div class="grid-wrap">
+        <div class="row-labels" id="row-labels"></div>
+        <div class="grid" id="grid"></div>
+      </div>
+      <div class="info-card" id="cell-detail">
+        <div class="section-title">셀 상세</div>
+        <div class="info-row"><span class="label">위치</span><span class="value" id="d-pos">—</span></div>
+        <div class="info-row"><span class="label">Slave / Cell</span><span class="value" id="d-slave-cell">—</span></div>
+        <div class="info-row"><span class="label">음표</span><span class="value" id="d-note">—</span></div>
+        <div class="info-row"><span class="label">Voice</span><span class="value" id="d-voice">—</span></div>
+        <div class="info-row"><span class="label">Orb ID</span><span class="value" id="d-id">—</span></div>
+        <div class="info-row"><span class="label">결과</span><span class="value" id="d-result">—</span></div>
+      </div>
+    </section>
+
+    <section class="panel side-panel">
+      <div class="system-section">
+        <div class="section-title">시스템</div>
+        <div class="stats-grid">
+          <div class="stat-box"><div class="num" id="stat-filled">0</div><div class="lbl">점유 셀</div></div>
+          <div class="stat-box"><div class="num" id="stat-orbs">0</div><div class="lbl">등록 Orb</div></div>
+          <div class="stat-box"><div class="num" id="stat-stage">—</div><div class="lbl">Stage</div></div>
+          <div class="stat-box"><div class="num" id="stat-mode">—</div><div class="lbl">입력 모드</div></div>
+          <div class="stat-box software-only"><div class="num" id="stat-melody">—</div><div class="lbl">현재 멜로디</div></div>
+          <div class="stat-box software-only"><div class="num" id="stat-next-melody">—</div><div class="lbl">다음 멜로디</div></div>
+          <div class="stat-box software-only"><div class="num" id="stat-total-time">—</div><div class="lbl">TimeOver 잔여</div></div>
+          <div class="stat-box software-only"><div class="num" id="stat-idle-time">—</div><div class="lbl">Idle 잔여</div></div>
+        </div>
+      </div>
+
+      <div class="slave-section hardware-only">
+        <div class="section-title">슬레이브 상태</div>
+        <div class="slave-status" id="slave-status">
+          <div class="slave-empty">감지된 슬레이브 없음</div>
+        </div>
+      </div>
+
+      <div class="game-section software-only">
+        <div class="section-title">게임 제어</div>
+        <div class="toolbar">
+          <button class="primary" id="btn-game-start" data-game-action="start">start</button>
+          <button id="btn-game-reset" data-game-action="reset">reset</button>
+          <button id="btn-auto-complete">자동완성</button>
+          <button class="danger" id="btn-collect-orbs">모든 오브 회수</button>
+        </div>
+      </div>
+
+      <div class="midi-section software-only">
+        <div class="section-title">MIDI 진단</div>
+        <div class="midi-card">
+          <div class="midi-summary" id="midi-summary">상태 확인 중</div>
+          <div class="midi-fields">
+            <label>Voice<select id="midi-voice"></select></label>
+            <label>Pitch
+              <select id="midi-pitch">
+                <option value="0">C</option><option value="1">D</option>
+                <option value="2">E</option><option value="3">F</option>
+                <option value="4">G</option><option value="5">A</option>
+                <option value="6">B</option><option value="7">C high</option>
+              </select>
+            </label>
+            <label>음 길이(ms)<input id="midi-duration" type="number" min="30" max="5000" value="180"></label>
+            <label>순회 간격(ms)<input id="midi-delay" type="number" min="30" max="5000" value="220"></label>
+          </div>
+          <div class="toolbar">
+            <button class="primary" data-midi-mode="note">단음</button>
+            <button data-midi-mode="voice">선택 Voice 8음</button>
+            <button data-midi-mode="all_voices">전체 Voice 동시</button>
+            <button id="btn-midi-stop">중지</button>
+            <button id="btn-midi-reconnect">포트 재연결</button>
+          </div>
+          <div class="midi-job" id="midi-job">대기</div>
+        </div>
+      </div>
+
+      <div class="log-section">
+        <div class="section-title">이벤트 로그</div>
+        <div class="event-log" id="event-log"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const BEAT_COLS = 12;
+    const COLS = BEAT_COLS;
+    const ROWS = 8;
+    const ROW_NOTES = ['C', 'D', 'E', 'F', 'G', 'A', 'B', 'C'];
+    const WS_URL = `ws://${location.hostname || '127.0.0.1'}:8765`;
+    const LOG_LIMIT = 200;
+
+    /** 셀 키별 상태 정보다. @type {Map<string, object>} */
+    const cells = new Map();
+    let selectedKey = null;
+    let ws = null;
+    let wsRetry = null;
+    let lastMidiJobId = 0;
+    let currentGameState = 'READY';
+    let currentCellCount = 0;
+    let adminActionRunning = false;
+
+    const gridEl = document.getElementById('grid');
+    const logEl = document.getElementById('event-log');
+
+    function colToSlave(col) { return Math.floor(col / 2) + 1; }
+    function colToQ(col) { return col % 2 === 0 ? 1 : 2; }
+    function posToCell(row, col) { return row + (colToQ(col) - 1) * 8; }
+    function cellKey(slave, cell) { return `${slave}:${cell}`; }
+    function gridKey(col, row) { return `${col}-${row}`; }
+
+    function shortId(id) {
+      if (!id) return '';
+      const parts = String(id).split(':');
+      return parts.length >= 2 ? parts.slice(-2).join(':') : id.slice(-6);
+    }
+
+    function fmtTime(ts) {
+      const d = new Date(ts || Date.now());
+      return d.toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    function addLog(type, text, cls = '', ts = null, prepend = true) {
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.innerHTML = `<span class="log-time">${fmtTime(ts)}</span><span class="${cls}">[${type}]</span> ${text}`;
+      if (prepend) logEl.prepend(entry);
+      else logEl.appendChild(entry);
+      while (logEl.children.length > LOG_LIMIT) logEl.lastChild.remove();
+    }
+
+    function buildGrid() {
+      const headers = document.getElementById('slave-headers');
+      headers.innerHTML = '';
+      // slave 1개 = 2열(Q1·Q2) → 헤더 개수는 열 수에서 자동 산출(하드코딩 5 금지)
+      for (let s = 1; s <= COLS / 2; s++) {
+        const h = document.createElement('div');
+        h.className = 'slave-header';
+        h.textContent = `Slave ${s}`;
+        headers.appendChild(h);
+      }
+
+      const labels = document.getElementById('row-labels');
+      labels.innerHTML = '';
+      for (let r = 1; r <= ROWS; r++) {
+        const el = document.createElement('div');
+        el.className = 'row-label';
+        el.textContent = ROW_NOTES[r - 1];
+        labels.appendChild(el);
+      }
+
+      gridEl.innerHTML = '';
+      for (let row = 1; row <= ROWS; row++) {
+        for (let col = 0; col < COLS; col++) {
+          const slave = colToSlave(col);
+          const cell = posToCell(row, col);
+          const el = document.createElement('button');
+          el.type = 'button';
+          el.className = 'cell';
+          el.dataset.col = col;
+          el.dataset.row = row;
+          el.dataset.slave = slave;
+          el.dataset.cell = cell;
+          el.title = `S${slave} C${cell}`;
+          el.innerHTML = `<span class="slave-cell">${slave}:${cell}</span><span class="note"></span><span class="voice"></span>`;
+          el.addEventListener('click', () => selectCell(col, row));
+          gridEl.appendChild(el);
+        }
+      }
+    }
+
+    function getCellEl(col, row) {
+      return gridEl.querySelector(`[data-col="${col}"][data-row="${row}"]`);
+    }
+
+    function updateCellUI(col, row, data) {
+      const el = getCellEl(col, row);
+      if (!el) return;
+      el.className = 'cell';
+      el.querySelector('.note').textContent = '';
+      el.querySelector('.voice').textContent = '';
+
+      if (!data || (!data.id && !data.synthetic)) return;
+
+      el.classList.add('filled');
+      if (data.result) el.classList.add(data.result);
+      if (data.synthetic) el.classList.add('synthetic');
+      el.querySelector('.note').textContent = data.note || '?';
+      el.querySelector('.voice').textContent = data.voice || shortId(data.id);
+      if (selectedKey === gridKey(col, row)) el.classList.add('selected');
+    }
+
+    function colRowFromSlaveCell(slave, cell) {
+      const q = cell <= 8 ? 1 : 2;
+      const row = cell <= 8 ? cell : cell - 8;
+      const col = (slave - 1) * 2 + (q === 1 ? 0 : 1);
+      return { col, row };
+    }
+
+    function applyCellState(slave, cell, data) {
+      const key = cellKey(slave, cell);
+      if (data && (data.id || data.synthetic)) {
+        cells.set(key, data);
+      } else {
+        cells.delete(key);
+        data = null;
+      }
+      const { col, row } = colRowFromSlaveCell(slave, cell);
+      updateCellUI(col, row, data);
+      updateStats();
+      if (selectedKey) {
+        const [sc, sr] = selectedKey.split('-').map(Number);
+        if (sc === col && sr === row) showDetail(col, row);
+      }
+    }
+
+    function selectCell(col, row) {
+      selectedKey = gridKey(col, row);
+      gridEl.querySelectorAll('.cell.selected').forEach(el => el.classList.remove('selected'));
+      const el = getCellEl(col, row);
+      el?.classList.add('selected');
+      showDetail(col, row);
+    }
+
+    function showDetail(col, row) {
+      const slave = colToSlave(col);
+      const cell = posToCell(row, col);
+      const data = cells.get(cellKey(slave, cell));
+      document.getElementById('d-pos').textContent = `col ${col}, row ${row}`;
+      document.getElementById('d-slave-cell').textContent = `Slave ${slave} / Cell ${cell}`;
+      document.getElementById('d-note').textContent = data?.note || ROW_NOTES[row - 1];
+      document.getElementById('d-voice').textContent = data?.voice || '—';
+      document.getElementById('d-id').textContent = data?.id || '—';
+      document.getElementById('d-result').textContent = data?.result || 'empty';
+    }
+
+    function updateStats() {
+      document.getElementById('stat-filled').textContent = cells.size;
+      currentCellCount = cells.size;
+      updateGameButtons();
+    }
+
+    function updateGameButtons() {
+      document.getElementById('btn-game-start').disabled =
+        adminActionRunning || currentGameState !== 'READY' || currentCellCount !== 0;
+      document.getElementById('btn-game-reset').disabled =
+        adminActionRunning || currentGameState === 'READY';
+      document.getElementById('btn-auto-complete').disabled =
+        adminActionRunning || currentGameState !== 'RUNNING';
+      document.getElementById('btn-collect-orbs').disabled =
+        adminActionRunning || currentCellCount === 0;
+    }
+
+    function setDot(id, state) {
+      const el = document.getElementById(id);
+      el.className = 'dot ' + (state || '');
+    }
+
+    function fmtAge(ms) {
+      if (ms == null) return '—';
+      const s = Math.round(ms / 1000);
+      if (s < 60) return `${s}초`;
+      const m = Math.floor(s / 60);
+      return `${m}분 ${s % 60}초`;
+    }
+
+    function fmtRemaining(seconds) {
+      const value = Number(seconds);
+      if (!Number.isFinite(value)) return '—';
+      const total = Math.max(0, Math.ceil(value));
+      const minutes = Math.floor(total / 60);
+      const remainder = total % 60;
+      return `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
+    }
+
+    function renderSlaves(slaves) {
+      const box = document.getElementById('slave-status');
+      if (!slaves || slaves.length === 0) {
+        box.innerHTML = '<div class="slave-empty">감지된 슬레이브 없음</div>';
+        return;
+      }
+      box.innerHTML = '';
+      for (const sv of slaves) {
+        // online=초록, 하트비트 있었지만 끊김=빨강(offline), 하트비트 자체가 없음=노랑
+        const dotState = sv.online ? 'ok' : (sv.has_heartbeat ? 'err' : 'warn');
+        const rowState = sv.online ? 'online' : (sv.has_heartbeat ? 'offline' : '');
+        const stateTxt = sv.online
+          ? '온라인'
+          : (sv.has_heartbeat ? `오프라인 (${fmtAge(sv.hb_age_ms)} 무신호)` : '하트비트 없음');
+        const row = document.createElement('div');
+        row.className = 'slave-row ' + rowState;
+        row.innerHTML =
+          `<span class="dot ${dotState}"></span>` +
+          `<span class="sid">Slave ${sv.slave}</span>` +
+          `<span class="state-txt">${stateTxt}</span>` +
+          `<span class="age" title="마지막 메시지">최근 ${fmtAge(sv.last_seen_age_ms)} 전</span>`;
+        box.appendChild(row);
+      }
+    }
+
+    function renderStatus(s) {
+      if (!s) return;
+      const serialOk = s.serial?.connected;
+      const tableMode = s.input_mode === 'table';
+      setDot('dot-serial', serialOk ? 'ok' : (tableMode ? 'warn' : 'err'));
+      document.getElementById('lbl-serial').textContent = tableMode
+        ? 'Table (web)'
+        : (serialOk ? `Serial ${s.serial.port}` : `Serial ${s.serial?.error || '끊김'}`);
+
+      const gameState = s.game?.state || 'READY';
+      currentGameState = gameState;
+      currentCellCount = Number(s.game?.cell_count ?? s.cell_count ?? cells.size);
+      setDot('dot-game', gameState === 'RUNNING' ? 'ok' : (gameState === 'RESETTING' ? 'warn' : ''));
+      document.getElementById('lbl-game').textContent =
+        `${gameState} (stage ${s.current_stage})`;
+
+      document.getElementById('stat-stage').textContent = s.current_stage;
+      document.getElementById('stat-mode').textContent = s.input_mode;
+      document.getElementById('stat-melody').textContent = s.melody || '—';
+      document.getElementById('stat-next-melody').textContent =
+        s.melody_rotation?.next_melody || '—';
+      document.getElementById('stat-orbs').textContent = s.orb_count ?? '—';
+      const timers = s.game?.timers || {};
+      document.getElementById('stat-total-time').textContent =
+        fmtRemaining(timers.remaining_time_over_s);
+      document.getElementById('stat-idle-time').textContent =
+        fmtRemaining(timers.remaining_idle_s);
+      renderSlaves(s.slaves);
+      updateGameButtons();
+    }
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch('/api/status');
+        if (!res.ok) return;
+        renderStatus(await res.json());
+      } catch { /* 서버가 시작 중일 수 있다. */ }
+    }
+
+    function renderMidiStatus(payload) {
+      const midi = payload?.midi || {};
+      const job = payload?.job || {};
+      const ready = Boolean(midi.ready);
+      setDot('dot-midi', ready ? 'ok' : 'err');
+      document.getElementById('lbl-midi').textContent = ready
+        ? `MIDI ${midi.opened_ports?.length || 0} ports`
+        : 'MIDI 연결 안 됨';
+      document.getElementById('midi-summary').textContent = ready
+        ? `open: ${(midi.opened_ports || []).join(', ')}`
+        : (midi.error || '열린 MIDI 포트 없음');
+
+      const voiceSelect = document.getElementById('midi-voice');
+      const selected = voiceSelect.value;
+      const voices = payload?.voices || [];
+      if (voices.join('\n') !== Array.from(voiceSelect.options).map(o => o.value).join('\n')) {
+        voiceSelect.innerHTML = '';
+        for (const voice of voices) {
+          const option = document.createElement('option');
+          option.value = voice;
+          option.textContent = voice;
+          voiceSelect.appendChild(option);
+        }
+        if (voices.includes(selected)) voiceSelect.value = selected;
+      }
+
+      const running = Boolean(job.running);
+      document.querySelectorAll('[data-midi-mode]').forEach(button => {
+        button.disabled = running || !ready;
+      });
+      document.getElementById('btn-midi-stop').disabled = !running;
+      document.getElementById('btn-midi-reconnect').disabled = running;
+      document.getElementById('midi-job').textContent = running
+        ? `${job.mode} · ${job.completed}/${job.total}`
+        : (job.error || (job.id ? `완료 · ${job.completed}/${job.total}` : '대기'));
+
+      if (!running && job.id && job.id !== lastMidiJobId) {
+        lastMidiJobId = job.id;
+        const failures = (job.results || []).filter(result => !result.ok).length;
+        addLog(
+          'midi',
+          `${job.mode} 완료 · ${job.completed}/${job.total}${failures ? ` · 실패 ${failures}` : ''}`,
+          failures ? 'log-warn' : 'log-info',
+        );
+      }
+    }
+
+    async function fetchMidiStatus() {
+      try {
+        const response = await fetch('/api/admin/midi/status');
+        if (!response.ok) throw new Error(await response.text());
+        renderMidiStatus(await response.json());
+      } catch (error) {
+        setDot('dot-midi', 'err');
+        document.getElementById('lbl-midi').textContent = 'MIDI 상태 오류';
+        document.getElementById('midi-summary').textContent = error.message;
+      }
+    }
+
+    async function postMidi(path, body = {}) {
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+      return payload;
+    }
+
+    function renderCellsSnapshot(data) {
+      cells.clear();
+      gridEl.querySelectorAll('.cell').forEach(el => {
+        el.className = 'cell';
+        el.querySelector('.note').textContent = '';
+        el.querySelector('.voice').textContent = '';
+      });
+      for (const [key, val] of Object.entries(data || {})) {
+        const [slave, cell] = key.split(':').map(Number);
+        applyCellState(slave, cell, val);
+      }
+      updateStats();
+    }
+
+    function renderEventSnapshot(events) {
+      logEl.innerHTML = '';
+      for (const ev of (events || []).slice().reverse()) {
+        if (ev.type === 'game_state') {
+          const reason = ev.end_reason ? ` (${ev.end_reason})` : '';
+          addLog(
+            'state',
+            `${ev.previous_state || '—'} → ${ev.state}${reason}`,
+            'log-info',
+            ev.ts,
+            false,
+          );
+          continue;
+        }
+        const cls = ev.type === 'added' ? 'log-added' : ev.type === 'removed' ? 'log-removed' : 'log-info';
+        addLog(
+          ev.type,
+          `S${ev.slave} C${ev.cell} ${ev.voice || ''} ${ev.id ? shortId(ev.id) : ''}`,
+          cls,
+          ev.ts,
+          false,
+        );
+      }
+    }
+
+    async function loadSnapshot() {
+      try {
+        const res = await fetch('/api/cells');
+        if (!res.ok) return;
+        renderCellsSnapshot(await res.json());
+      } catch { /* 다음 동기화에서 복구한다. */ }
+
+      try {
+        const res = await fetch('/api/events');
+        if (!res.ok) return;
+        renderEventSnapshot(await res.json());
+      } catch { /* 다음 동기화에서 복구한다. */ }
+    }
+
+    function handleWsMessage(msg) {
+      if (msg?.type === 'snapshot') {
+        const snapshot = msg.snapshot || {};
+        renderCellsSnapshot(snapshot.cells);
+        renderEventSnapshot(snapshot.events);
+        renderStatus(snapshot.status);
+        return;
+      }
+
+      const { address, args } = msg;
+      if (address === '/orb/added' && args.length >= 6) {
+        const [slave, cell, voice, note, result, orb_id] = args;
+        applyCellState(slave, cell, { id: orb_id, voice, note, result });
+        const cls = result === 'correct' ? 'log-added' : result === 'wrong' ? 'log-removed' : 'log-info';
+        addLog('added', `S${slave} C${cell} ${voice} ${note} → ${result}`, cls);
+      } else if (address === '/orb/removed' && args.length >= 5) {
+        const [slave, cell, voice, note, orb_id] = args;
+        applyCellState(slave, cell, null);
+        addLog('removed', `S${slave} C${cell} ${voice} ${note}`, 'log-removed');
+      } else if (address === '/orb/recovered' && args.length >= 3) {
+        // 유실 추정: admin 에만 '미상'으로 표시(screen 엔 안 뜸 → 관람자가 다시 올림)
+        const [slave, cell, note] = args;
+        applyCellState(slave, cell, { id: '', voice: '미상', note, result: 'unknown', synthetic: true });
+        addLog('복구', `S${slave} C${cell} ${note} → 유실 추정(미상, 화면 미표시)`, 'log-warn');
+      } else if (address === '/game/state') {
+        const [state, reason, , , , previousState] = args;
+        const transition = previousState
+          ? `${previousState} → ${state}`
+          : String(state || 'UNKNOWN');
+        addLog(
+          'state',
+          `${transition}${reason ? ` (${reason})` : ''}`,
+          'log-info',
+        );
+        fetchStatus();
+      }
+    }
+
+    function connectWs() {
+      if (ws) { try { ws.close(); } catch { /* 이미 종료된 연결이다. */ } }
+      ws = new WebSocket(WS_URL);
+      ws.onopen = () => {
+        setDot('dot-ws', 'ok');
+        document.getElementById('lbl-ws').textContent = 'WS 연결됨';
+        addLog('ws', 'WebSocket 연결', 'log-info');
+        if (wsRetry) { clearTimeout(wsRetry); wsRetry = null; }
+      };
+      ws.onclose = () => {
+        setDot('dot-ws', 'err');
+        document.getElementById('lbl-ws').textContent = 'WS 끊김';
+        wsRetry = setTimeout(connectWs, 3000);
+      };
+      ws.onerror = () => setDot('dot-ws', 'err');
+      ws.onmessage = (e) => {
+        try { handleWsMessage(JSON.parse(e.data)); } catch { /* 잘못된 메시지는 무시한다. */ }
+      };
+    }
+
+    async function postGame(path, body = {}) {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.error || `HTTP ${res.status}`);
+      return payload;
+    }
+
+    // 관객 화면에는 제어 버튼을 두지 않고 Admin만 게임 상태를 변경한다.
+    document.querySelectorAll('[data-game-action]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const action = button.dataset.gameAction;
+        adminActionRunning = true;
+        updateGameButtons();
+        try {
+          const payload = await postGame(`/api/game/${action}`);
+          if (payload.game) {
+            currentGameState = payload.game.state || currentGameState;
+            currentCellCount = Number(payload.game.cell_count ?? currentCellCount);
+          }
+          addLog('admin', `${action} 완료`, 'log-info');
+        } catch (error) {
+          addLog('error', error.message, 'log-warn');
+        } finally {
+          adminActionRunning = false;
+          updateGameButtons();
+          void fetchStatus();
+        }
+      });
+    });
+
+    async function runAdminAction(path, successText) {
+      adminActionRunning = true;
+      updateGameButtons();
+      try {
+        const payload = await postGame(path);
+        addLog('admin', `${successText} · ${payload.changed ?? 0}개`, 'log-info');
+        if (payload.game) {
+          currentGameState = payload.game.state || currentGameState;
+          currentCellCount = Number(payload.game.cell_count ?? currentCellCount);
+        }
+        return payload;
+      } catch (error) {
+        addLog('error', error.message, 'log-warn');
+        return null;
+      } finally {
+        adminActionRunning = false;
+        updateGameButtons();
+        void fetchStatus();
+      }
+    }
+
+    document.getElementById('btn-auto-complete').addEventListener('click', () => {
+      void runAdminAction('/api/admin/game/auto-complete', '자동완성');
+    });
+    document.getElementById('btn-collect-orbs').addEventListener('click', () => {
+      void runAdminAction('/api/admin/orbs/collect', '오브 회수');
+    });
+
+    document.querySelectorAll('[data-midi-mode]').forEach(button => {
+      button.addEventListener('click', async () => {
+        try {
+          await postMidi('/api/admin/midi/test', {
+            mode: button.dataset.midiMode,
+            voice: document.getElementById('midi-voice').value,
+            pitch: Number(document.getElementById('midi-pitch').value),
+            duration_ms: Number(document.getElementById('midi-duration').value),
+            delay_ms: Number(document.getElementById('midi-delay').value),
+          });
+          await fetchMidiStatus();
+        } catch (error) {
+          addLog('midi', error.message, 'log-warn');
+        }
+      });
+    });
+    document.getElementById('btn-midi-stop').addEventListener('click', async () => {
+      try { await postMidi('/api/admin/midi/stop'); } catch (error) {
+        addLog('midi', error.message, 'log-warn');
+      }
+      fetchMidiStatus();
+    });
+    document.getElementById('btn-midi-reconnect').addEventListener('click', async () => {
+      try {
+        renderMidiStatus(await postMidi('/api/admin/midi/reconnect'));
+        addLog('midi', '포트 재연결 완료', 'log-info');
+      } catch (error) {
+        addLog('midi', error.message, 'log-warn');
+      }
+    });
+
+    document.getElementById('control-mode-label').textContent =
+      CONTROL_MODE === 'software' ? 'Software Admin' : 'Hardware Admin';
+    buildGrid();
+    loadSnapshot();
+    fetchStatus();
+    if (CONTROL_MODE === 'software') fetchMidiStatus();
+    connectWs();
+    // 브라우저가 타이머 기준이 되지 않도록 서버 값을 1초마다 표시만 갱신한다.
+    setInterval(fetchStatus, 1000);
+    if (CONTROL_MODE === 'software') setInterval(fetchMidiStatus, 1000);
+  </script>
+</body>
+</html>
