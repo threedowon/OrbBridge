@@ -252,6 +252,8 @@ def _state_payload(snapshot: dict, previous_state: str | None = None) -> list:
 
 def _on_state_change(previous: str, current: str, snapshot: dict) -> None:
     """기준 상태 전이 하나를 발행하고 유효하지 않은 재생을 중단한다."""
+    # 타이머 만료처럼 tick 이 만든 전이도 표시등에 반영한다.
+    _sync_dfesta_led(snapshot)
     with _scheduler_lock:
         scheduler = _playback_scheduler
     playback = scheduler.snapshot() if scheduler is not None else {}
@@ -282,9 +284,6 @@ def _on_state_change(previous: str, current: str, snapshot: dict) -> None:
     reason = snapshot.get("end_reason") or ""
     print(f"[state] {previous} → {current}{f' ({reason})' if reason else ''}")
     _publish_web_event("/game/state", _state_payload(snapshot, previous))
-    # 타이머 만료처럼 tick 이 만든 전이도 표시등에 반영한다. 시리얼 전송이
-    # tick 스레드를 붙잡지 않도록 재생 취소·발행을 모두 마친 뒤에 보낸다.
-    _sync_dfesta_led(snapshot)
 
 
 def get_game_runtime() -> GameRuntime:
