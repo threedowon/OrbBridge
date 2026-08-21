@@ -724,6 +724,20 @@ def request_dfesta() -> dict:
         print("[game] 디페스타 무시 — 타이머 만료")
         return {"ok": False, "ignored": True, "game": snapshot}
 
+    # press_dfesta 는 정답이 완성된 경우에만 True 를 준다. 버튼 입력 자체는
+    # 위에서 이미 엔진에 전달돼 Idle 타이머와 연속 입력 횟수에 반영됐으므로,
+    # 여기서는 재생만 막는다. (admin UI 의 isDFestaActive 와 같은 조건)
+    counted = bool(runtime_result.value)
+    if not counted:
+        snapshot = _publish_transition(runtime_result)
+        print("[game] 디페스타 재생 무시 — 정답 오브가 다 올라오지 않음")
+        return {
+            "ok": False,
+            "ignored": True,
+            "counted": False,
+            "game": snapshot,
+        }
+
     print("[game] 디페스타")
     try:
         playback = _start_playback(PlaybackMode.DFESTA)
@@ -731,7 +745,7 @@ def request_dfesta() -> dict:
         snapshot = _publish_transition(runtime_result)
     return {
         "ok": True,
-        "counted": bool(runtime_result.value),
+        "counted": counted,
         "playback": playback,
         "game": snapshot,
     }
