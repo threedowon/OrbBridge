@@ -577,6 +577,22 @@
         </div>
       </div>
 
+      <div class="led-section hardware-only">
+        <div class="section-title">슬레이브 LED 이펙트</div>
+        <div class="toolbar">
+          <button data-led-effect="0">일반 복귀</button>
+          <button data-led-effect="1">흰색</button>
+          <button data-led-effect="2">끄기</button>
+          <button data-led-effect="3">빨강</button>
+          <button data-led-effect="4">초록</button>
+          <button data-led-effect="5">파랑</button>
+          <button data-led-effect="6">무지개</button>
+          <button data-led-effect="7">체이스</button>
+          <button data-led-effect="8">숨쉬기</button>
+          <button data-led-effect="9">무지개 회전</button>
+        </div>
+      </div>
+
       <div class="game-section software-only">
         <div class="section-title">게임 제어</div>
         <div class="toolbar">
@@ -1068,6 +1084,22 @@
       if (!res.ok) throw new Error(payload.error || `HTTP ${res.status}`);
       return payload;
     }
+
+    // 슬레이브 링 LED 이펙트: 마스터로 'C<n>' 이 나가 RS485 로 브로드캐스트된다.
+    document.querySelectorAll('[data-led-effect]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const effect = Number(button.dataset.ledEffect);
+        button.disabled = true;
+        try {
+          await postGame('/api/admin/led', { effect });
+          addLog('led', `이펙트 ${effect} · ${button.textContent}`, 'log-info');
+        } catch (error) {
+          addLog('error', `LED 이펙트 실패: ${error.message}`, 'log-warn');
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
 
     // 관객 화면에는 제어 버튼을 두지 않고 Admin만 게임 상태를 변경한다.
     document.querySelectorAll('[data-game-action]').forEach(button => {

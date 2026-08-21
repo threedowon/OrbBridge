@@ -56,6 +56,7 @@ def start_http_server(
     on_game_dfesta=None,
     on_admin_collect_orbs=None,
     on_admin_auto_complete=None,
+    on_admin_led_effect=None,
 ) -> None:
     host = cfg.get("host", "127.0.0.1")
     port = cfg.get("port", 8080)
@@ -284,6 +285,11 @@ def start_http_server(
 
             if self.path == "/api/admin/game/auto-complete":
                 self._run_callback(on_admin_auto_complete)
+                return
+
+            if self.path == "/api/admin/led":
+                # 슬레이브 링 LED 이펙트 브로드캐스트 (0-9)
+                self._run_callback(on_admin_led_effect, data.get("effect", 0))
                 return
 
             if self.path == "/api/admin/midi/reconnect":

@@ -750,6 +750,31 @@ def request_dfesta() -> dict:
         "game": snapshot,
     }
 
+LED_EFFECT_MIN = 0
+LED_EFFECT_MAX = 9
+
+
+def send_led_effect(effect) -> dict:
+    """마스터에 'C<n>' 을 보내 슬레이브 링 LED 이펙트를 브로드캐스트한다.
+
+    마스터가 RS485 로 5회 반복 전송하므로 서버는 한 번만 보낸다.
+    """
+
+    try:
+        value = int(effect)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("effect must be an integer") from exc
+    if not (LED_EFFECT_MIN <= value <= LED_EFFECT_MAX):
+        raise ValueError(
+            f"effect must be {LED_EFFECT_MIN}-{LED_EFFECT_MAX}, got {value}"
+        )
+
+    if not _serial_writer.send_line(f"C{value}"):
+        raise RuntimeError("마스터 미연결 — 시리얼 포트를 확인하세요")
+    print(f"[led] 이펙트 {value} 전송")
+    return {"ok": True, "effect": value}
+
+
 def handle_serial_message(event: dict) -> None:
     """USB/serial 한 줄 JSON — orb 이벤트 또는 game 버튼."""
     t = event.get("type")
@@ -1086,6 +1111,7 @@ def run_main() -> None:
         on_game_listen=request_listen,
         on_game_play=request_play,
         on_game_dfesta=request_dfesta,
+        on_admin_led_effect=send_led_effect,
         on_admin_collect_orbs=collect_all_orbs,
         on_admin_auto_complete=auto_complete_game,
     )
