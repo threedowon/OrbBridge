@@ -306,12 +306,14 @@ def test_listen_play_and_dfesta_use_python_scheduler():
         listen = main.request_listen()
 
         assert play["ok"] is True
-        assert dfesta["ok"] is True
+        # 정답 오브가 다 올라오지 않았으면 DFesta 는 재생하지 않는다.
+        assert dfesta["ok"] is False
+        assert dfesta["ignored"] is True
         assert dfesta["counted"] is False
         assert listen["ok"] is True
         assert [
             call["mode"] for call in main._playback_scheduler.starts
-        ] == ["listen", "play", "dfesta", "listen"]
+        ] == ["listen", "play", "listen"]
         assert activity_calls == [True, True]
 
         # 명령 전용 전송은 제거했다. 브라우저는 Scheduler 재생 이벤트와
