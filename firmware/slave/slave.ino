@@ -30,12 +30,8 @@
 // 접촉 불량으로 OneWire 읽기가 잠깐 실패해도 제거로 보지 않는다.
 // 이 시간 동안 계속 못 읽어야 실제 제거로 인정한다. loop 주기가 LED
 // 이펙트·RS485 트래픽에 따라 흔들리므로 횟수가 아니라 시간으로 센다.
-// 접촉이 계속 튀면 이 값을 키운다(게임 판정이 그만큼 늦어진다).
+// 접촉이 계속 튀면 이 값을 키운다(제거 반응이 그만큼 늦어진다).
 #define REMOVE_DEBOUNCE_MS 300
-
-// 링 LED 는 손을 뗀 즉시 반응해야 하므로 훨씬 짧은 창을 쓴다. 튐으로 잠깐
-// 꺼졌다가 접촉이 돌아오면 다시 켜지고, removed 프레임은 나가지 않는다.
-#define LED_OFF_DEBOUNCE_MS 60
 
 // LED 데이터선 2개. 슬롯별 LED 위치는 아래 LED_MAP 으로 배선에 맞게 직접 지정한다.
 #define RING_PIN_LOW    38     // LED 스트립 A = 슬롯 1~8  (GPIO 38)
@@ -87,7 +83,6 @@ const LedMap LED_MAP[BUS_COUNT] = {
 
 byte lastAddr[BUS_COUNT][8];
 bool hasLast[BUS_COUNT] = {false};
-bool ringOn[BUS_COUNT] = {false};         // 슬롯 링이 켜져 있는지
 bool missing[BUS_COUNT] = {false};        // 미검출 구간에 들어갔는지
 unsigned long missSinceMs[BUS_COUNT] = {0};   // 그 구간이 시작된 시각
 unsigned long lastHeartbeatMs = 0;
@@ -199,15 +194,6 @@ void setRing(int busIndex, uint32_t color) {
   strip.show();
 }
 
-// 슬롯 링 점등/소등을 한 곳에서 처리한다. 이펙트 모드에서는 링을 건드리지
-// 않지만 상태는 계속 추적해, 이펙트를 끄면 실제 배치와 다시 맞는다.
-void setSlotLed(int i, bool on) {
-  ringOn[i] = on;
-  if (ledEffect == 0) {
-    setRing(i, on ? Adafruit_NeoPixel::Color(255, 147, 41) : 0);
-  }
-}
-
 // ── LED 테스트 이펙트 ───────────────────────────────────
 void fillAll(uint32_t color) {
   for (uint16_t i = 0; i < LED_COUNT_LOW; i++)  ringLow.setPixelColor(i, color);
@@ -293,13 +279,13 @@ bool readBus(int i, byte addr[8]) {
 }
 
 void onAdded(int i, const byte addr[8]) {
-  setSlotLed(i, true);
+  if (ledEffect == 0) setRing(i, Adafruit_NeoPixel::Color(255, 147, 41));  // 일반 모드일 때만 점등
   flashRed();
   sendFrame(T_ADDED, i + 1, addr, 0);
 }
 
 void onRemoved(int i, const byte addr[8]) {
-  setSlotLed(i, false);
+  if (ledEffect == 0) setRing(i, 0);
   sendFrame(T_REMOVED, i + 1, addr, 0);
 }
 
@@ -316,22 +302,14 @@ void scanBus(int i) {
       onRemoved(i, lastAddr[i]);
       memcpy(lastAddr[i], addr, 8);
       onAdded(i, addr);
-    } else if (!ringOn[i]) {
-      setSlotLed(i, true);   // 튐으로 껐던 링을 접촉 복구와 함께 되살린다
     }
   } else if (hasLast[i]) {
-    // 짧은 읽기 실패로 removed 를 보내면 add/remove 가 반복해서 나간다.
-    // 링 LED 는 즉시 반응해야 하므로 짧은 창을, removed 프레임은 접촉 튐을
-    // 걸러야 하므로 긴 창을 쓴다.
+    // 짧은 읽기 실패로 제거를 알리면 add/remove 가 반복해서 나간다.
+    // 미검출이 REMOVE_DEBOUNCE_MS 동안 이어질 때만 실제로 빠진 것으로 본다.
     if (!missing[i]) {
       missing[i] = true;
       missSinceMs[i] = millis();
-    }
-    unsigned long gone = millis() - missSinceMs[i];
-    if (ringOn[i] && gone >= LED_OFF_DEBOUNCE_MS) {
-      setSlotLed(i, false);
-    }
-    if (gone >= REMOVE_DEBOUNCE_MS) {
+    } else if (millis() - missSinceMs[i] >= REMOVE_DEBOUNCE_MS) {
       onRemoved(i, lastAddr[i]);
       hasLast[i] = false;
       missing[i] = false;
