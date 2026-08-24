@@ -33,6 +33,9 @@
 // 접촉이 계속 튀면 이 값을 키운다(제거 반응이 그만큼 늦어진다).
 #define REMOVE_DEBOUNCE_MS 300
 
+// 링 밝기 페이드 갱신 주기. 이 간격으로만 다시 그려서 strip.show() 부담을 줄인다.
+#define FADE_STEP_MS 30
+
 // LED 데이터선 2개. 슬롯별 LED 위치는 아래 LED_MAP 으로 배선에 맞게 직접 지정한다.
 #define RING_PIN_LOW    38     // LED 스트립 A = 슬롯 1~8  (GPIO 38)
 #define RING_PIN_HIGH   39     // LED 스트립 B = 슬롯 9~16 (GPIO 39)
@@ -83,6 +86,8 @@ const LedMap LED_MAP[BUS_COUNT] = {
 
 byte lastAddr[BUS_COUNT][8];
 bool hasLast[BUS_COUNT] = {false};
+uint8_t ringLevel[BUS_COUNT] = {0};      // 슬롯 링 밝기 0-255
+unsigned long lastFadeMs[BUS_COUNT] = {0};    // 마지막 페이드 갱신 시각
 bool missing[BUS_COUNT] = {false};        // 미검출 구간에 들어갔는지
 unsigned long missSinceMs[BUS_COUNT] = {0};   // 그 구간이 시작된 시각
 unsigned long lastHeartbeatMs = 0;
@@ -194,6 +199,17 @@ void setRing(int busIndex, uint32_t color) {
   strip.show();
 }
 
+// 슬롯 링을 지정한 밝기로 그린다. 이펙트 모드에서는 링을 건드리지 않지만
+// 밝기는 계속 추적해, 이펙트를 끄면 실제 배치와 다시 맞는다.
+void setSlotLevel(int i, uint8_t level) {
+  ringLevel[i] = level;
+  if (ledEffect != 0) return;
+  setRing(i, Adafruit_NeoPixel::Color(
+    (uint8_t)((uint16_t)255 * level / 255),
+    (uint8_t)((uint16_t)147 * level / 255),
+    (uint8_t)((uint16_t)41  * level / 255)));
+}
+
 // ── LED 테스트 이펙트 ───────────────────────────────────
 void fillAll(uint32_t color) {
   for (uint16_t i = 0; i < LED_COUNT_LOW; i++)  ringLow.setPixelColor(i, color);
@@ -279,13 +295,13 @@ bool readBus(int i, byte addr[8]) {
 }
 
 void onAdded(int i, const byte addr[8]) {
-  if (ledEffect == 0) setRing(i, Adafruit_NeoPixel::Color(255, 147, 41));  // 일반 모드일 때만 점등
+  setSlotLevel(i, 255);
   flashRed();
   sendFrame(T_ADDED, i + 1, addr, 0);
 }
 
 void onRemoved(int i, const byte addr[8]) {
-  if (ledEffect == 0) setRing(i, 0);
+  setSlotLevel(i, 0);
   sendFrame(T_REMOVED, i + 1, addr, 0);
 }
 
@@ -302,6 +318,8 @@ void scanBus(int i) {
       onRemoved(i, lastAddr[i]);
       memcpy(lastAddr[i], addr, 8);
       onAdded(i, addr);
+    } else if (ringLevel[i] != 255) {
+      setSlotLevel(i, 255);   // 접촉이 돌아왔다 — 페이드를 되돌려 다시 밝힌다
     }
   } else if (hasLast[i]) {
     // 짧은 읽기 실패로 제거를 알리면 add/remove 가 반복해서 나간다.
@@ -309,11 +327,19 @@ void scanBus(int i) {
     if (!missing[i]) {
       missing[i] = true;
       missSinceMs[i] = millis();
-    } else if (millis() - missSinceMs[i] >= REMOVE_DEBOUNCE_MS) {
-      onRemoved(i, lastAddr[i]);
+      lastFadeMs[i] = 0;
+    }
+    unsigned long gone = millis() - missSinceMs[i];
+    if (gone >= REMOVE_DEBOUNCE_MS) {
+      onRemoved(i, lastAddr[i]);   // 여기서 밝기가 0 이 된다
       hasLast[i] = false;
       missing[i] = false;
       memset(lastAddr[i], 0, 8);
+    } else if (millis() - lastFadeMs[i] >= FADE_STEP_MS) {
+      // 접촉이 끊긴 순간부터 서서히 어두워져 removed 시점에 정확히 0 이 된다.
+      // 손을 떼면 곧바로 반응하면서도, 튐이면 밝기만 잠깐 내려갔다 되돌아온다.
+      setSlotLevel(i, (uint8_t)(255 - (255UL * gone / REMOVE_DEBOUNCE_MS)));
+      lastFadeMs[i] = millis();
     }
   } else {
     missing[i] = false;
