@@ -454,6 +454,7 @@ def reload_melody_data() -> None:
 _serial_writer = SerialWriter()
 _dfesta_led_lock = threading.Lock()
 _dfesta_led_state: bool | None = None   # None = 미전송(연결 직후 강제 재전송)
+_led_normal_restored = False            # 이번 실행에서 일반 모드를 되돌렸는지
 
 
 def _sync_dfesta_led(snapshot: dict) -> None:
@@ -751,6 +752,8 @@ def request_dfesta() -> dict:
 
 LED_EFFECT_MIN = 0
 LED_EFFECT_MAX = 9
+LED_EFFECT_NORMAL = 0    # 일반 모드 — 오브를 놓으면 슬레이브가 링을 켠다
+LED_EFFECT_ALL_OFF = 2   # 전체 소등 — 이펙트 모드라 오브를 놓아도 켜지지 않는다
 
 
 def send_led_effect(effect) -> dict:
@@ -772,6 +775,21 @@ def send_led_effect(effect) -> dict:
         raise RuntimeError("마스터 미연결 — 시리얼 포트를 확인하세요")
     print(f"[led] 이펙트 {value} 전송")
     return {"ok": True, "effect": value}
+
+
+def blackout_leds() -> None:
+    """서버가 내려갈 때 슬레이브 링과 디페스타 표시등을 모두 끈다.
+
+    테이블에 오브가 남아 있어도 불이 켜진 채로 방치되지 않게 한다.
+    LED_EFFECT_ALL_OFF 는 이펙트 모드라, 서버가 없는 동안 오브를 올려도
+    슬레이브가 링을 켜지 않는다.
+    """
+
+    if not _serial_writer.send_line(f"C{LED_EFFECT_ALL_OFF}"):
+        print("[led] 소등 생략 — 마스터 미연결")
+        return
+    _serial_writer.send_line("D0")
+    print("[led] 전체 소등")
 
 
 def handle_serial_message(event: dict) -> None:
@@ -1028,6 +1046,12 @@ def _update_serial_status(connected: bool, port: str, error: str) -> None:
     with _dfesta_led_lock:
         _dfesta_led_state = None
     try:
+        # 지난 종료 때 소등해 두었으므로 이번 실행의 첫 연결에서 일반 모드로 되돌린다.
+        # 재연결마다 보내면 admin 에서 지정한 이펙트를 덮어쓰므로 한 번만 보낸다.
+        global _led_normal_restored
+        if not _led_normal_restored:
+            if _serial_writer.send_line(f"C{LED_EFFECT_NORMAL}"):
+                _led_normal_restored = True
         _sync_dfesta_led(get_game_state())
     except Exception as exc:  # 표시등 실패가 입력 스레드를 죽이면 안 된다.
         print(f"[WARN] 디페스타 표시등 동기화 실패: {exc}")
@@ -1124,6 +1148,7 @@ def run_main() -> None:
     except KeyboardInterrupt:
         print("종료")
     finally:
+        blackout_leds()   # 시리얼 스레드가 포트를 닫기 전에 보내야 한다
         stop_serial_input()
         _matrix_display.close()
         stop_websocket_service()
