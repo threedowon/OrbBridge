@@ -5,7 +5,8 @@
  *   - CRC 검증 후 JSON 으로 변환해 PC USB Serial 로 relay (PC 포맷 무변경)
  *   - 깨진 프레임은 CRC 불일치로 버림 + 다음 STX 로 resync.
  * USB Serial → PC (main.py), 115200
- * 버튼: 다시듣기(40) / 시작(41) / 디페스타(42) (INPUT_PULLUP — 핀↔GND, 외부저항 불필요)
+ * 버튼: 다시듣기(40) / 재생(41) / 디페스타(42) (INPUT_PULLUP — 핀↔GND, 외부저항 불필요)
+ * 홀 센서: 시작(5, 6) — 두 개 모두 자석을 감지하는 순간에만 start 를 한 번 보낸다.
  * 출력: 디페스타 LED(39) — PC(main.py)가 '정답 완성' 상태를 D1/D0 명령으로 지시.
  *        정답 유지 중 HIGH, 오답/게임종료 시 LOW.
  *
@@ -28,6 +29,14 @@
 #define PIN_DFESTA_OUT   39   // 디페스타 출력(LED) — PC 명령(D1/D0)으로 HIGH/LOW
 #define BTN_COOLDOWN     350
 
+// 시작용 홀 센서 2개. 둘 다 자석을 감지해야 start 가 나간다.
+#define PIN_HALL_START_A 5
+#define PIN_HALL_START_B 6
+// 디지털 홀 IC(A3144·US1881 등)는 오픈컬렉터라 자석을 감지하면 LOW 를 낸다.
+// 감지 시 HIGH 를 내는 센서를 쓰면 0 으로 바꾼다.
+#define HALL_ACTIVE_LOW  1
+#define HALL_DEBOUNCE_MS 50   // 감지 경계에서 값이 떨리는 것을 걸러낸다
+
 #define FRAME_LEN 13
 #define STX       0x02
 #define T_ADDED   1
@@ -43,6 +52,9 @@ unsigned long lastListenMs = 0;
 bool playWasDown = false;
 bool dfestaWasDown = false;
 bool listenWasDown = false;
+bool hallBothOn = false;             // 확정된 상태 — 두 센서 모두 감지 중인가
+bool hallRawBoth = false;            // 직전 raw 판독
+unsigned long hallRawChangedMs = 0;  // raw 가 바뀐 시각
 unsigned long ledOffAt = 0;
 
 // 진단
@@ -105,6 +117,28 @@ void pollButtons() {
   pollButton(PIN_BTN_PLAY, playWasDown, lastPlayMs, "play");
   pollButton(PIN_BTN_DFESTA, dfestaWasDown, lastDfestaMs, "dfesta");
   pollButton(PIN_BTN_LISTEN, listenWasDown, lastListenMs, "listen");
+}
+
+bool hallDetected(int pin) {
+  const bool high = digitalRead(pin) == HIGH;
+  return HALL_ACTIVE_LOW ? !high : high;
+}
+
+// 두 홀 센서가 모두 자석을 감지하는 순간에만 start 를 한 번 보낸다.
+// 붙어 있는 동안에는 반복 전송하지 않고, 하나라도 떨어지면 다시 무장된다.
+void pollHallStart() {
+  const bool raw =
+      hallDetected(PIN_HALL_START_A) && hallDetected(PIN_HALL_START_B);
+  const unsigned long now = millis();
+  if (raw != hallRawBoth) {   // 막 바뀐 값 — 안정될 때까지 확정하지 않는다
+    hallRawBoth = raw;
+    hallRawChangedMs = now;
+    return;
+  }
+  if (now - hallRawChangedMs < HALL_DEBOUNCE_MS) return;
+  if (raw == hallBothOn) return;
+  hallBothOn = raw;
+  if (raw) sendGameAction("start");
 }
 
 // 유효 프레임 → JSON 변환해 PC 로 relay
@@ -205,6 +239,14 @@ void setup() {
   pinMode(PIN_BTN_DFESTA, INPUT_PULLUP);
   pinMode(PIN_BTN_LISTEN, INPUT_PULLUP);
 
+  pinMode(PIN_HALL_START_A, INPUT_PULLUP);
+  pinMode(PIN_HALL_START_B, INPUT_PULLUP);
+  // 부팅 시 이미 자석이 놓여 있어도 start 가 나가지 않도록 현재 상태를 기준으로 잡는다.
+  hallBothOn =
+      hallDetected(PIN_HALL_START_A) && hallDetected(PIN_HALL_START_B);
+  hallRawBoth = hallBothOn;
+  hallRawChangedMs = millis();
+
   pinMode(PIN_DFESTA_OUT, OUTPUT);
   digitalWrite(PIN_DFESTA_OUT, LOW);   // 시작 시 LED 꺼짐
 
@@ -219,6 +261,7 @@ void loop() {
   pollRs485();
   pollUsbCommand();   // PC → RS485 LED 명령 전달
   pollButtons();
+  pollHallStart();
   updateLed();
 
   if (millis() - lastDebugMs >= 2000) {
