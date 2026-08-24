@@ -27,9 +27,11 @@
 #define SLAVE_ID     6      // 보드마다 고유하게 (1,2,3…)
 #define HEARTBEAT_MS 2000
 
-// 접촉 불량으로 OneWire 읽기가 한 번 실패해도 제거로 보지 않는다.
-// 연속으로 이만큼 못 읽어야 실제 제거로 인정한다(16버스 1사이클 ≈ 20-40ms).
-#define REMOVE_MISS_COUNT 3
+// 접촉 불량으로 OneWire 읽기가 잠깐 실패해도 제거로 보지 않는다.
+// 이 시간 동안 계속 못 읽어야 실제 제거로 인정한다. loop 주기가 LED
+// 이펙트·RS485 트래픽에 따라 흔들리므로 횟수가 아니라 시간으로 센다.
+// 접촉이 계속 튀면 이 값을 키운다(제거 반응이 그만큼 늦어진다).
+#define REMOVE_DEBOUNCE_MS 300
 
 // LED 데이터선 2개. 슬롯별 LED 위치는 아래 LED_MAP 으로 배선에 맞게 직접 지정한다.
 #define RING_PIN_LOW    38     // LED 스트립 A = 슬롯 1~8  (GPIO 38)
@@ -81,7 +83,8 @@ const LedMap LED_MAP[BUS_COUNT] = {
 
 byte lastAddr[BUS_COUNT][8];
 bool hasLast[BUS_COUNT] = {false};
-uint8_t missCount[BUS_COUNT] = {0};   // 연속 미검출 횟수 (제거 판정용)
+bool missing[BUS_COUNT] = {false};        // 미검출 구간에 들어갔는지
+unsigned long missSinceMs[BUS_COUNT] = {0};   // 그 구간이 시작된 시각
 unsigned long lastHeartbeatMs = 0;
 unsigned long lastBusRxMs = 0;
 unsigned long ledOffAt = 0;
@@ -290,7 +293,7 @@ void scanBus(int i) {
   byte addr[8];
   bool present = readBus(i, addr);
   if (present) {
-    missCount[i] = 0;
+    missing[i] = false;
     if (!hasLast[i]) {
       memcpy(lastAddr[i], addr, 8);
       hasLast[i] = true;
@@ -301,16 +304,19 @@ void scanBus(int i) {
       onAdded(i, addr);
     }
   } else if (hasLast[i]) {
-    // 단발 읽기 실패로 제거를 알리면 add/remove 가 반복해서 나간다.
-    // 연속 미검출이 쌓였을 때만 실제로 빠진 것으로 본다.
-    if (++missCount[i] >= REMOVE_MISS_COUNT) {
+    // 짧은 읽기 실패로 제거를 알리면 add/remove 가 반복해서 나간다.
+    // 미검출이 REMOVE_DEBOUNCE_MS 동안 이어질 때만 실제로 빠진 것으로 본다.
+    if (!missing[i]) {
+      missing[i] = true;
+      missSinceMs[i] = millis();
+    } else if (millis() - missSinceMs[i] >= REMOVE_DEBOUNCE_MS) {
       onRemoved(i, lastAddr[i]);
       hasLast[i] = false;
+      missing[i] = false;
       memset(lastAddr[i], 0, 8);
-      missCount[i] = 0;
     }
   } else {
-    missCount[i] = 0;
+    missing[i] = false;
   }
 }
 
