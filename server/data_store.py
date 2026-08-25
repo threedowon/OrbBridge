@@ -13,7 +13,6 @@ VOICE_RE = re.compile(r"^([a-z0-9]+)_(\d+)$", re.I)
 DATA_DIR = data_dir()
 CONFIG_PATH = DATA_DIR / "config.json"
 MAPPING_PATH = DATA_DIR / "orb_mapping.json"
-ORB_SEEN_PATH = DATA_DIR / "orb_last_seen.json"
 
 
 def ensure_register_data() -> None:
@@ -41,39 +40,6 @@ def save_config(config: dict, path: Path | None = None) -> None:
     temporary = target.with_suffix(target.suffix + ".tmp")
     temporary.write_text(
         json.dumps(config, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    temporary.replace(target)
-
-
-def load_orb_last_seen(path: Path | None = None) -> dict:
-    """오브별 마지막 인식 기록을 읽는다.
-
-    점검용 보조 기록이라 파일이 없거나 깨져 있어도 운영을 막지 않고
-    빈 기록으로 시작한다.
-    """
-    target = path or ORB_SEEN_PATH
-    if not target.is_file():
-        return {}
-    try:
-        with target.open(encoding="utf-8") as source:
-            document = json.load(source)
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"[orb] 인식 기록을 읽지 못해 새로 시작한다: {exc}")
-        return {}
-    return document if isinstance(document, dict) else {}
-
-
-def save_orb_last_seen(records: dict, path: Path | None = None) -> None:
-    """오브별 마지막 인식 기록을 원자적으로 저장한다."""
-
-    if not isinstance(records, dict):
-        raise ValueError("records must be an object")
-    target = path or ORB_SEEN_PATH
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_suffix(target.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(records, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     temporary.replace(target)

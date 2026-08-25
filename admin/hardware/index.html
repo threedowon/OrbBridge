@@ -359,46 +359,6 @@
       padding: 4px 2px;
     }
 
-    .orb-health-summary { color: var(--muted); font-size: 12px; align-self: center; }
-
-    .orb-health-list {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      margin-top: 8px;
-      max-height: 260px;
-      overflow-y: auto;
-    }
-
-    .orb-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 5px 10px;
-      font-size: 12px;
-    }
-
-    /* 오래 안 잡힌 오브일수록 눈에 띄게 — 고장 후보를 위에서 바로 찾는다. */
-    .orb-row.stale { border-color: var(--warn); }
-    .orb-row.never { border-color: var(--err); }
-    .orb-row .name { font-weight: 600; min-width: 5em; }
-    .orb-row .voice { color: var(--muted); }
-    .orb-row .uid {
-      color: var(--muted);
-      font-size: 11px;
-      font-family: "Cascadia Code", "Consolas", monospace;
-    }
-    .orb-row .seen {
-      margin-left: auto;
-      font-size: 11px;
-      font-family: "Cascadia Code", "Consolas", monospace;
-    }
-    .orb-row.stale .seen { color: var(--warn); }
-    .orb-row.never .seen { color: var(--err); }
-
     .toolbar {
       display: flex;
       gap: 8px;
@@ -631,15 +591,6 @@
           <button data-led-effect="8">숨쉬기</button>
           <button data-led-effect="9">무지개 회전</button>
         </div>
-      </div>
-
-      <div class="orb-health-section hardware-only">
-        <div class="section-title">오브 점검</div>
-        <div class="toolbar">
-          <button id="btn-orb-health">인식 이력 새로고침</button>
-          <span class="orb-health-summary" id="orb-health-summary">아직 조회하지 않음</span>
-        </div>
-        <div class="orb-health-list" id="orb-health-list"></div>
       </div>
 
       <div class="game-section software-only">
@@ -1149,58 +1100,6 @@
         }
       });
     });
-
-    // 오브 점검: 마지막으로 인식된 시각을 오래된 순으로 보여준다. 고장난 오브는
-    // 나머지가 계속 인식되는 동안 혼자 기록이 멈추므로 목록 맨 위에 남는다.
-    const orbHealthListEl = document.getElementById('orb-health-list');
-    const orbHealthSummaryEl = document.getElementById('orb-health-summary');
-
-    function fmtAge(ms) {
-      if (ms === null || ms === undefined) return '기록 없음';
-      const min = ms / 60000;
-      if (min < 1) return '방금';
-      if (min < 60) return `${Math.floor(min)}분 전`;
-      const hr = min / 60;
-      if (hr < 24) return `${Math.floor(hr)}시간 전`;
-      return `${Math.floor(hr / 24)}일 전`;
-    }
-
-    async function refreshOrbHealth() {
-      try {
-        const res = await fetch('/api/admin/orbs/health', { cache: 'no-store' });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        const orbs = data.orbs || [];
-        orbHealthListEl.innerHTML = '';
-        // 가장 최근 인식을 기준으로 삼아, 유독 뒤처진 오브만 표시를 강조한다.
-        const newest = orbs.reduce(
-          (best, o) => (o.last_seen && (!best || o.last_seen > best) ? o.last_seen : best), null);
-        for (const o of orbs) {
-          const row = document.createElement('div');
-          const behindMs = o.last_seen && newest ? newest - o.last_seen : null;
-          const cls = o.last_seen === null ? 'never'
-            : (behindMs !== null && behindMs > 3600000 ? 'stale' : '');
-          row.className = `orb-row ${cls}`.trim();
-          row.innerHTML =
-            `<span class="name">${o.label}</span>` +
-            `<span class="voice">${o.voice}</span>` +
-            `<span class="uid">${o.orb_id}</span>` +
-            `<span class="seen">${fmtAge(o.age_ms)} · ${o.count}회</span>`;
-          orbHealthListEl.appendChild(row);
-        }
-        const parts = [`등록 ${data.total}개`];
-        if (data.never_seen) parts.push(`한 번도 인식 안 됨 ${data.never_seen}개`);
-        if ((data.unknown || []).length) parts.push(`미등록 UID ${data.unknown.length}개`);
-        orbHealthSummaryEl.textContent = parts.join(' · ');
-        addLog('orb', `점검 조회 · ${parts.join(' · ')}`, 'log-info');
-      } catch (error) {
-        orbHealthSummaryEl.textContent = `조회 실패: ${error.message}`;
-        addLog('error', `오브 점검 실패: ${error.message}`, 'log-warn');
-      }
-    }
-
-    document.getElementById('btn-orb-health')
-      .addEventListener('click', refreshOrbHealth);
 
     // 관객 화면에는 제어 버튼을 두지 않고 Admin만 게임 상태를 변경한다.
     document.querySelectorAll('[data-game-action]').forEach(button => {

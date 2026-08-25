@@ -3,14 +3,7 @@ import time
 from copy import deepcopy
 
 from server.app_paths import ensure_data_files, melodies_dir
-from server.data_store import (
-    find_orb,
-    load_config,
-    load_mapping,
-    load_orb_last_seen,
-    normalize_id,
-    save_orb_last_seen,
-)
+from server.data_store import find_orb, load_config, load_mapping
 from server.game.game_engine import (
     EndReason,
     GameEngine,
@@ -27,7 +20,6 @@ from server.game.melody_manager import (
 )
 from server.game.scheduler import PlaybackMode, PlaybackScheduler, parse_melody
 from server.inout.serial_io import SerialWriter, run_serial_loop
-from server.voice_catalog import load_voice_catalog
 
 ensure_data_files()
 
@@ -91,14 +83,6 @@ _websocket_service = None
 SLAVE_ONLINE_TIMEOUT_S = 8.0
 _slaves: dict[int, dict] = {}
 
-# ── 오브 인식 이력 (고장 오브 추적) ────────────────────
-# 오브가 인식될 때마다 UID 별 마지막 시각을 남긴다. 고장난 오브는 다른 오브가
-# 계속 인식되는 동안 혼자 기록이 멈추므로, 전부 다시 인식시켜 볼 필요 없이
-# '가장 오래 안 잡힌 오브'로 바로 좁혀진다. 재시작해도 남도록 파일에 보관한다.
-_orb_seen: dict[str, dict] = {}
-_orb_seen_dirty = False
-ORB_SEEN_SAVE_INTERVAL_S = 30.0
-
 # 유효 slave ID 범위. 이 밖(예: 충돌로 깨진 slave:0)의 메시지는 폐기해
 # admin 에 '유령 슬레이브'가 잡히지 않게 한다. 보드가 늘면 MAX 만 올리면 됨.
 SLAVE_ID_MIN = 1
@@ -139,91 +123,6 @@ def _touch_slave(slave_id: int, *, heartbeat: bool) -> None:
             s["heartbeat_count"] += 1
         else:
             s["msg_count"] += 1
-
-
-def _touch_orb(orb_id: str) -> None:
-    """오브가 인식될 때마다 마지막 시각과 누적 횟수를 갱신한다."""
-
-    global _orb_seen_dirty
-    key = str(orb_id or "").strip()
-    if not key:
-        return
-    now = time.time() * 1000
-    with _state_lock:
-        record = _orb_seen.get(key)
-        if record is None:
-            record = {"first_seen": now, "last_seen": now, "count": 0}
-            _orb_seen[key] = record
-        record["last_seen"] = now
-        record["count"] = int(record.get("count", 0)) + 1
-        _orb_seen_dirty = True
-
-
-def flush_orb_seen(force: bool = False) -> None:
-    """바뀐 인식 기록을 파일에 반영한다. 바뀐 게 없으면 아무것도 하지 않는다."""
-
-    global _orb_seen_dirty
-    with _state_lock:
-        if not _orb_seen_dirty and not force:
-            return
-        snapshot = {key: dict(value) for key, value in _orb_seen.items()}
-        _orb_seen_dirty = False
-    try:
-        save_orb_last_seen(snapshot)
-    except OSError as exc:  # 점검용 기록이라 저장 실패가 운영을 막지 않는다.
-        print(f"[orb] 인식 기록 저장 실패: {exc}")
-
-
-def get_orb_health() -> dict:
-    """등록된 오브의 마지막 인식 시각을 오래된 순으로 돌려준다.
-
-    고장난 오브는 나머지가 계속 인식되는 동안 혼자 기록이 멈추므로 목록
-    맨 위에 남는다. 48개를 전부 다시 인식시켜 보지 않아도 후보가 좁혀진다.
-    """
-
-    mapping = load_mapping()
-    voices = load_voice_catalog().get("voices", {})
-    now = time.time() * 1000
-    with _state_lock:
-        seen = {key: dict(value) for key, value in _orb_seen.items()}
-
-    orbs = []
-    for orb_id, entry in mapping.items():
-        voice = str((entry or {}).get("voice") or "")
-        labels = (voices.get(voice) or {}).get("labels") or {}
-        record = seen.get(orb_id) or {}
-        last = record.get("last_seen")
-        orbs.append({
-            "orb_id": orb_id,
-            "voice": voice,
-            "label": labels.get("kr") or labels.get("en") or voice,
-            "last_seen": last,
-            "age_ms": None if last is None else now - last,
-            "count": int(record.get("count", 0)),
-        })
-    # 한 번도 인식된 적 없는 오브를 맨 앞에, 그 다음은 오래된 순.
-    orbs.sort(key=lambda o: (o["last_seen"] is not None, o["last_seen"] or 0))
-
-    # mapping 에 없는 UID — 칩이 바뀌었거나 등록되지 않은 오브다.
-    unknown = [
-        {
-            "orb_id": key,
-            "last_seen": value.get("last_seen"),
-            "count": int(value.get("count", 0)),
-        }
-        for key, value in seen.items()
-        if key not in mapping
-    ]
-    unknown.sort(key=lambda o: o["last_seen"] or 0, reverse=True)
-
-    return {
-        "ok": True,
-        "now": now,
-        "total": len(orbs),
-        "never_seen": sum(1 for o in orbs if o["last_seen"] is None),
-        "orbs": orbs,
-        "unknown": unknown,
-    }
 
 
 def _slave_list_locked(now: float) -> list:
@@ -966,12 +865,6 @@ def handle_event(event: dict) -> dict:
     q_actual = q + (slave - 1) * 2
 
     if t == "added":
-        # 등록 여부와 무관하게 인식 이력을 남긴다. 등록된 오브는 고장 추적에,
-        # 등록되지 않은 UID 는 '칩이 바뀐 오브' 판별에 쓰인다.
-        try:
-            _touch_orb(orb_key or normalize_id(orb_id))
-        except ValueError:
-            _touch_orb(orb_id)   # 정규화할 수 없는 ID 도 원문 그대로 남긴다
         if orb is None:
             print(f"[WARN] 알 수 없는 ID: {orb_id}")
             runtime_result = runtime.add_orb(
@@ -1235,7 +1128,6 @@ def run_main() -> None:
         get_melody=get_active_melody,
         get_cells=get_cells,
         get_events=get_events,
-        get_orb_health=get_orb_health,
         on_game_start=start_game,
         on_game_end=end_game,
         on_game_reset=reset_game,
@@ -1249,24 +1141,14 @@ def run_main() -> None:
 
     start_serial_input()
 
-    # 지난 실행까지의 오브 인식 이력을 이어받는다.
-    _orb_seen.update(load_orb_last_seen())
-    print(f"[orb] 인식 이력 {len(_orb_seen)}건 로드")
-
     try:
-        last_orb_save = time.monotonic()
         while True:
             _matrix_display.update(get_game_state())
-            # 매 인식마다 쓰지 않고 주기적으로 모아서 저장한다.
-            if time.monotonic() - last_orb_save >= ORB_SEEN_SAVE_INTERVAL_S:
-                flush_orb_seen()
-                last_orb_save = time.monotonic()
             time.sleep(1)
     except KeyboardInterrupt:
         print("종료")
     finally:
         blackout_leds()   # 시리얼 스레드가 포트를 닫기 전에 보내야 한다
-        flush_orb_seen(force=True)
         stop_serial_input()
         _matrix_display.close()
         stop_websocket_service()

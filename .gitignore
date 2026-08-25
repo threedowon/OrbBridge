@@ -41,6 +41,3 @@ dist/
 # Ableton 자동 생성 파일 (샘플 분석 캐시·프로젝트 자동 백업)
 *.asd
 audioengine/ableton_main/Backup/
-
-# 실행 중 쌓이는 오브 인식 이력 (점검용 로컬 기록)
-data/orb_last_seen.json
