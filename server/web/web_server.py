@@ -48,6 +48,7 @@ def start_http_server(
     get_melody: Callable[[], dict] | None = None,
     get_cells: Callable[[], dict] | None = None,
     get_events: Callable[[], list] | None = None,
+    get_orb_health: Callable[[], dict] | None = None,
     on_game_start=None,
     on_game_end=None,
     on_game_reset=None,
@@ -177,6 +178,10 @@ def start_http_server(
 
             if path == "/api/events" and get_events:
                 self._json(200, get_events())
+                return
+
+            if path == "/api/admin/orbs/health" and get_orb_health:
+                self._json(200, get_orb_health())
                 return
 
             if path in ("/admin", "/admin/", "/admin/hardware", "/admin/hardware/"):
