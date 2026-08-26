@@ -88,6 +88,12 @@ _slaves: dict[int, dict] = {}
 SLAVE_ID_MIN = 1
 SLAVE_ID_MAX = 99
 
+# 오브를 올린 직후 곧바로 들어오는 removed 는 접촉이 덜 잡힌 것이지 실제로 뺀
+# 것이 아니다. added 로부터 이 시간 안에 온 removed 는 무시한다.
+# 정말로 뺀 경우라면 heartbeat 점유 마스크 자가복구가 몇 초 안에 칸을 비운다.
+QUICK_REMOVE_IGNORE_MS = 1000.0
+_cell_added_at: dict[str, float] = {}
+
 
 def _cell_key(slave: int, cell: int) -> str:
     return f"{slave}:{cell}"
@@ -99,6 +105,27 @@ def _record_event(entry: dict) -> None:
         _event_log.append(entry)
         if len(_event_log) > EVENT_LOG_LIMIT:
             del _event_log[: len(_event_log) - EVENT_LOG_LIMIT]
+
+
+def _mark_cell_added(slave: int, cell: int) -> None:
+    """removed 가 너무 빨리 오는지 재려고 배치 시각을 남긴다."""
+    with _state_lock:
+        _cell_added_at[_cell_key(slave, cell)] = time.time() * 1000
+
+
+def _is_quick_remove(slave: int, cell: int) -> float | None:
+    """배치 직후의 removed 면 경과 ms 를, 아니면 None 을 준다.
+
+    판정과 동시에 기록을 지운다. 무시된 removed 뒤에 또 removed 가 와도
+    같은 배치 시각으로 계속 무시되지 않게 하려는 것이다.
+    """
+    key = _cell_key(slave, cell)
+    with _state_lock:
+        added_at = _cell_added_at.pop(key, None)
+    if added_at is None:
+        return None
+    elapsed = time.time() * 1000 - added_at
+    return elapsed if elapsed < QUICK_REMOVE_IGNORE_MS else None
 
 
 def _touch_slave(slave_id: int, *, heartbeat: bool) -> None:
@@ -840,6 +867,25 @@ def handle_serial_message(event: dict) -> None:
             except (TypeError, ValueError):
                 pass  # 잘못된 점유 마스크는 자가복구만 건너뛴다.
         return
+
+    # 접촉 불량 보정은 하드웨어 입력에만 건다. admin 테이블 시뮬레이터가 쓰는
+    # /api/event 는 접촉이라는 게 없으므로 handle_event 가 아니라 여기서 거른다.
+    try:
+        cell = int(event.get("cell"))
+    except (TypeError, ValueError):
+        cell = None
+    if sid is not None and cell is not None:
+        if t == "removed":
+            elapsed_ms = _is_quick_remove(sid, cell)
+            if elapsed_ms is not None:
+                print(
+                    f"[removed] 무시 — slave={sid} cell={cell} "
+                    f"배치 {elapsed_ms:.0f}ms 만에 removed (접촉 불량 추정)"
+                )
+                return
+        elif t == "added":
+            _mark_cell_added(sid, cell)
+
     handle_event(event)
 
 # ── 이벤트 처리 ────────────────────────────────────────
