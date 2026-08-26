@@ -1070,7 +1070,7 @@ def run_gui(
     mgr.start()
     app = RegisterApp(state, mgr, default_port)
     try:
-        from roster_tracker import open_roster_tracker
+        from tools.roster_tracker import open_roster_tracker
 
         open_roster_tracker(app.root, state)
     except Exception as exc:  # 트래커 실패해도 등록 도구는 정상 동작
