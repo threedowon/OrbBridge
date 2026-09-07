@@ -12,19 +12,28 @@
  *   heartbeat 는 CELL=0, UID 자리 첫 2바이트에 state(비트마스크) 저장
  *   CRC8 = crc8(frame[1..11])
  *
- * RS485 핀·속도: TX=20, RX=21, 9600 8N1
+ * RS485 핀·속도: TX=39, RX=40, DE=42(하드웨어 RTS), 115200 8N1
+ * 보드 ID: DIP 스위치 3개(41/47/21)로 1~7. 6장 전부 같은 바이너리를 굽고
+ *          DIP 만 다르게 맞춘다. 0 이면 미설정 — 부팅 시 경고.
  */
 
 #include <OneWire.h>
 #include <Adafruit_NeoPixel.h>
 #include <HardwareSerial.h>
 
-#define TX_PIN       20
-#define RX_PIN       21
-#define RGB_PIN      48
+#define TX_PIN       39
+#define RX_PIN       40
+#define DE_PIN       42     // RS485 송수신 전환 — 하드웨어 RTS 가 직접 제어한다
+#define RGB_PIN      48     // 온보드 RGB (DevKit v1.0 기준. v1.1 은 38 이라 링2와 충돌)
 #define LED_BRIGHTNESS 32
-#define RS485_BAUD   9600
-#define SLAVE_ID     6      // 보드마다 고유하게 (1,2,3…)
+#define RS485_BAUD   115200
+
+// 보드 ID DIP 스위치 (INPUT_PULLUP — 스위치 ON 이면 GND 로 떨어져 LOW)
+#define PIN_DIP_1    41     // +1
+#define PIN_DIP_2    47     // +2
+#define PIN_DIP_3    21     // +4
+uint8_t slaveId = 0;        // setup 에서 DIP 로 결정한다
+
 #define HEARTBEAT_MS 2000
 
 // 접촉 불량으로 OneWire 읽기가 잠깐 실패해도 제거로 보지 않는다.
@@ -37,8 +46,8 @@
 #define FADE_STEP_MS 30
 
 // LED 데이터선 2개. 슬롯별 LED 위치는 아래 LED_MAP 으로 배선에 맞게 직접 지정한다.
-#define RING_PIN_LOW    38     // LED 스트립 A = 슬롯 1~8  (GPIO 38)
-#define RING_PIN_HIGH   39     // LED 스트립 B = 슬롯 9~16 (GPIO 39)
+#define RING_PIN_LOW    2      // LED 체인 1 = 슬롯 1~8  (GPIO 2)
+#define RING_PIN_HIGH   38     // LED 체인 2 = 슬롯 9~16 (GPIO 38)
 #define LEDS_PER_RING   10     // 슬롯당 LED 수
 #define LED_COUNT_LOW   80     // 스트립 A 총 LED 수 (슬롯 1~8 = 8×10)
 #define LED_COUNT_HIGH  80     // 스트립 B 총 LED 수 (슬롯 9~16 = 8×10)
@@ -47,9 +56,15 @@
 
 #define DEBUG_USB    0
 
-// Carrier-sense
-#define BUS_IDLE_MS  4
+// Carrier-sense (115200 에서는 한 프레임이 ~1.1ms 라 4ms 는 과하게 길다)
+#define BUS_IDLE_MS  1
 #define CS_MAX_TRIES 20
+
+// added·removed 는 유실 대비 같은 프레임을 여러 번 보낸다. 반복 사이에 랜덤
+// 간격을 둬 다른 보드와 겹치는 것을 피한다. 서버가 중복을 걸러낸다.
+#define FRAME_REPEAT       3
+#define REPEAT_GAP_MIN_MS  5
+#define REPEAT_GAP_RAND_MS 10
 
 // 바이너리 프레임
 #define FRAME_LEN 13
@@ -65,7 +80,7 @@ const int BUS_COUNT = 16;
 OneWire buses[BUS_COUNT] = {
   OneWire(4), OneWire(5), OneWire(6), OneWire(7),
   OneWire(15), OneWire(16), OneWire(17), OneWire(18),
-  OneWire(8), OneWire(3), OneWire(9), OneWire(10),
+  OneWire(8), OneWire(1), OneWire(9), OneWire(10),
   OneWire(11), OneWire(12), OneWire(13), OneWire(14)
 };
 
@@ -78,10 +93,10 @@ Adafruit_NeoPixel ringHigh(LED_COUNT_HIGH, RING_PIN_HIGH, NEO_GRB + NEO_KHZ800);
 // 인덱스 = 버스 index (0=슬롯1 … 15=슬롯16)
 struct LedMap { int8_t strip; int16_t offset; };
 const LedMap LED_MAP[BUS_COUNT] = {
-  { 0,  0}, { 0, 10}, { 0, 20}, { 0, 30},   // 슬롯 1~4  : 스트립A(GPIO38) 0/10/20/30
-  { 0, 40}, { 0, 50}, { 0, 60}, { 0, 70},   // 슬롯 5~8  : 스트립A(GPIO38) 40/50/60/70
-  { 1,  0}, { 1, 10}, { 1, 20}, { 1, 30},   // 슬롯 9~12 : 스트립B(GPIO39) 0/10/20/30
-  { 1, 40}, { 1, 50}, { 1, 60}, { 1, 70},   // 슬롯 13~16: 스트립B(GPIO39) 40/50/60/70
+  { 0,  0}, { 0, 10}, { 0, 20}, { 0, 30},   // 슬롯 1~4  : 체인1(GPIO2)  0/10/20/30
+  { 0, 40}, { 0, 50}, { 0, 60}, { 0, 70},   // 슬롯 5~8  : 체인1(GPIO2)  40/50/60/70
+  { 1,  0}, { 1, 10}, { 1, 20}, { 1, 30},   // 슬롯 9~12 : 체인2(GPIO38) 0/10/20/30
+  { 1, 40}, { 1, 50}, { 1, 60}, { 1, 70},   // 슬롯 13~16: 체인2(GPIO38) 40/50/60/70
 };
 
 byte lastAddr[BUS_COUNT][8];
@@ -164,7 +179,7 @@ void sendFrame(uint8_t type, uint8_t cell, const byte* uid, uint16_t state) {
   uint8_t f[FRAME_LEN];
   f[0] = STX;
   f[1] = type;
-  f[2] = SLAVE_ID;
+  f[2] = slaveId;
   f[3] = cell;
   if (type == T_HEART) {
     f[4] = (uint8_t)(state & 0xFF);
@@ -175,6 +190,24 @@ void sendFrame(uint8_t type, uint8_t cell, const byte* uid, uint16_t state) {
   }
   f[12] = crc8(&f[1], 11);
   csSendBytes(f, FRAME_LEN);
+}
+
+// 반복 전송 사이의 간격. 그냥 delay 하면 그동안 master 의 LED 명령을 놓치고
+// carrier-sense 기준 시각도 낡으므로, 기다리는 동안에도 버스를 계속 읽는다.
+void pumpFor(unsigned long ms) {
+  unsigned long t0 = millis();
+  while (millis() - t0 < ms) drainBus();
+}
+
+// 유실 대비 같은 프레임을 FRAME_REPEAT 번 보낸다. 서버가 중복을 걸러내므로
+// 소리나 상태가 여러 번 반영되지는 않는다.
+void sendFrameRepeated(uint8_t type, uint8_t cell, const byte* uid) {
+  for (int r = 0; r < FRAME_REPEAT; r++) {
+    sendFrame(type, cell, uid, 0);
+    if (r + 1 < FRAME_REPEAT) {
+      pumpFor(REPEAT_GAP_MIN_MS + (unsigned long)random(0, REPEAT_GAP_RAND_MS));
+    }
+  }
 }
 
 void flashRed() {
@@ -297,12 +330,12 @@ bool readBus(int i, byte addr[8]) {
 void onAdded(int i, const byte addr[8]) {
   setSlotLevel(i, 255);
   flashRed();
-  sendFrame(T_ADDED, i + 1, addr, 0);
+  sendFrameRepeated(T_ADDED, i + 1, addr);
 }
 
 void onRemoved(int i, const byte addr[8]) {
   setSlotLevel(i, 0);
-  sendFrame(T_REMOVED, i + 1, addr, 0);
+  sendFrameRepeated(T_REMOVED, i + 1, addr);
 }
 
 void scanBus(int i) {
@@ -347,10 +380,25 @@ void scanBus(int i) {
 }
 
 void setup() {
-#if DEBUG_USB
+  // DIP 경고를 볼 수 있어야 하므로 USB Serial 은 항상 연다.
+  // (DEBUG_USB 는 셀별 CRC 로그 같은 시끄러운 출력만 켠다)
   Serial.begin(115200);
+#if DEBUG_USB
   delay(500);
 #endif
+
+  pinMode(PIN_DIP_1, INPUT_PULLUP);
+  pinMode(PIN_DIP_2, INPUT_PULLUP);
+  pinMode(PIN_DIP_3, INPUT_PULLUP);
+  delay(10);   // 내부 풀업이 안정된 뒤에 읽는다
+  slaveId = (uint8_t)((!digitalRead(PIN_DIP_1))
+                    | (!digitalRead(PIN_DIP_2) << 1)
+                    | (!digitalRead(PIN_DIP_3) << 2));
+  if (slaveId == 0) {
+    Serial.println("#slave WARN: DIP 미설정 — 보드 ID 가 0 이라 서버가 무시한다");
+  } else {
+    Serial.print("#slave id="); Serial.println(slaveId);
+  }
 
   led.begin();
   led.setBrightness(LED_BRIGHTNESS);
@@ -368,9 +416,13 @@ void setup() {
   ringHigh.show();
 
   RS485.begin(RS485_BAUD, SERIAL_8N1, RX_PIN, TX_PIN);
+  // DE 를 하드웨어 RTS 에 맡긴다. 송신 시작·종료에 맞춰 UART 가 직접 토글하므로
+  // flush() 뒤에 수동으로 딜레이를 주거나 DE 를 내릴 필요가 없다.
+  RS485.setPins(RX_PIN, TX_PIN, -1, DE_PIN);
+  RS485.setMode(UART_MODE_RS485_HALF_DUPLEX);
 
-  randomSeed(SLAVE_ID * 7919 + 13);
-  lastHeartbeatMs = millis() - (unsigned long)SLAVE_ID * 300;
+  randomSeed(slaveId * 7919 + 13);
+  lastHeartbeatMs = millis() - (unsigned long)slaveId * 300;
 }
 
 void loop() {

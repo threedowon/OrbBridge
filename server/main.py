@@ -94,6 +94,12 @@ SLAVE_ID_MAX = 99
 QUICK_REMOVE_IGNORE_MS = 1000.0
 _cell_added_at: dict[str, float] = {}
 
+# 슬레이브가 유실 대비로 added·removed 를 여러 번 보낸다(slave.ino FRAME_REPEAT).
+# 같은 칸에 같은 오브가 이 시간 안에 다시 들어오면 재전송으로 보고 버린다.
+# 엔진은 중복 added 를 상태 변화로 치지 않지만 MIDI 는 매번 울리므로 여기서 막는다.
+DUPLICATE_ADDED_IGNORE_MS = 1000.0
+_last_added: dict[str, tuple[str, float]] = {}
+
 
 def _cell_key(slave: int, cell: int) -> str:
     return f"{slave}:{cell}"
@@ -111,6 +117,20 @@ def _mark_cell_added(slave: int, cell: int) -> None:
     """removed 가 너무 빨리 오는지 재려고 배치 시각을 남긴다."""
     with _state_lock:
         _cell_added_at[_cell_key(slave, cell)] = time.time() * 1000
+
+
+def _is_duplicate_added(slave: int, cell: int, orb_id: str) -> bool:
+    """슬레이브의 반복 전송이면 True. 기록은 매번 갱신한다."""
+    key = _cell_key(slave, cell)
+    ident = str(orb_id or "").strip().upper()
+    now = time.time() * 1000
+    with _state_lock:
+        previous = _last_added.get(key)
+        _last_added[key] = (ident, now)
+    if previous is None:
+        return False
+    last_ident, last_at = previous
+    return last_ident == ident and (now - last_at) < DUPLICATE_ADDED_IGNORE_MS
 
 
 def _is_quick_remove(slave: int, cell: int) -> float | None:
@@ -884,6 +904,8 @@ def handle_serial_message(event: dict) -> None:
                 )
                 return
         elif t == "added":
+            if _is_duplicate_added(sid, cell, event.get("id")):
+                return   # 슬레이브 반복 전송 — 첫 프레임만 처리한다
             _mark_cell_added(sid, cell)
 
     handle_event(event)
