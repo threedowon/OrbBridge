@@ -24,7 +24,12 @@
 #define TX_PIN       39
 #define RX_PIN       40
 #define DE_PIN       42     // RS485 송수신 전환 — 하드웨어 RTS 가 직접 제어한다
-#define RGB_PIN      48     // 온보드 RGB (DevKit v1.0 기준. v1.1 은 38 이라 링2와 충돌)
+// 이 보드(DevKitC-1, 실크 "RGB@IO38")의 온보드 RGB 는 GPIO 38 에 있고 48 에는
+// 아무 LED 도 없다. 38 은 이미 LED 체인2 가 쓰고 PCB 가 그렇게 발주돼 바꿀 수 없다.
+// 그래서 상태 표시(flashRed)는 48 로 나가지만 실제로 켜지는 LED 는 없다.
+// 대신 온보드 RGB 가 체인2 의 첫 픽셀(슬롯 9)을 그대로 따라 한다 — 동작에는 무해.
+// 48 에 외부 LED 를 달면 그때부터 상태 표시가 살아난다.
+#define RGB_PIN      48
 #define LED_BRIGHTNESS 32
 #define RS485_BAUD   115200
 
@@ -47,7 +52,7 @@ uint8_t slaveId = 0;        // setup 에서 DIP 로 결정한다
 
 // LED 데이터선 2개. 슬롯별 LED 위치는 아래 LED_MAP 으로 배선에 맞게 직접 지정한다.
 #define RING_PIN_LOW    2      // LED 체인 1 = 슬롯 1~8  (GPIO 2)
-#define RING_PIN_HIGH   38     // LED 체인 2 = 슬롯 9~16 (GPIO 38)
+#define RING_PIN_HIGH   38     // LED 체인 2 = 슬롯 9~16 (GPIO 38 — 온보드 RGB 와 공유)
 #define LEDS_PER_RING   10     // 슬롯당 LED 수
 #define LED_COUNT_LOW   80     // 스트립 A 총 LED 수 (슬롯 1~8 = 8×10)
 #define LED_COUNT_HIGH  80     // 스트립 B 총 LED 수 (슬롯 9~16 = 8×10)
