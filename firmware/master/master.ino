@@ -6,7 +6,7 @@
  *   - 깨진 프레임은 CRC 불일치로 버림 + 다음 STX 로 resync.
  *   - 송신은 LED 이펙트 브로드캐스트("C<n>") 하나뿐이라 DE 는 대부분 수신 상태다.
  * USB Serial → PC (main.py), 115200
- * 버튼: 다시듣기(15) / 재생(41) / 디페스타(16) (INPUT_PULLUP — 핀↔GND, 외부저항 불필요)
+ * 버튼: 다시듣기(15) / 재생(7) / 디페스타(16) (INPUT_PULLUP — 핀↔GND, 외부저항 불필요)
  * 홀 센서: 시작(5, 6) — 두 개 모두 자석을 감지하는 순간에만 start 를 한 번 보낸다.
  * 출력: 디페스타 LED(17) — PC(main.py)가 '정답 완성' 상태를 D1/D0 명령으로 지시.
  *        정답 유지 중 HIGH, 오답/게임종료 시 LOW.
@@ -29,7 +29,7 @@
 // 디페스타 LED 39→17). 38 은 DevKit v1.1 온보드 RGB 라 피했고, 43/44(USB 콘솔)·
 // 35~37(옥탈 PSRAM)·strapping 핀(0/3/45/46)도 뺐다.
 #define PIN_BTN_LISTEN   15   // 다시듣기 (40 에서 이동)
-#define PIN_BTN_PLAY     41   // 재생
+#define PIN_BTN_PLAY     7    // 재생
 #define PIN_BTN_DFESTA   16   // 디페스타 (42 에서 이동)
 #define PIN_DFESTA_OUT   17   // 디페스타 출력(LED) — PC 명령(D1/D0)으로 HIGH/LOW (39 에서 이동)
 #define BTN_COOLDOWN     350
