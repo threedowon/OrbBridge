@@ -25,14 +25,14 @@ const int BUS_COUNT = 16;
 const int busPins[BUS_COUNT] = {
   4, 5, 6, 7,
   15, 16, 17, 18,
-  8, 3, 9, 10,
+  8, 1, 9, 10,
   11, 12, 13, 14
 };
 
 OneWire buses[BUS_COUNT] = {
   OneWire(4), OneWire(5), OneWire(6), OneWire(7),
   OneWire(15), OneWire(16), OneWire(17), OneWire(18),
-  OneWire(8), OneWire(3), OneWire(9), OneWire(10),
+  OneWire(8), OneWire(1), OneWire(9), OneWire(10),
   OneWire(11), OneWire(12), OneWire(13), OneWire(14)
 };
 
