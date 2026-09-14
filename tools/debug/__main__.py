@@ -21,8 +21,10 @@ OrbBridge 진단 도구
   python -m tools.debug                 # config.json의 serial.port로 자동 연결
   python -m tools.debug --port COM23    # 포트 지정
   python -m tools.debug --no-open       # 포트 없이 대시보드만 실행
+  python -m tools.debug --slave COM7    # slave_test 보드를 USB 로 직접 열어 단독 점검
 
-  브라우저: http://127.0.0.1:8090/
+  브라우저: http://127.0.0.1:8090/        (master 진단)
+            http://127.0.0.1:8090/slave   (slave 단독 점검 — firmware/slave_test)
 
 주의: server.launcher가 실행 중이면 같은 COM 포트를 동시에 열 수 없다.
       진단할 때는 런타임을 종료하고 이 도구를 실행한다.
@@ -40,10 +42,12 @@ import serial
 import serial.tools.list_ports
 
 from server.app_paths import data_dir
+from tools.debug import slave_test
 
 HERE = Path(__file__).resolve().parent
 CONFIG_PATH = data_dir() / "config.json"
 INDEX_HTML = HERE / "index.html"
+SLAVE_HTML = HERE / "slave.html"
 
 HTTP_HOST = "127.0.0.1"
 
@@ -233,6 +237,7 @@ def list_serial_ports() -> list[dict]:
             "pid": f"{p.pid:04X}" if p.pid is not None else None,
             "likely_esp": likely_esp,
             "is_master": p.device == _master["port"],
+            "is_slave": p.device == slave_test.current_port(),
         })
     return ports
 
@@ -357,8 +362,19 @@ def make_handler():
                     self._send(404, b"index.html not found", "text/plain")
                 return
 
+            if path in ("/slave", "/slave/", "/slave.html"):
+                if SLAVE_HTML.is_file():
+                    self._send(200, SLAVE_HTML.read_bytes(), "text/html; charset=utf-8")
+                else:
+                    self._send(404, b"slave.html not found", "text/plain")
+                return
+
             if path == "/api/state":
                 self._json(200, _snapshot())
+                return
+
+            if path == "/api/slave/state":
+                self._json(200, slave_test.snapshot())
                 return
 
             if path == "/api/ports":
@@ -405,6 +421,33 @@ def make_handler():
                 self._json(200, {"ok": True})
                 return
 
+            if self.path == "/api/slave/connect":
+                port = data.get("port")
+                baud = int(data.get("baud", 115200))
+                if not port:
+                    self._json(400, {"error": "port 필요"})
+                    return
+                slave_test.start_serial(port, baud)
+                self._json(200, {"ok": True, "port": port, "baud": baud})
+                return
+
+            if self.path == "/api/slave/disconnect":
+                slave_test.stop_serial()
+                self._json(200, {"ok": True})
+                return
+
+            if self.path == "/api/slave/reset":
+                slave_test.reset_session()
+                slave_test.send_command("Z")
+                self._json(200, {"ok": True})
+                return
+
+            if self.path == "/api/slave/cmd":
+                cmd = str(data.get("cmd", ""))
+                ok, err = slave_test.send_command(cmd)
+                self._json(200 if ok else 503, {"ok": ok, "cmd": cmd, "error": err})
+                return
+
             if self.path == "/api/led":
                 effect = int(data.get("effect", 0))
                 ok = send_led(effect)
@@ -438,6 +481,8 @@ def main() -> None:
     ap.add_argument("--baud", type=int, default=def_baud, help=f"보드레이트 (기본: {def_baud})")
     ap.add_argument("--http-port", type=int, default=HTTP_PORT, help=f"대시보드 포트 (기본: {HTTP_PORT})")
     ap.add_argument("--no-open", action="store_true", help="COM 포트를 열지 않고 대시보드만 (포트 목록 확인용)")
+    ap.add_argument("--slave", metavar="PORT", default="",
+                    help="slave_test 펌웨어 보드의 COM 포트 (USB 직결, master 불필요)")
     args = ap.parse_args()
 
     print("=" * 56)
@@ -449,14 +494,17 @@ def main() -> None:
         print(f"   {p['device']:8}  {p['description']}{tag}")
     print("-" * 56)
 
-    if not args.no_open and args.port:
+    if args.slave:
+        slave_test.start_serial(args.slave, args.baud)
+    elif not args.no_open and args.port:
         start_serial(args.port, args.baud)
     elif not args.port:
         print(" [알림] 열 COM 포트가 없습니다. 대시보드에서 선택하세요.")
 
     server = _ThreadingHTTPServer((HTTP_HOST, args.http_port), make_handler())
     url = f"http://{HTTP_HOST}:{args.http_port}/"
-    print(f" 대시보드: {url}")
+    print(f" 대시보드(master): {url}")
+    print(f" 대시보드(slave 단독): {url}slave")
     print(" (Ctrl+C 로 종료)")
     print("=" * 56)
     try:
@@ -465,6 +513,7 @@ def main() -> None:
         print("\n종료 중…")
     finally:
         stop_serial()
+        slave_test.stop_serial()
         server.shutdown()
 
 

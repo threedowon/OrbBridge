@@ -35,14 +35,14 @@ OrbBridge/
 │   ├── orb_register.py      DS2431 오브 등록
 │   ├── melody_register.py   멜로디·게임 규칙·순서 편집
 │   ├── midi_debug.py        MIDI 포트·voice 출력 진단
-│   └── debug/               마스터·슬레이브 심층 진단
+│   └── debug/               마스터 진단·슬레이브 단독 점검 웹
 ├── data/                    실행 데이터의 단일 저장 위치
 │   ├── config.json
 │   ├── orb_mapping.json
 │   ├── portmapping.json
 │   ├── voice_catalog.json
 │   └── melodies/
-├── firmware/                ESP master·slave·dotmatrix·등록기 펌웨어
+├── firmware/                ESP master·slave·slave_test·dotmatrix·등록기 펌웨어
 ├── audioengine/             loopMIDI·Ableton 운영 파일
 ├── tests/                   자동 회귀 테스트
 ├── docs/                    M1–M6 설계 기록
@@ -158,11 +158,14 @@ Orb Register는 `data/orb_mapping.json`을 관리한다. Melody Register는
 
 ```cmd
 py -m tools.debug
+py -m tools.debug --slave COM7
 py -m tools.midi_debug --list
 ```
 
 심층 시리얼 진단은 `tools/debug/`에서 실행한다. 게임 런타임과 같은 COM 포트를
-동시에 열 수 없으므로 둘 중 하나만 실행해야 한다. loopMIDI 포트 복구 파일은
+동시에 열 수 없으므로 둘 중 하나만 실행해야 한다. master 없이 slave 보드 한 장의
+회로·DS2431 접점·LED 를 확인할 때는 `firmware/slave_test`를 굽고
+`http://127.0.0.1:8090/slave`를 연다. loopMIDI 포트 복구 파일은
 `audioengine/loopmidi_portsetup.reg`이다. MIDI 단음·8음 순회·전체 voice 동시
 테스트는 `/admin/software`의 MIDI 진단에서도 실행할 수 있다.
 
