@@ -19,7 +19,7 @@ from server.game.melody_manager import (
     game_rules_from_melody,
 )
 from server.game.scheduler import PlaybackMode, PlaybackScheduler, parse_melody
-from server.inout.serial_io import SerialWriter, run_serial_loop
+from server.inout import hardware_io
 
 ensure_data_files()
 
@@ -58,8 +58,7 @@ _state_lock = threading.Lock()
 _event_log: list[dict] = []
 EVENT_LOG_LIMIT = 100
 _serial_status = {"connected": False, "port": "", "error": ""}
-_serial_stop = threading.Event()
-_serial_thread: threading.Thread | None = None
+_hardware_switching = threading.Event()
 _matrix_display: MatrixDisplay | None = None
 
 # ── 게임 런타임 (Serial/HTTP 입력의 단일 writer) ───────
@@ -358,9 +357,17 @@ def get_active_melody() -> dict:
 def get_status() -> dict:
     game = get_game_state()
     now = time.time() * 1000
+    hardware = hardware_io._snapshot()
+    connections = hardware["connections"]
     with _state_lock:
-        serial = dict(_serial_status)
+        serial = {"connected": any(c["open"] for c in connections),
+                  "port": ", ".join(c["port"] for c in connections),
+                  "error": "; ".join(c["error"] for c in connections if c["error"])}
         slaves = _slave_list_locked(now)
+        observed = {s["slave"]: s for s in hardware["slaves"]}
+        for slave in slaves:
+            if slave["slave"] in observed:
+                slave["online"] = observed[slave["slave"]]["online"]
         return {
             "input_mode": input_mode,
             "game": game,
@@ -370,6 +377,7 @@ def get_status() -> dict:
             "playback": get_playback_scheduler().snapshot(),
             "orb_count": len(orb_mapping),
             "serial": serial,
+            "hardware": hardware,
             "cell_count": game["cell_count"],
             "slaves": slaves,
             "slave_online_timeout_s": SLAVE_ONLINE_TIMEOUT_S,
@@ -498,7 +506,7 @@ def reload_melody_data() -> None:
 
 
 # 마스터 GPIO39 디페스타 표시등. 평소 LOW, 디페스타 버튼이 유효한 동안만 HIGH.
-_serial_writer = SerialWriter()
+_serial_writer = hardware_io
 _dfesta_led_lock = threading.Lock()
 _dfesta_led_state: bool | None = None   # None = 미전송(연결 직후 강제 재전송)
 _led_normal_restored = False            # 이번 실행에서 일반 모드를 되돌렸는지
@@ -531,6 +539,8 @@ def _publish_transition(result: RuntimeResult) -> dict:
 
 
 def start_game() -> dict:
+    if _hardware_switching.is_set():
+        raise RuntimeError("하드웨어 연결을 변경 중입니다")
     runtime = get_game_runtime()
     _cancel_playback()
 
@@ -819,7 +829,7 @@ def send_led_effect(effect) -> dict:
         )
 
     if not _serial_writer.send_line(f"C{value}"):
-        raise RuntimeError("마스터 미연결 — 시리얼 포트를 확인하세요")
+        raise RuntimeError("일부 또는 전체 포트 전송 실패 — 하드웨어 연결 상태를 확인하세요")
     print(f"[led] 이펙트 {value} 전송")
     return {"ok": True, "effect": value}
 
@@ -881,11 +891,28 @@ def handle_serial_message(event: dict) -> None:
     if t == "heartbeat":
         # 생존 기록은 위에서 완료했다. 점유 마스크가 있으면 유실 이벤트를 복구한다.
         # (sid 는 위에서 유효 범위 검증·int 변환 완료된 값)
-        if sid is not None and "occupancy_mask" in event:
+        mask = event.get("occupancy_mask", event.get("state"))
+        if sid is not None and type(mask) is int and 0 <= mask <= 65535:
             try:
-                reconcile_occupancy_mask(sid, int(event["occupancy_mask"]))
+                reconcile_occupancy_mask(sid, mask)
             except (TypeError, ValueError):
                 pass  # 잘못된 점유 마스크는 자가복구만 건너뛴다.
+        return
+
+    if t == "snapshot":
+        # USB periodically refreshes UIDs. Identical snapshots must not retrigger MIDI
+        # or refresh the game's idle timer.
+        cell = event.get("cell")
+        orb_id = event.get("id")
+        if sid is None or type(cell) is not int or not 1 <= cell <= 16 or not isinstance(orb_id, str):
+            return
+        current = get_cells().get(_cell_key(sid, cell))
+        if current and current["id"] == orb_id:
+            return
+        event = {**event, "type": "added"}
+        _is_duplicate_added(sid, cell, orb_id)  # Update repeat tracking; live state wins.
+        _mark_cell_added(sid, cell)
+        handle_event(event)
         return
 
     # 접촉 불량 보정은 하드웨어 입력에만 건다. admin 테이블 시뮬레이터가 쓰는
@@ -913,6 +940,8 @@ def handle_serial_message(event: dict) -> None:
 # ── 이벤트 처리 ────────────────────────────────────────
 def handle_event(event: dict) -> dict:
     global orb_mapping
+    if _hardware_switching.is_set():
+        raise RuntimeError("하드웨어 연결을 변경 중입니다")
     orb_mapping = load_mapping()
 
     t = str(event.get("type", "")).lower()
@@ -1125,39 +1154,65 @@ def _update_serial_status(connected: bool, port: str, error: str) -> None:
         print(f"[WARN] 디페스타 표시등 동기화 실패: {exc}")
 
 
-def start_serial_input() -> threading.Thread | None:
-    """serial 모드에서 하드웨어 입력 스레드를 한 번만 시작한다."""
-    global _serial_thread
+_hardware_control_lock = threading.Lock()
+
+
+def _clear_hardware_game() -> None:
+    global _led_normal_restored
+    reset_game()
+    _remove_all_cells_for_admin()
+    with _state_lock:
+        _slaves.clear()
+        _cell_added_at.clear()
+        _last_added.clear()
+    _led_normal_restored = False
+
+
+def configure_hardware(data: dict) -> dict:
+    """Stop old readers, reset the game, then accept only the selected route."""
+    global input_mode
+    if not isinstance(data, dict):
+        raise ValueError("JSON object 필요")
+    mode = data.get("mode", "master")
+    ports = data.get("ports", [])
+    baud = data.get("baud", 115200)
+    hardware_io.validate_connection(mode, ports, baud)
+    with _hardware_control_lock:
+        hardware_io.on_message = handle_serial_message
+        hardware_io.on_ready = lambda: _update_serial_status(True, "", "")
+        _hardware_switching.set()
+        try:
+            hardware_io.configure_connection(mode, ports, baud, before_start=_clear_hardware_game)
+            input_mode = "serial"
+        finally:
+            _hardware_switching.clear()
+    return {"ok": True, "hardware": hardware_io._snapshot()}
+
+
+def disconnect_hardware() -> dict:
+    with _hardware_control_lock:
+        _hardware_switching.set()
+        try:
+            hardware_io.stop_serial()
+            _clear_hardware_game()
+        finally:
+            _hardware_switching.clear()
+    return {"ok": True}
+
+
+def start_serial_input():
+    """Always boot in master mode; table mode leaves hardware disconnected."""
     if input_mode != "serial":
         return None
-    if _serial_thread is not None and _serial_thread.is_alive():
-        return _serial_thread
-
-    _serial_stop.clear()
-    _serial_thread = threading.Thread(
-        target=run_serial_loop,
-        args=(
-            config.get("serial") or {},
-            handle_serial_message,
-            _update_serial_status,
-            _serial_stop,
-        ),
-        kwargs={"writer": _serial_writer},
-        daemon=True,
-        name="orbbridge-serial",
-    )
-    _serial_thread.start()
-    return _serial_thread
+    hardware_io.on_message = handle_serial_message
+    hardware_io.on_ready = lambda: _update_serial_status(True, "", "")
+    cfg = config.get("serial") or {}
+    port = cfg.get("port", "")
+    hardware_io.configure_connection("master", [port] if port else [], int(cfg.get("baudrate", 115200)))
 
 
 def stop_serial_input() -> None:
-    """프로세스 종료 시 시리얼 재연결 루프를 중단한다."""
-    global _serial_thread
-    _serial_stop.set()
-    thread = _serial_thread
-    _serial_thread = None
-    if thread is not None and thread is not threading.current_thread():
-        thread.join(timeout=2.0)
+    hardware_io.stop_serial()
 
 # ── 진입점 ─────────────────────────────────────────────
 def run_main() -> None:
@@ -1203,6 +1258,9 @@ def run_main() -> None:
         on_game_play=request_play,
         on_game_dfesta=request_dfesta,
         on_admin_led_effect=send_led_effect,
+        get_hardware_ports=hardware_io.list_serial_ports,
+        on_hardware_connect=configure_hardware,
+        on_hardware_disconnect=disconnect_hardware,
         on_admin_collect_orbs=collect_all_orbs,
         on_admin_auto_complete=auto_complete_game,
     )

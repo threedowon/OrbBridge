@@ -57,6 +57,9 @@ def start_http_server(
     on_admin_collect_orbs=None,
     on_admin_auto_complete=None,
     on_admin_led_effect=None,
+    get_hardware_ports=None,
+    on_hardware_connect=None,
+    on_hardware_disconnect=None,
 ) -> None:
     host = cfg.get("host", "127.0.0.1")
     port = cfg.get("port", 8080)
@@ -140,6 +143,10 @@ def start_http_server(
                 from server.voice_catalog import voice_api_payload
 
                 self._json(200, voice_api_payload())
+                return
+
+            if path == "/api/admin/hardware/ports":
+                self._json(200, {"ports": get_hardware_ports() if get_hardware_ports else []})
                 return
 
             if path == "/api/admin/midi/status":
@@ -233,6 +240,18 @@ def start_http_server(
                 data = json.loads(body) if body else {}
             except json.JSONDecodeError:
                 self._json(400, {"error": "invalid JSON"})
+                return
+
+            if not isinstance(data, dict):
+                self._json(400, {"error": "JSON object 필요"})
+                return
+
+            if self.path == "/api/admin/hardware/connect":
+                self._run_callback(on_hardware_connect, data)
+                return
+
+            if self.path == "/api/admin/hardware/disconnect":
+                self._run_callback(on_hardware_disconnect)
                 return
 
             if self.path == "/api/event":

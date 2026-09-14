@@ -121,7 +121,72 @@ int ledEffect = 0;
 unsigned long effectStart = 0;
 unsigned long lastAnimMs = 0;
 String cmdLine;
+String usbCmdLine;
+bool usbDirect = false;
+unsigned long usbLeaseMs = 0;
+// USB diagnostics: distinguish an idle scanner, no ROM, and ROM CRC failures.
+uint32_t usbScanCount = 0;
+uint32_t usbLedCommandCount = 0;
+uint16_t usbRomSeenMask = 0;
+uint16_t usbCrcErrorMask = 0;
+void sendHeartbeat();
 void applyEffectOnce();   // 전방 선언
+
+// Debug PC renews U1 every second. Disconnect/crash restores RS485 after 5s.
+// USB commands never propagate to the RS485 bus.
+void pollUsb() {
+  if (usbDirect && millis() - usbLeaseMs > 5000) usbDirect = false;
+  while (Serial.available()) {
+    char c = (char)Serial.read();
+    if (c == '\n') {
+      if (usbCmdLine == "U1") {
+        bool entering = !usbDirect;
+        usbDirect = true;
+        usbLeaseMs = millis();
+        if (entering) sendHeartbeat();
+      } else if (usbCmdLine == "U0") {
+        usbDirect = false;
+      } else if (usbDirect && usbCmdLine.length() == 2 &&
+                 usbCmdLine[0] == 'C' && usbCmdLine[1] >= '0' && usbCmdLine[1] <= '9') {
+        usbLedCommandCount++;
+        ledEffect = usbCmdLine[1] - '0';
+        effectStart = millis();
+        applyEffectOnce();
+      }
+      usbCmdLine = "";
+    } else if (c != '\r') {
+      if (usbCmdLine.length() < 16) usbCmdLine += c;
+      else usbCmdLine = "!";
+    }
+  }
+}
+
+void emitUsb(uint8_t type, uint8_t cell, const byte* uid, uint16_t state) {
+  String json = String("{\"type\":\"") +
+    (type == T_HEART ? "heartbeat" : type == 4 ? "snapshot" : type == T_ADDED ? "added" : "removed") +
+    "\",\"transport\":\"usb\",\"slave\":" + slaveId;
+  if (type == T_HEART) {
+    json += String(",\"state\":") + state;
+    json += ",\"firmware\":\"usb-diag-1\"";
+    json += String(",\"scan_count\":") + usbScanCount;
+    json += String(",\"rom_seen_mask\":") + usbRomSeenMask;
+    json += String(",\"crc_error_mask\":") + usbCrcErrorMask;
+    json += String(",\"led_effect\":") + ledEffect;
+    json += String(",\"led_commands\":") + usbLedCommandCount;
+    usbRomSeenMask = 0;
+    usbCrcErrorMask = 0;
+  } else {
+    const char* hx = "0123456789ABCDEF";
+    json += String(",\"cell\":") + cell + ",\"id\":\"";
+    for (int i = 0; i < 8; i++) {
+      if (i) json += ':';
+      json += hx[uid[i] >> 4];
+      json += hx[uid[i] & 15];
+    }
+    json += '"';
+  }
+  Serial.println(json + "}");
+}
 
 // Dallas/Maxim CRC8 (OneWire 와 동일 다항식)
 uint8_t crc8(const uint8_t* data, int len) {
@@ -145,7 +210,7 @@ void drainBus() {
     char c = (char)RS485.read();
     lastBusRxMs = millis();
     if (c == '\n') {
-      if (cmdLine.length() >= 2 && cmdLine[0] == 'C') {
+      if (!usbDirect && cmdLine.length() >= 2 && cmdLine[0] == 'C') {
         ledEffect = cmdLine.substring(1).toInt();
         effectStart = millis();
         applyEffectOnce();
@@ -181,6 +246,10 @@ void csSendBytes(const uint8_t* buf, int len) {
 }
 
 void sendFrame(uint8_t type, uint8_t cell, const byte* uid, uint16_t state) {
+  if (usbDirect) {
+    emitUsb(type, cell, uid, state);
+    return;
+  }
   uint8_t f[FRAME_LEN];
   f[0] = STX;
   f[1] = type;
@@ -207,6 +276,10 @@ void pumpFor(unsigned long ms) {
 // 유실 대비 같은 프레임을 FRAME_REPEAT 번 보낸다. 서버가 중복을 걸러내므로
 // 소리나 상태가 여러 번 반영되지는 않는다.
 void sendFrameRepeated(uint8_t type, uint8_t cell, const byte* uid) {
+  if (usbDirect) {
+    emitUsb(type, cell, uid, 0);
+    return;
+  }
   for (int r = 0; r < FRAME_REPEAT; r++) {
     sendFrame(type, cell, uid, 0);
     if (r + 1 < FRAME_REPEAT) {
@@ -268,7 +341,11 @@ void rainbowStatic() {
 // 명령 받은 즉시 적용되는 정적 이펙트. 애니메이션(7~9)은 loop 의 runEffectAnim 에서 갱신.
 void applyEffectOnce() {
   switch (ledEffect) {
-    case 0: fillAll(0); break;                                        // 일반 복귀(끔)
+    case 0:
+      // Restore tracked occupancy immediately. scanBus does not redraw a ring
+      // whose level is already 255, so clearing alone leaves occupied rings dark.
+      for (int i = 0; i < BUS_COUNT; i++) setSlotLevel(i, ringLevel[i]);
+      break;
     case 1: fillAll(Adafruit_NeoPixel::Color(255, 255, 255)); break;  // 전체 흰색
     case 2: fillAll(0); break;                                        // 전체 끄기
     case 3: fillAll(Adafruit_NeoPixel::Color(255, 0, 0)); break;      // 빨강
@@ -318,12 +395,20 @@ void sendHeartbeat() {
   uint16_t state = 0;
   for (int i = 0; i < BUS_COUNT; i++) if (hasLast[i]) state |= (uint16_t)(1u << i);
   sendFrame(T_HEART, 0, nullptr, state);
+  // Refresh occupied UIDs too, including orbs present before USB connection.
+  if (usbDirect) {
+    for (int i = 0; i < BUS_COUNT; i++)
+      if (hasLast[i]) emitUsb(4, i + 1, lastAddr[i], 0);
+  }
 }
 
 bool readBus(int i, byte addr[8]) {
+  usbScanCount++;
   buses[i].reset_search();
   if (!buses[i].search(addr)) return false;
+  usbRomSeenMask |= (uint16_t)(1u << i);
   if (OneWire::crc8(addr, 7) != addr[7]) {
+    usbCrcErrorMask |= (uint16_t)(1u << i);
 #if DEBUG_USB
     Serial.print("CRC error cell "); Serial.println(i + 1);
 #endif
@@ -431,6 +516,7 @@ void setup() {
 }
 
 void loop() {
+  pollUsb();
   drainBus();
 
   for (int i = 0; i < BUS_COUNT; i++) {

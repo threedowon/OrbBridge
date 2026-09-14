@@ -35,7 +35,7 @@ OrbBridge/
 │   ├── orb_register.py      DS2431 오브 등록
 │   ├── melody_register.py   멜로디·게임 규칙·순서 편집
 │   ├── midi_debug.py        MIDI 포트·voice 출력 진단
-│   └── debug/               마스터·슬레이브 심층 진단
+│                           하드웨어 진단은 메인 /admin에 통합
 ├── data/                    실행 데이터의 단일 저장 위치
 │   ├── config.json
 │   ├── orb_mapping.json
@@ -157,12 +157,12 @@ Orb Register는 `data/orb_mapping.json`을 관리한다. Melody Register는
 ## 하드웨어 진단과 MIDI 준비
 
 ```cmd
-py -m tools.debug
 py -m tools.midi_debug --list
 ```
 
-심층 시리얼 진단은 `tools/debug/`에서 실행한다. 게임 런타임과 같은 COM 포트를
-동시에 열 수 없으므로 둘 중 하나만 실행해야 한다. loopMIDI 포트 복구 파일은
+하드웨어 진단은 메인 `/admin`에서 실행한다. Master ON/OFF, COM 포트 선택,
+생존 상태와 원시 로그를 게임과 함께 사용한다. 사용법: [하드웨어 진단](docs/hardware-debug.md).
+loopMIDI 포트 복구 파일은
 `audioengine/loopmidi_portsetup.reg`이다. MIDI 단음·8음 순회·전체 voice 동시
 테스트는 `/admin/software`의 MIDI 진단에서도 실행할 수 있다.
 

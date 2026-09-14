@@ -41,7 +41,8 @@ def test_m6_directories_match_runtime_roles():
     assert (ROOT / "tools" / "orb_register.py").is_file()
     assert (ROOT / "tools" / "melody_register.py").is_file()
     assert (ROOT / "tools" / "midi_debug.py").is_file()
-    assert (ROOT / "tools" / "debug" / "__main__.py").is_file()
+    assert (ROOT / "server" / "inout" / "hardware_io.py").is_file()
+    assert not (ROOT / "tools" / "debug" / "__main__.py").exists()
     assert (ROOT / "audioengine" / "loopmidi_portsetup.reg").is_file()
 
     for legacy in ("app", "screen", "table", "debug"):
@@ -114,7 +115,6 @@ def test_windows_launchers_use_module_entrypoints_without_removed_paths():
         ROOT / "tools" / "melody_register.bat",
         ROOT / "tools" / "orb_register.bat",
         ROOT / "tools" / "midi_debug.bat",
-        ROOT / "tools" / "debug" / "debug.bat",
         ROOT / "build" / "build_orbbridge.bat",
         ROOT / "build" / "build_orb_register.bat",
     ]
@@ -126,7 +126,7 @@ def test_windows_launchers_use_module_entrypoints_without_removed_paths():
     assert "melody_editor" not in text
     assert "-m server.launcher" in text
     assert "-m tools.melody_register" in text
-    assert "-m tools.debug" in text
+    assert "-m tools.debug" not in text
     assert "-m tools.midi_debug" in text
 
 

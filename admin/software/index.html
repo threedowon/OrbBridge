@@ -642,6 +642,11 @@
           <button class="primary" id="btn-game-start" data-game-action="start">start</button>
           <button id="btn-game-reset" data-game-action="reset">reset</button>
           <button id="btn-auto-complete">자동완성</button>
+          <span id="usb-game-controls" hidden>
+            <button data-game-action="listen">다시듣기</button>
+            <button data-game-action="play">재생</button>
+            <button data-game-action="dfesta">디페스타</button>
+          </span>
           <button class="danger" id="btn-collect-orbs">모든 오브 회수</button>
         </div>
       </div>
@@ -926,6 +931,10 @@
         fmtRemaining(timers.remaining_time_over_s);
       document.getElementById('stat-idle-time').textContent =
         fmtRemaining(timers.remaining_idle_s);
+      document.getElementById('usb-game-controls').hidden = s.hardware?.mode !== 'direct';
+      document.querySelectorAll('#usb-game-controls button').forEach(button => {
+        button.disabled = adminActionRunning || currentGameState !== 'RUNNING';
+      });
       renderSlaves(s.slaves);
       updateGameButtons();
     }

@@ -36,7 +36,7 @@ Python 코드는 `server.*`, `tools.*` 패키지 import를 사용한다. 실행 
 - Serial·HTTP 입력의 `GameRuntime` 단일 writer
 - Python Scheduler·MIDI·WebSocket snapshot
 - Orb Register와 전체 Melody Register
-- `tools/debug/`의 오프라인 심층 진단 도구
+- 메인 `/admin`의 통합 하드웨어 진단 (`server/inout/hardware_io.py`)
 - `tools/midi_debug.py`와 Admin MIDI 진단
 - PyInstaller용 data seed 복사
 
