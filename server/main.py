@@ -1,3 +1,9 @@
+from server.text_log import install_logging, write_log
+
+if __name__ == "__main__":
+    install_logging()
+
+import json
 import threading
 import time
 from copy import deepcopy
@@ -106,6 +112,7 @@ def _cell_key(slave: int, cell: int) -> str:
 
 def _record_event(entry: dict) -> None:
     entry["ts"] = time.time() * 1000
+    write_log(json.dumps(entry, ensure_ascii=False, default=str), "EVENT")
     with _state_lock:
         _event_log.append(entry)
         if len(_event_log) > EVENT_LOG_LIMIT:
@@ -1217,6 +1224,7 @@ def stop_serial_input() -> None:
 # ── 진입점 ─────────────────────────────────────────────
 def run_main() -> None:
     global _matrix_display
+    install_logging()
     runtime = get_game_runtime()
     _matrix_display = MatrixDisplay(config.get("matrix_display") or {})
     start_websocket_service()

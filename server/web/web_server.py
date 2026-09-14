@@ -65,7 +65,7 @@ def start_http_server(
     port = cfg.get("port", 8080)
 
     # admin/table 이 1초마다 폴링하는 상태 요청은 노이즈 → 로그에서 숨긴다.
-    QUIET_PATHS = ("/api/status", "/api/admin/midi/status")
+    QUIET_PATHS = ("/api/status", "/api/admin/midi/status", "/api/admin/hardware/ports")
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):

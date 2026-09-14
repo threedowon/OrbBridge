@@ -554,6 +554,7 @@
       .software-monitor { height: 760px; }
     }
   </style>
+  <link rel="stylesheet" href="/admin/operator.css">
 </head>
 <body>
   <header>
@@ -581,6 +582,7 @@
       </div>
     </div>
   </header>
+  <div class="page-intro"><div><span class="intro-tag">ORBBRIDGE / CONTROL ROOM</span><h2>게임 운영</h2><p>게임 제어와 화면 모니터링, MIDI 테스트를 한곳에서.</p></div></div>
 
   <div class="software-workspace">
     <section class="simulation-column" aria-label="시뮬레이션 화면">
@@ -911,7 +913,8 @@
       setDot('dot-serial', serialOk ? 'ok' : (tableMode ? 'warn' : 'err'));
       document.getElementById('lbl-serial').textContent = tableMode
         ? 'Table (web)'
-        : (serialOk ? `Serial ${s.serial.port}` : `Serial ${s.serial?.error || '끊김'}`);
+        : (serialOk ? `${s.hardware?.mode === 'direct' ? 'USB 직접' : 'Master'} · ${s.serial.port}` : '장치 연결 안 됨');
+      document.getElementById('lbl-serial').title = s.serial?.error || s.serial?.port || '장치 연결 상태';
 
       const gameState = s.game?.state || 'READY';
       currentGameState = gameState;

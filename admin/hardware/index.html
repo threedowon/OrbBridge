@@ -512,6 +512,7 @@
     #slave-ports option { padding:6px; }
     #slave-ports option:checked { background:var(--accent); color:white; }
   </style>
+  <link rel="stylesheet" href="/admin/operator.css">
 </head>
 <body>
   <header>
@@ -539,13 +540,17 @@
       </div>
     </div>
   </header>
+  <div class="page-intro"><div><span class="intro-tag">ORBBRIDGE / CONTROL ROOM</span><h2>하드웨어 점검</h2><p>연결 상태를 확인하고, 슬롯과 LED를 테스트하세요.</p></div></div>
 
   <main>
     <section class="panel grid-panel hardware-only">
+      <div class="board-title"><h3>슬롯 모니터</h3><span>6개 보드 · 96개 슬롯 / 셀을 눌러 상세 확인</span></div>
+      <div class="board-scroll">
       <div class="slave-headers" id="slave-headers"></div>
       <div class="grid-wrap">
         <div class="row-labels" id="row-labels"></div>
         <div class="grid" id="grid"></div>
+      </div>
       </div>
       <div class="info-card" id="cell-detail">
         <div class="section-title">셀 상세</div>
@@ -573,17 +578,18 @@
         </div>
       </div>
 
-      <div class="system-section hardware-only">
-        <div class="section-title">하드웨어 연결 · 디버깅</div>
+      <div class="system-section connection-section hardware-only">
+        <div class="section-title">01 / 장치 연결</div>
         <label style="display:flex;align-items:center;gap:8px"><input style="width:auto;margin:0" type="checkbox" role="switch" id="master-toggle" checked> <b id="hardware-mode">Master ON · RS485 경유</b></label>
         <p id="hardware-help" style="margin:10px 0;color:var(--muted);font-size:12px">ON: master 포트 선택 / OFF: USB로 직접 연결한 slave 포트 선택</p>
-        <p style="font-size:12px;color:var(--warn);margin-bottom:10px">경로 변경·연결·해제 시 게임과 셀 상태가 초기화됩니다. 서버를 다시 실행하면 Master ON으로 시작합니다.</p>
+        <p class="connection-note">경로를 바꾸거나 다시 연결하면 게임이 초기화됩니다. 재시작 시 Master ON으로 돌아갑니다.</p>
+        <div id="port-picker" class="port-picker" hidden></div>
         <div class="toolbar">
           <select id="master-port" aria-label="Master COM 포트"></select>
           <select id="slave-ports" aria-label="Slave USB COM 포트" multiple size="5" hidden></select>
           <button id="hardware-connect">연결</button>
           <button id="hardware-disconnect">해제</button>
-          <button id="hardware-refresh">포트 새로고침</button>
+          <button id="hardware-refresh">새로고침</button>
         </div>
         <div id="hardware-status" style="white-space:pre-wrap;font-size:12px;margin-top:10px" aria-live="polite"></div>
         <div id="hardware-error" style="color:var(--err);font-size:12px" role="alert"></div>
@@ -884,7 +890,8 @@
       setDot('dot-serial', serialOk ? 'ok' : (tableMode ? 'warn' : 'err'));
       document.getElementById('lbl-serial').textContent = tableMode
         ? 'Table (web)'
-        : (serialOk ? `Serial ${s.serial.port}` : `Serial ${s.serial?.error || '끊김'}`);
+        : (serialOk ? `${s.hardware?.mode === 'direct' ? 'USB 직접' : 'Master'} · ${s.serial.port}` : '장치 연결 안 됨');
+      document.getElementById('lbl-serial').title = s.serial?.error || s.serial?.port || '장치 연결 상태';
 
       const gameState = s.game?.state || 'READY';
       currentGameState = gameState;
@@ -925,13 +932,29 @@
       document.getElementById('master-toggle').checked = on;
       document.getElementById('hardware-mode').textContent = on ? 'Master ON · RS485 경유' : 'Master OFF · Slave USB 직접 연결';
       document.getElementById('master-port').hidden = !on;
-      document.getElementById('slave-ports').hidden = on;
+      document.getElementById('slave-ports').hidden = true;
+      document.getElementById('port-picker').hidden = on;
       document.getElementById('hardware-help').textContent = on
         ? 'master의 USB 포트 한 개를 선택하세요. LED 명령은 RS485로 전달됩니다.'
-        : '각 slave를 USB로 연결하고 Ctrl/Shift로 포트를 다중 선택하세요. 새 slave 펌웨어가 필요합니다. master 전용 버튼·홀 센서·출력은 사용할 수 없습니다.';
+        : 'USB로 연결한 slave를 아래에서 체크하고 연결하세요. 게임 버튼은 Software 화면에서 사용할 수 있습니다.';
       const labels = {alive:'정상',waiting:'하트비트 대기',unresponsive:'응답 없음 (8초 이상)',disconnected:'포트 연결 끊김'};
-      document.getElementById('hardware-status').textContent = (on ? '' : 'master 우회 중 · 게임 제어는 Software 화면에서 가능합니다.\n') +
-        (h.connections.length ? h.connections.map(c => `${c.port}${(c.slave_id || c.reported_slave_id) ? " · Slave "+(c.slave_id || c.reported_slave_id) : " · 보드 ID 확인 대기"}: ${labels[c.health] || c.health} · 수신 ${c.rx_lines}줄${c.crc_bad != null ? " · CRC 오류 "+c.crc_bad+" (최근 +"+c.crc_delta+")" : ""}${c.error ? ' · '+c.error : ''}${renderBoardDiagnostics(c)}`).join('\n') : '연결된 포트 없음');
+      const status = document.getElementById('hardware-status');
+      status.replaceChildren();
+      if (!h.connections.length) {
+        const empty = document.createElement('p'); empty.className='port-empty';
+        empty.textContent = '포트를 선택하고 연결 버튼을 눌러주세요.'; status.appendChild(empty);
+      }
+      for (const c of h.connections) {
+        const card=document.createElement('div');card.className='connection-card '+c.health;
+        const title=document.createElement('b');
+        const sid=c.slave_id || c.reported_slave_id;
+        title.textContent = `${sid ? 'Slave '+sid : on ? 'Master' : 'ID 확인 중'} · ${c.port}`;
+        const detail=document.createElement('p');
+        detail.textContent = `${labels[c.health] || c.health} · 수신 ${c.rx_lines}줄${c.crc_bad != null ? ' · CRC 오류 '+c.crc_bad : ''}` + renderBoardDiagnostics(c);
+        card.append(title,detail);
+        if (c.error) {const error=document.createElement('p');error.className='connection-error';error.textContent=c.error;card.appendChild(error);}
+        status.appendChild(card);
+      }
       document.getElementById('hardware-raw').textContent = h.raw.map(r => `${new Date(r.ts).toLocaleTimeString()} ${r.line}`).join('\n');
       if (on && h.connections.length) {
         activeMasterPort = h.connections[0].port;
@@ -969,6 +992,18 @@
             select.appendChild(option);
           }
         }
+        const picker = document.getElementById('port-picker'); picker.replaceChildren();
+        const select = document.getElementById('slave-ports');
+        if (!payload.ports.length) {const empty=document.createElement('p');empty.className='port-empty';empty.textContent='감지된 USB 장치가 없습니다. 연결 후 새로고침하세요.';picker.appendChild(empty);}
+        payload.ports.forEach((port,i)=>{
+          const label=document.createElement('label');label.className='port-option';
+          const check=document.createElement('input');check.type='checkbox';check.checked=select.options[i].selected;
+          check.addEventListener('change',()=>{select.options[i].selected=check.checked;});
+          const text=document.createElement('span'); const title=document.createElement('strong');
+          title.textContent=port.device+(port.slave_id ? ' · Slave '+port.slave_id : ' · ID는 연결 후 확인');
+          const sub=document.createElement('small');sub.textContent=port.description;
+          text.append(title,sub);label.append(check,text);picker.appendChild(label);
+        });
       } catch (error) { document.getElementById('hardware-error').textContent = error.message; }
       finally { portsLoading = false; }
     }
@@ -982,6 +1017,8 @@
         return;
       }
       hardwareBusy = true;
+      document.querySelectorAll('#port-picker input').forEach(el=>el.disabled=true);
+      document.getElementById('hardware-connect').textContent='연결 중…';
       const controls = ['master-toggle','master-port','slave-ports','hardware-connect','hardware-disconnect','hardware-refresh'];
       controls.forEach(id => document.getElementById(id).disabled = true);
       try {
@@ -995,6 +1032,8 @@
       } catch (error) { document.getElementById('hardware-error').textContent = error.message; }
       finally {
         hardwareBusy = false;
+        document.querySelectorAll('#port-picker input').forEach(el=>el.disabled=false);
+        document.getElementById('hardware-connect').textContent='연결';
         controls.forEach(id => document.getElementById(id).disabled = false);
         await fetchStatus();
       }

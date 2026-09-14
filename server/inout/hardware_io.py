@@ -5,6 +5,7 @@ import json
 import re
 import threading
 import time
+from server.text_log import LOG_DIR, write_log
 
 try:
     import serial
@@ -15,6 +16,8 @@ RECENT_WINDOW_S = 10.0
 ONLINE_TIMEOUT_S = 8.0
 RAW_LOG_LIMIT = 300
 ESP_LIKELY_VIDS = {0x303A, 0x1A86, 0x10C4, 0x0403}
+_monitor_stop = threading.Event()
+_monitor_thread: threading.Thread | None = None
 
 def now_ms() -> float:
     return time.time() * 1000.0
@@ -47,6 +50,45 @@ _cells: dict[str, dict] = {}
 _raw_log: list[dict] = []
 
 
+def _log_slave_loss_locked(s: dict, reason: str) -> None:
+    """One record per outage; caller owns _lock. Only track identified, live slaves."""
+    if s.get("loss_logged") or s.get("heartbeat_mono") is None:
+        return
+    elapsed = max(0.0, time.monotonic() - s["heartbeat_mono"])
+    reason = str(reason).replace("\r", " ").replace("\n", " ")
+    line = ("통신 끊김 | "
+            f"Slave {s['slave']} | port={s.get('port', '')} | mode={_mode} | "
+            f"마지막 heartbeat 후 {elapsed:.1f}초 | {reason}\n")
+    if write_log(line, "SLAVE"):
+        s["loss_logged"] = True
+
+
+def _check_slave_losses_locked() -> None:
+    now = time.monotonic()
+    for s in _slaves.values():
+        c = _connections.get(s.get("port"))
+        if c is None or c["stop"].is_set():
+            continue
+        last = s.get("heartbeat_mono")
+        if last is not None and now - last > ONLINE_TIMEOUT_S:
+            _log_slave_loss_locked(s, f"heartbeat {ONLINE_TIMEOUT_S:g}초 초과 미수신")
+
+
+def _port_lost_locked(c: dict, reason: str) -> None:
+    if c["stop"].is_set():
+        return
+    for s in _slaves.values():
+        if s.get("port") == c["port"]:
+            _log_slave_loss_locked(s, f"USB/시리얼 경로 오류: {reason}")
+
+
+def _monitor_losses() -> None:
+    # Runs independently of the browser so closing admin does not stop recording.
+    while not _monitor_stop.wait(0.5):
+        with _lock:
+            _check_slave_losses_locked()
+
+
 def _touch_slave(slave_id: int) -> dict:
     s = _slaves.get(slave_id)
     if s is None:
@@ -66,6 +108,7 @@ def _touch_slave(slave_id: int) -> dict:
 
 
 def _record_raw(line: str, kind: str) -> None:
+    write_log(line, f"SERIAL/{kind}")
     _raw_log.append({"ts": now_ms(), "kind": kind, "line": line[:400]})
     if len(_raw_log) > RAW_LOG_LIMIT:
         del _raw_log[: len(_raw_log) - RAW_LOG_LIMIT]
@@ -146,6 +189,10 @@ def _consume_line(line: str, port: str | None = None, generation: int | None = N
 
         # 하트비트로 연결 여부와 점유 상태를 갱신한다(이벤트 수는 유지).
         if t == "heartbeat":
+            # Catch an overdue heartbeat even if it arrives just before the monitor tick.
+            _check_slave_losses_locked()
+            s["heartbeat_mono"] = time.monotonic()
+            s["loss_logged"] = False
             s["last_heartbeat_ms"] = now_ms()
             s["heartbeat_count"] += 1
             if _mode == "direct":
@@ -299,6 +346,7 @@ def _write(c: dict, command: str) -> bool:
                     if "FileNotFoundError" in detail else detail
                 )
                 _record_raw(f"[{c['port']}] {detail}", "error")
+                _port_lost_locked(c, detail)
             return False
 
 
@@ -376,6 +424,7 @@ def _serial_loop(c: dict, mode: str, generation: int) -> None:
         except (serial.SerialException, OSError) as exc:
             with _lock:
                 c["error"] = str(exc)
+                _port_lost_locked(c, str(exc))
         finally:
             if mode == "direct":
                 _write(c, "U0")
@@ -393,10 +442,15 @@ def _serial_loop(c: dict, mode: str, generation: int) -> None:
 
 
 def stop_serial() -> None:
+    global _monitor_thread
     with _connection_lock:
         sessions = list(_connections.values())
         for c in sessions:
             c["stop"].set()
+        _monitor_stop.set()
+        if _monitor_thread is not None:
+            _monitor_thread.join()
+            _monitor_thread = None
         for c in sessions:
             c["thread"].join()
         with _lock:
@@ -418,7 +472,7 @@ def validate_connection(mode: str, ports: list[str], baud: int = 115200) -> list
 
 
 def configure_connection(mode: str, ports: list[str], baud: int = 115200, *, before_start=None) -> None:
-    global _mode, _generation
+    global _mode, _generation, _monitor_thread
     ports = validate_connection(mode, ports, baud)
     with _connection_lock:
         stop_serial()
@@ -445,6 +499,10 @@ def configure_connection(mode: str, ports: list[str], baud: int = 115200, *, bef
                 _connections[port] = c
         for c in _connections.values():
             c["thread"].start()
+        if ports:
+            _monitor_stop.clear()
+            _monitor_thread = threading.Thread(target=_monitor_losses, name="slave-loss-log", daemon=True)
+            _monitor_thread.start()
 
 
 def start_serial(port: str, baud: int) -> None:

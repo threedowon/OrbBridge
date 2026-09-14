@@ -23,6 +23,9 @@ def _open_browser() -> None:
 
 
 def main() -> None:
+    from server.text_log import install_logging
+
+    install_logging()
     from server.main import run_main
 
     if is_frozen():

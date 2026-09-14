@@ -29,6 +29,7 @@ dist/
 .vscode/
 *.swp
 *.log
+/log/*.txt
 *.tmp
 .env
 .env.*

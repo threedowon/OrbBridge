@@ -34,10 +34,13 @@ class FakeSerial:
 
 
 @pytest.fixture
-def debug(monkeypatch):
+def debug(monkeypatch, tmp_path):
     import server.inout.hardware_io as module
 
     d = importlib.reload(module)
+    monkeypatch.setattr(d, "LOG_DIR", tmp_path / "log")
+    from server import text_log
+    monkeypatch.setattr(text_log, "_sink", text_log.LineLog(d.LOG_DIR))
     devices = {}
 
     def connect(port, baud, **kwargs):
@@ -302,3 +305,56 @@ def test_main_usb_input_drives_game_and_snapshot_does_not_repeat_midi(debug, mon
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
         for name in ("server.main", "serial", "server.inout.serial_io"):
             sys.modules.pop(name, None)
+
+
+def loss_lines(d):
+    return [line for path in sorted(d.LOG_DIR.glob("*.txt"))
+            for line in path.read_text(encoding="utf-8").splitlines() if "통신 끊김 |" in line]
+
+
+def test_outages_are_logged_without_browser_once_and_rearmed_on_recovery(debug, monkeypatch):
+    d, devices = debug
+    monkeypatch.setattr(d, "ONLINE_TIMEOUT_S", 0.1)
+    d.configure_connection("direct", ["COM30"])
+    wait_for(lambda: "COM30" in devices and devices["COM30"].writes)
+    line(d, "COM30", type="heartbeat", slave=6, state=0, transport="usb")
+    wait_for(lambda: len(loss_lines(d)) == 1)
+    path = next(d.LOG_DIR.glob("*.txt"))
+    text = path.read_text(encoding="utf-8")
+    assert "Slave 6" in text and "COM30" in text and "mode=direct" in text
+    assert "미수신" in text
+    with d._lock:
+        d._check_slave_losses_locked()
+        d._check_slave_losses_locked()
+    assert len(loss_lines(d)) == 1
+    line(d, "COM30", type="heartbeat", slave=6, state=0, transport="usb")
+    wait_for(lambda: len(loss_lines(d)) == 2)
+    import re
+    assert re.match(r"orbbridge_\d{4}-\d{2}-\d{2}_\d{6}_[0-9a-f]+_001\.txt", path.name)
+    assert re.match(r"\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2}\]", text)
+
+
+def test_master_port_loss_logs_each_observed_slave_only_once(debug):
+    d, devices = debug
+    d.start_serial("COM1", 115200)
+    wait_for(lambda: "COM1" in devices and d._master["open"])
+    for sid in (1, 6):
+        line(d, "COM1", type="heartbeat", slave=sid, state=0)
+    devices["COM1"].fail_write = True
+    assert not d.send_led(3)
+    with d._lock:
+        d._port_lost_locked(d._master, "same outage")
+    lines = loss_lines(d)
+    assert len(lines) == 2
+    assert "Slave 1" in lines[0] and "Slave 6" in lines[1]
+    assert all("mode=master" in entry and "USB/시리얼" in entry for entry in lines)
+
+
+def test_normal_traffic_and_manual_disconnect_do_not_create_fault_log(debug):
+    d, devices = debug
+    d.configure_connection("direct", ["COM30"])
+    wait_for(lambda: "COM30" in devices and devices["COM30"].writes)
+    line(d, "COM30", type="heartbeat", slave=6, state=0, transport="usb")
+    d.stop_serial()
+    assert not loss_lines(d)
+    assert "heartbeat" in next(d.LOG_DIR.glob("*.txt")).read_text(encoding="utf-8")
