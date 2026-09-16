@@ -65,6 +65,27 @@ slave 데이터가 들어온다는 이유만으로 master 생존 신호를 갱�
 
 ## 확인 순서
 
+### Master ON에서 LED가 켜진 뒤 꺼지지 않는 경우
+
+슬레이브의 RS485 수신은 13바이트 바이너리 프레임과 `C0`~`C9` LED 명령을
+분리해서 처리한다. 이전 문자열 수신 방식은 바이너리 프레임 뒤에 붙은 LED
+명령을 버리거나 UID/CRC의 일부를 명령으로 해석할 수 있었다.
+수정 적용에는 **각 slave에 `firmware/slave/slave.ino`를 다시 업로드**해야 한다.
+같은 폴더의 `LedCommandParser.h`도 필요하다. 서버 재시작만으로는 적용되지 않는다.
+
+업로드 후 Master ON에서 흰색 → 끄기를 반복하고, 오브를 추가·제거하면서도
+끄기 상태가 유지되는지 확인한다. 실제 RS485 충돌이나 전원 문제까지 이 수정으로
+해결됐다고 보장하지는 않으며, 계속 실패하면 당시 heartbeat와 통신 로그를 확인한다.
+
+수신 파서 회귀 테스트는 Visual Studio 개발자 명령 프롬프트에서 실행할 수 있다:
+
+```bat
+cl /nologo /EHsc /W4 tests\led_command_parser_test.cpp /Fo:build\led_command_parser_test.obj /Fe:build\led_command_parser_test.exe
+build\led_command_parser_test.exe
+```
+
+### 전체 점검
+
 1. 새 slave 펌웨어 업로드 후 ON에서 기존 오브 감지와 LED 테스트를 확인한다.
 2. slave 두 개 이상을 각각 USB로 연결하고 OFF에서 해당 포트를 선택한다.
 3. 기존에 올라간 오브, 추가·제거, 각 slave의 heartbeat와 LED를 확인한다.

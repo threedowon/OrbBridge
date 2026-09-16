@@ -20,6 +20,7 @@
 #include <OneWire.h>
 #include <Adafruit_NeoPixel.h>
 #include <HardwareSerial.h>
+#include "LedCommandParser.h"
 
 #define TX_PIN       39
 #define RX_PIN       40
@@ -120,7 +121,7 @@ unsigned long ledOffAt = 0;
 int ledEffect = 0;
 unsigned long effectStart = 0;
 unsigned long lastAnimMs = 0;
-String cmdLine;
+LedCommandParser ledCommandParser;
 String usbCmdLine;
 bool usbDirect = false;
 unsigned long usbLeaseMs = 0;
@@ -204,21 +205,16 @@ uint8_t crc8(const uint8_t* data, int len) {
 }
 
 // RS485 수신 처리: carrier-sense 활동 감지 + master LED 명령("C<n>\n") 파싱.
-// slave→master 바이너리 프레임(STX=0x02)은 'C' 로 시작 안 하므로 명령으로 오검출 안 됨.
+// 바이너리 프레임의 UID/CRC 안에도 C, 숫자, 개행이 들어갈 수 있으므로 분리한다.
 void drainBus() {
   while (RS485.available()) {
-    char c = (char)RS485.read();
+    unsigned char c = (unsigned char)RS485.read();
     lastBusRxMs = millis();
-    if (c == '\n') {
-      if (!usbDirect && cmdLine.length() >= 2 && cmdLine[0] == 'C') {
-        ledEffect = cmdLine.substring(1).toInt();
-        effectStart = millis();
-        applyEffectOnce();
-      }
-      cmdLine = "";
-    } else if (c != '\r') {
-      if (cmdLine.length() < 8) cmdLine += c;
-      else cmdLine = "";     // 너무 긴 줄(바이너리 프레임 등) → 명령 아님
+    int effect = ledCommandParser.feed(c, lastBusRxMs);
+    if (!usbDirect && effect >= 0) {
+      ledEffect = effect;
+      effectStart = millis();
+      applyEffectOnce();
     }
   }
 }
