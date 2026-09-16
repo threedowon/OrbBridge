@@ -83,7 +83,7 @@ _websocket_lock = threading.Lock()
 _websocket_service = None
 
 # ── 슬레이브 생존 추적 (heartbeat 기반 online/offline) ──
-# slave.ino 가 3초(HEARTBEAT_MS)마다 heartbeat 를 보낸다. 이 시간(주기의 ~2.5배)
+# slave.ino 가 2초(HEARTBEAT_MS)마다 heartbeat 를 보낸다. 이 시간(주기의 4배)
 # 안에 heartbeat 가 없으면 offline 으로 본다. 몇 개 놓쳐도 깜빡이지 않도록 여유.
 SLAVE_ONLINE_TIMEOUT_S = 8.0
 _slaves: dict[int, dict] = {}
@@ -93,11 +93,7 @@ _slaves: dict[int, dict] = {}
 SLAVE_ID_MIN = 1
 SLAVE_ID_MAX = 99
 
-# 오브를 올린 직후 곧바로 들어오는 removed 는 접촉이 덜 잡힌 것이지 실제로 뺀
-# 것이 아니다. added 로부터 이 시간 안에 온 removed 는 무시한다.
-# 정말로 뺀 경우라면 heartbeat 점유 마스크 자가복구가 몇 초 안에 칸을 비운다.
-QUICK_REMOVE_IGNORE_MS = 1000.0
-_cell_added_at: dict[str, float] = {}
+# slave가 300ms 연속 미검출을 확인한 removed는 서버에서 즉시 반영한다.
 
 # 슬레이브가 유실 대비로 added·removed 를 여러 번 보낸다(slave.ino FRAME_REPEAT).
 # 같은 칸에 같은 오브가 이 시간 안에 다시 들어오면 재전송으로 보고 버린다.
@@ -119,12 +115,6 @@ def _record_event(entry: dict) -> None:
             del _event_log[: len(_event_log) - EVENT_LOG_LIMIT]
 
 
-def _mark_cell_added(slave: int, cell: int) -> None:
-    """removed 가 너무 빨리 오는지 재려고 배치 시각을 남긴다."""
-    with _state_lock:
-        _cell_added_at[_cell_key(slave, cell)] = time.time() * 1000
-
-
 def _is_duplicate_added(slave: int, cell: int, orb_id: str) -> bool:
     """슬레이브의 반복 전송이면 True. 기록은 매번 갱신한다."""
     key = _cell_key(slave, cell)
@@ -137,21 +127,6 @@ def _is_duplicate_added(slave: int, cell: int, orb_id: str) -> bool:
         return False
     last_ident, last_at = previous
     return last_ident == ident and (now - last_at) < DUPLICATE_ADDED_IGNORE_MS
-
-
-def _is_quick_remove(slave: int, cell: int) -> float | None:
-    """배치 직후의 removed 면 경과 ms 를, 아니면 None 을 준다.
-
-    판정과 동시에 기록을 지운다. 무시된 removed 뒤에 또 removed 가 와도
-    같은 배치 시각으로 계속 무시되지 않게 하려는 것이다.
-    """
-    key = _cell_key(slave, cell)
-    with _state_lock:
-        added_at = _cell_added_at.pop(key, None)
-    if added_at is None:
-        return None
-    elapsed = time.time() * 1000 - added_at
-    return elapsed if elapsed < QUICK_REMOVE_IGNORE_MS else None
 
 
 def _touch_slave(slave_id: int, *, heartbeat: bool) -> None:
@@ -918,29 +893,18 @@ def handle_serial_message(event: dict) -> None:
             return
         event = {**event, "type": "added"}
         _is_duplicate_added(sid, cell, orb_id)  # Update repeat tracking; live state wins.
-        _mark_cell_added(sid, cell)
         handle_event(event)
         return
 
-    # 접촉 불량 보정은 하드웨어 입력에만 건다. admin 테이블 시뮬레이터가 쓰는
-    # /api/event 는 접촉이라는 게 없으므로 handle_event 가 아니라 여기서 거른다.
+    # added 재전송만 중복 제거한다. 제거는 slave에서 이미 안정화했다.
     try:
         cell = int(event.get("cell"))
     except (TypeError, ValueError):
         cell = None
     if sid is not None and cell is not None:
-        if t == "removed":
-            elapsed_ms = _is_quick_remove(sid, cell)
-            if elapsed_ms is not None:
-                print(
-                    f"[removed] 무시 — slave={sid} cell={cell} "
-                    f"배치 {elapsed_ms:.0f}ms 만에 removed (접촉 불량 추정)"
-                )
-                return
-        elif t == "added":
+        if t == "added":
             if _is_duplicate_added(sid, cell, event.get("id")):
                 return   # 슬레이브 반복 전송 — 첫 프레임만 처리한다
-            _mark_cell_added(sid, cell)
 
     handle_event(event)
 
@@ -1050,6 +1014,8 @@ def handle_event(event: dict) -> dict:
 
     _record_event({"type": "removed", "slave": slave, "cell": cell,
                    "id": orb_key or orb_id, "voice": voice, "note": note})
+    with _state_lock:
+        _last_added.pop(_cell_key(slave, cell), None)
 
     print(f"[removed] slave={slave} cell={cell} Q={q_actual} note={note} voice={voice}")
     _publish_web_event(
@@ -1069,7 +1035,7 @@ def handle_event(event: dict) -> dict:
 #                             (/orb/recovered — screen 은 이 주소를 처리 안 함).
 #                             관람자가 스스로 다시 올리면 진짜 added 로 정확히 복구됨.
 #  - mask=빔  / memory=점유 → removed 유실. UID 불필요 → 정식 /orb/removed 로 화면도 정리.
-# 센서 순간 오검출(flicker) 방지: "직전 heartbeat 와 같은 마스크"일 때만 반영(연속 2회).
+# 센서 순간 오검출 방지: 해당 슬롯의 점유 비트가 연속 2회 같을 때 반영한다.
 
 def _synth_added_unknown(slave_id: int, cell: int) -> None:
     """유실된 added 추정 — 정체 미상. admin 에만 표시하고 screen 에는 보내지 않는다."""
@@ -1097,6 +1063,8 @@ def _synth_removed(slave_id: int, cell: int) -> None:
     )
     if not runtime_result.value:
         return
+    with _state_lock:
+        _last_added.pop(_cell_key(slave_id, cell), None)
     voice   = (cell_data or {}).get("voice", "unknown")
     orb_key = (cell_data or {}).get("id", "") or ""
     _q, note = parse_cell(cell)
@@ -1117,18 +1085,19 @@ def reconcile_occupancy_mask(slave_id: int, occupancy_mask: int) -> None:
         prev = s.get("prev_occupancy_mask") if s else None
         if s is not None:
             s["prev_occupancy_mask"] = occupancy_mask
-        # 직전 heartbeat 와 마스크가 동일해야(=~3초 안정) 반영. 순간 오검출 1회는 무시.
-        stable = prev is not None and prev == occupancy_mask
         occupied_mem = {
             int(k.split(":", 1)[1])
             for k in get_cells()
             if k.startswith(f"{slave_id}:")
         }
 
-    if not stable:
+    if prev is None:
         return
 
     for cell in range(1, 17):
+        # 다른 슬롯의 변화 때문에 이 슬롯의 제거 복구가 계속 지연되지 않게 한다.
+        if (prev ^ occupancy_mask) & (1 << (cell - 1)):
+            continue
         mask_occ = bool((occupancy_mask >> (cell - 1)) & 1)
         mem_occ  = cell in occupied_mem
         if mask_occ and not mem_occ:
@@ -1170,7 +1139,6 @@ def _clear_hardware_game() -> None:
     _remove_all_cells_for_admin()
     with _state_lock:
         _slaves.clear()
-        _cell_added_at.clear()
         _last_added.clear()
     _led_normal_restored = False
 
