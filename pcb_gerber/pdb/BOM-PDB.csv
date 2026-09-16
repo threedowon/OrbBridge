@@ -1,0 +1,10 @@
+Comment,Designator,Footprint,LCSC,Quantity
+100uF,"C1,C9",CP_Elec_6.3x5.4,C970684,2
+10µF,"C2,C3,C4,C5,C6,C7,C8",C_1206_3216Metric,C13585,7
+1k,"R1,R2,R3,R4,R5,R6,R7",R_0603_1608Metric,C21190,7
+Input_Terminal_01x02,J9,"TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal",C474881,1
+LED,"D1,D10,D12,D14,D4,D6,D8",LED_0603_1608Metric,C2286,7
+Polyfuse,"F1,F2,F3,F4,F5,F6,F7",Fuse_1812_4532Metric,C142747,7
+SS34,"D11,D13,D2,D3,D5,D7,D9",D_SMA,C8678,7
+SW_Terminal,J10,"TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal",C474881,1
+Screw_Terminal_01x02,"J2,J3,J4,J5,J6,J7,J8","TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal",C474881,7
