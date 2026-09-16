@@ -15,7 +15,7 @@
     "port": 8080
   },
   "serial": {
-    "port": "COM38",
+    "port": "COM21",
     "baudrate": 115200
   },
   "matrix_display": {
