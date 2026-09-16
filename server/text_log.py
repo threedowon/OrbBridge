@@ -8,10 +8,19 @@ from pathlib import Path
 import sys
 import threading
 import uuid
+from collections import deque
+import time
 
 from server.app_paths import data_dir
 
 LOG_DIR = data_dir().parent / "log"
+_recent_console = deque(maxlen=500)
+_recent_console_lock = threading.Lock()
+
+
+def recent_console() -> list[dict]:
+    with _recent_console_lock:
+        return [dict(row) for row in _recent_console]
 
 class LineLog:
     def __init__(self, directory: Path, max_lines: int = 1000):
@@ -48,6 +57,10 @@ _fallback = sys.stderr
 
 def write_log(text: str, source: str = "LOG") -> bool:
     global _error_reported
+    if source in ("STDOUT", "STDERR", "SYSTEM", "LOG"):
+        with _recent_console_lock:
+            for line in str(text).splitlines() or [""]:
+                _recent_console.append({"ts": time.time() * 1000, "source": source, "line": line[:4000]})
     # Library imports/tests have no file side effects; entry points install the sink.
     if _sink is None:
         return True
