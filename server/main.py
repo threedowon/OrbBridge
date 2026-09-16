@@ -846,8 +846,14 @@ def handle_serial_message(event: dict) -> None:
                 type(effect) is int and 0 <= effect <= 9 and
                 all(type(v) is int and 0 <= v <= 0xffffffff for v in (rx, applied))):
             duration = (applied - rx) & 0xffffffff
+            waiting = event.get("ack_wait_ms")
+            wait_text = (f"응답송신대기={waiting}ms " if type(waiting) is int and waiting >= 0
+                         else "응답송신대기=미측정(이전 펌웨어) ")
+            if event.get("timing_capped"):
+                wait_text += "[경고: 측정값 상한 65535ms 도달] "
             print(f"[led] [slave {sid}] [수신] {received_at} 적용 확인 이펙트={effect} "
                   f"보드수신={rx}ms 보드출력완료={applied}ms 처리={duration}ms "
+                  f"{wait_text}"
                   "(PC 확인 응답 수신 시각)")
         return
 
