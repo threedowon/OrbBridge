@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OrbBridge · 시리얼 로그</title>
+<style>
+  :root { color-scheme: dark; font-family: system-ui,sans-serif; background:#11151b; color:#e4e9f0; }
+  body { margin:0; padding:24px; }
+  h1 { font-size:22px; margin:0 0 8px; }
+  p { color:#aeb9c9; margin:8px 0 20px; }
+  nav { display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin-bottom:16px; }
+  button,select,input[type=search] { padding:9px 12px; background:#202833; color:inherit; border:1px solid #465367; border-radius:5px; }
+  button { cursor:pointer; } input[type=search] { flex:1; min-width:150px; }
+  #status { font-size:13px; color:#aeb9c9; margin-bottom:12px; }
+  #log { height:calc(100vh - 230px); min-height:200px; overflow:auto; border:1px solid #344052; padding:12px; }
+  .row { white-space:pre-wrap; overflow-wrap:anywhere; font:13px/1.7 Consolas,monospace; border-bottom:1px solid #202833; }
+  .led { color:#9bd5ff; } .heartbeat { color:#b0c2aa; } .error { color:#ffb0a9; }
+</style>
+<h1>시리얼 로그</h1>
+<p>하트비트 · 마스터 송신 · 슬레이브 응답을 확인합니다. 시각은 PC 수신 기준이며 밀리초까지 표시합니다.</p>
+<nav>
+  <select id="filter" aria-label="로그 종류"><option value="all">전체</option><option value="heartbeat">하트비트</option><option value="led">LED</option><option value="event">오브 이벤트</option><option value="error">오류</option></select>
+  <input id="search" type="search" placeholder="slave 번호, COM 포트, ID 검색" aria-label="로그 검색">
+  <button id="pause">일시정지</button><button id="copy">표시 로그 복사</button>
+  <label><input id="follow" type="checkbox" checked> 자동 스크롤</label>
+</nav>
+<div id="status" role="status">연결 중…</div>
+<div id="log" aria-label="시리얼 수신 로그"></div>
+<script>
+  const $ = id => document.getElementById(id);
+  let rows = [], paused = false;
+  function classify(r) {
+    if (r.kind === 'error' || r.kind === 'badjson') return 'error';
+    if (r.kind === 'heartbeat' || /"type"\s*:\s*"heartbeat"/.test(r.line)) return 'heartbeat';
+    if (/led_ack|#master led/.test(r.line)) return 'led';
+    if (/"type"\s*:\s*"(?:added|removed|snapshot)"/.test(r.line)) return 'event';
+    return 'other';
+  }
+  function display(r) {
+    const date = new Date(r.ts);
+    const time = date.toLocaleTimeString('ko-KR', {hour12:false}) + '.' + String(date.getMilliseconds()).padStart(3,'0');
+    const start = r.line.indexOf('{');
+    let message = r.line;
+    try {
+      const e = JSON.parse(r.line.slice(start));
+      const source = `[slave ${e.slave}]`;
+      if (e.type === 'led_ack') message = `[led] ${source} [수신] 이펙트=${e.effect} 적용 확인 · 보드수신=${e.received_ms}ms · 출력완료=${e.applied_ms}ms`;
+      else if (e.type === 'heartbeat') message = `[heartbeat] ${source} [수신] 점유=${e.occupancy_mask ?? e.state} · ${r.line}`;
+      else message = `[serial] ${source} [수신] ${r.line}`;
+    } catch {
+      if (r.line.includes('#master led')) message = `[led] [master] [수신: 송신결과] ${r.line}`;
+      else if (r.line.includes('#master alive')) message = `[heartbeat] [master] [수신] ${r.line}`;
+    }
+    return `${time} ${message}`;
+  }
+  function render() {
+    const scroll = $('log').scrollTop;
+    const fragment = document.createDocumentFragment();
+    for (const r of rows) {
+      const kind = classify(r), text = display(r);
+      if ($('filter').value !== 'all' && $('filter').value !== kind) continue;
+      if (!text.toLowerCase().includes($('search').value.toLowerCase())) continue;
+      const div = document.createElement('div'); div.className = 'row ' + kind;
+      div.textContent = text; fragment.appendChild(div);
+    }
+    $('log').replaceChildren(fragment);
+    $('log').scrollTop = $('follow').checked ? $('log').scrollHeight : scroll;
+  }
+  async function poll() {
+    try {
+      if (!paused) {
+        const response = await fetch('/api/status', {cache:'no-store'});
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const state = await response.json();
+        if (!paused) {
+          rows = state.hardware?.raw || [];
+          $('status').textContent = `${state.hardware?.mode === 'direct' ? 'USB 직접 연결' : 'Master 경유'} · 최근 ${rows.length}줄 · 갱신 ${new Date().toLocaleTimeString()}`;
+          render();
+        }
+      }
+    } catch (error) { $('status').textContent = '갱신 실패: ' + error.message; }
+    finally { setTimeout(poll, 500); }
+  }
+  $('filter').addEventListener('change', render); $('search').addEventListener('input', render);
+  $('pause').addEventListener('click', () => {
+    paused = !paused; $('pause').textContent = paused ? '다시 시작' : '일시정지';
+    if (paused) $('status').textContent = '화면 갱신 일시정지 · 서버 로그 기록은 계속됩니다.';
+  });
+  $('copy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(Array.from($('log').children, row => row.textContent).join('\n')); $('status').textContent = '표시된 로그를 복사했습니다.'; }
+    catch { $('status').textContent = '복사 권한이 없습니다. 로그를 선택해 복사해주세요.'; }
+  });
+  poll();
+</script>
+</html>

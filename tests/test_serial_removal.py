@@ -29,7 +29,9 @@ def test_led_timestamps_and_ack_do_not_modify_game(capsys):
     output = capsys.readouterr().out
     assert writes == ["C1"]
     assert "PC 전송 요청 시각" in output
-    assert "적용 확인 slave=1 이펙트=1" in output
+    assert "[led] [master] [송신]" in output
+    assert "[led] [slave 1] [수신]" in output
+    assert "적용 확인 이펙트=1" in output
     assert "처리=5ms" in output
     assert "PC 확인 응답 수신 시각" in output
     assert not main._slaves

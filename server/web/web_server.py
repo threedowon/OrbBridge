@@ -193,6 +193,10 @@ def start_http_server(
                 self._serve_file(HARDWARE_ADMIN_UI / "index.html")
                 return
 
+            if path in ("/admin/serial-log", "/admin/serial-log/"):
+                self._serve_file(HARDWARE_ADMIN_UI / "serial-log.html")
+                return
+
             if path in ("/admin/software", "/admin/software/"):
                 self._serve_file(SOFTWARE_ADMIN_UI / "index.html")
                 return
