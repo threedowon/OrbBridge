@@ -22,7 +22,8 @@ def restore_test_imports():
 def test_led_timestamps_and_ack_do_not_modify_game(capsys):
     main = _load_main_module()
     writes = []
-    with patch.object(main._serial_writer, "send_line", side_effect=lambda cmd: writes.append(cmd) or True):
+    with patch.object(main._serial_writer, "send_line", side_effect=lambda cmd: writes.append(cmd) or True), \
+            patch.object(main.hardware_io, "_snapshot", return_value={"mode": "master"}):
         main.send_led_effect(1)
     main.handle_serial_message(dict(type="led_ack", slave=1, effect=1,
                                    received_ms=0xfffffffe, applied_ms=3))

@@ -203,6 +203,8 @@ def test_http_mode_switch_validation_and_state(debug, monkeypatch):
             assert json.load(response)["hardware"]["mode"] == "direct"
         with urllib.request.urlopen(base + "/api/admin/hardware/ports") as response:
             assert json.load(response) == {"ports": []}
+        with urllib.request.urlopen(base + "/api/admin/logs") as response:
+            assert isinstance(json.load(response)["logs"], list)
         with pytest.raises(urllib.error.HTTPError) as error:
             post("/api/admin/hardware/connect", [])
         assert error.value.code == 400

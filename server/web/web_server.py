@@ -68,6 +68,7 @@ def start_http_server(
     QUIET_PATHS = (
         "/api/status", "/api/admin/midi/status", "/api/admin/hardware/ports",
         "/api/admin/led",
+        "/api/admin/logs",
     )
 
     class Handler(BaseHTTPRequestHandler):
@@ -140,6 +141,11 @@ def start_http_server(
                 self.send_response(302)
                 self.send_header("Location", "/admin")
                 self.end_headers()
+                return
+
+            if path == "/api/admin/logs":
+                from server.text_log import recent_console
+                self._json(200, {"logs": recent_console()})
                 return
 
             if path == "/api/voices":

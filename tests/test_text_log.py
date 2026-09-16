@@ -2,8 +2,24 @@ import io
 from concurrent.futures import ThreadPoolExecutor
 import subprocess
 import sys
+from collections import deque
 
 from server import text_log
+
+
+def test_web_console_keeps_bounded_output_without_serial_duplicates(monkeypatch):
+    monkeypatch.setattr(text_log, "_recent_console", deque(maxlen=500))
+    monkeypatch.setattr(text_log, "_sink", None)
+    for i in range(510):
+        text_log.write_log(f"[led] [master] [송신] {i}", "STDOUT")
+    text_log.write_log("heartbeat", "SERIAL/json")
+    text_log.write_log("event", "EVENT")
+    rows = text_log.recent_console()
+    assert len(rows) == 500
+    assert rows[0]["line"].endswith(" 10")
+    assert rows[-1]["line"].endswith(" 509")
+    rows[0]["line"] = "modified"
+    assert text_log.recent_console()[0]["line"] != "modified"
 
 
 def test_rotation_counts_physical_lines_and_preserves_sessions(tmp_path):

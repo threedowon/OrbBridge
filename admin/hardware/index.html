@@ -295,9 +295,21 @@
 
     .log-time { color: var(--muted); margin-right: 6px; }
     .log-added { color: var(--ok); }
-    .log-removed { color: var(--err); }
+    .log-removed { color: var(--ok); }
     .log-warn { color: var(--warn); }
     .log-info { color: var(--accent); }
+    .log-send { color: #529dff; }
+    .log-receive { color: #3ccf87; }
+    .log-error { color: #ff6464; }
+    .log-warning { color: #e4b52f; }
+    .logs-dashboard { margin-top:24px; width:100%; min-width:0; }
+    .logs-toolbar { display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin-bottom:12px; font-size:12px; }
+    .logs-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+    .log-pane { min-width:0; }
+    .log-pane header { display:flex; justify-content:space-between; align-items:center; padding:0 0 8px; position:static; background:none; border:0; }
+    .log-pane h3 { margin:0; font-size:14px; }
+    .log-pane .event-log { height:240px; max-height:240px; white-space:pre-wrap; overflow-wrap:anywhere; }
+    @media(max-width:760px) { .logs-grid { grid-template-columns:1fr; } }
 
     .stats-grid {
       display: grid;
@@ -561,6 +573,15 @@
         <div class="info-row"><span class="label">Orb ID</span><span class="value" id="d-id">—</span></div>
         <div class="info-row"><span class="label">결과</span><span class="value" id="d-result">—</span></div>
       </div>
+      <div class="logs-dashboard">
+        <div class="logs-toolbar"><strong>실시간 로그</strong><span class="log-send">파랑 · 송신</span><span class="log-receive">초록 · 수신</span><span class="log-error">빨강 · 오류</span><span class="log-warning">노랑 · 경고</span><span id="console-log-status" role="status"></span></div>
+        <div class="logs-grid">
+          <section class="log-pane"><header><h3>하트비트</h3><button type="button" data-copy-log="heartbeat-log">복사</button></header><div id="heartbeat-log" class="event-log" aria-label="하트비트 로그"></div></section>
+          <section class="log-pane"><header><h3>원시 시리얼 · 하트비트 제외</h3><button type="button" data-copy-log="serial-log">복사</button></header><div id="serial-log" class="event-log" aria-label="원시 시리얼 로그"></div></section>
+          <section class="log-pane"><header><h3>이벤트</h3><button type="button" data-copy-log="event-log">복사</button></header><div id="event-log-slot"></div></section>
+          <section class="log-pane"><header><h3>서버 콘솔 · LED / HTTP / WS</h3><button type="button" data-copy-log="console-log">복사</button></header><div id="console-log" class="event-log" aria-label="서버 콘솔 로그"></div></section>
+        </div>
+      </div>
     </section>
 
     <section class="panel side-panel">
@@ -593,7 +614,6 @@
         </div>
         <div id="hardware-status" style="white-space:pre-wrap;font-size:12px;margin-top:10px" aria-live="polite"></div>
         <div id="hardware-error" style="color:var(--err);font-size:12px" role="alert"></div>
-        <button id="open-serial-log" style="margin-top:12px" type="button">시리얼 로그 새 창 열기</button>
       </div>
 
       <div class="slave-section hardware-only">
@@ -704,8 +724,8 @@
 
     function addLog(type, text, cls = '', ts = null, prepend = true) {
       const entry = document.createElement('div');
-      entry.className = 'log-entry';
-      entry.innerHTML = `<span class="log-time">${fmtTime(ts)}</span><span class="${cls}">[${type}]</span> ${text}`;
+      entry.className = 'log-entry ' + logColor(`[${type}] ${text}`, type === 'error' ? 'error' : cls === 'log-warn' ? 'warning' : cls === 'log-info' ? 'send' : 'receive');
+      entry.textContent = `${fmtTime(ts)} [${type}] ${text}`;
       if (prepend) logEl.prepend(entry);
       else logEl.appendChild(entry);
       while (logEl.children.length > LOG_LIMIT) logEl.lastChild.remove();
@@ -913,11 +933,47 @@
       updateGameButtons();
     }
 
-    document.getElementById('open-serial-log').addEventListener('click', () => {
-      const logWindow = window.open('/admin/serial-log', 'orbbridge-serial-log', 'width=1100,height=760,resizable=yes,scrollbars=yes');
-      if (logWindow) logWindow.focus();
-      else addLog('error', '팝업이 차단됐습니다. 브라우저에서 팝업을 허용해주세요.', 'log-warn');
-    });
+    function logColor(text, fallback = '') {
+      if (/\[error\]|\bERROR\b|\bTraceback\b|\b\w+Error:|오류|실패/i.test(text)) return 'log-error';
+      if (/\[warn(?:ing)?\]|\bWARNING\b|경고/i.test(text)) return 'log-warning';
+      if (/\[송신\]|\[전송\]/.test(text)) return 'log-send';
+      if (/\[수신\]/.test(text)) return 'log-receive';
+      return fallback ? 'log-' + fallback : '';
+    }
+    function renderLogRows(id, rows, fallback = '') {
+      const el = document.getElementById(id), scroll = el.scrollTop;
+      const fragment = document.createDocumentFragment();
+      for (const row of [...rows].reverse()) {
+        const div = document.createElement('div');
+        div.className = 'log-entry ' + logColor(row.line, ['error','badjson'].includes(row.kind) ? 'error' : fallback);
+        const d = new Date(row.ts);
+        div.textContent = `${fmtTime(row.ts)}.${String(d.getMilliseconds()).padStart(3,'0')} ${row.line}`;
+        fragment.appendChild(div);
+      }
+      el.replaceChildren(fragment); el.scrollTop = scroll;
+    }
+    if (CONTROL_MODE === 'hardware') {
+      const oldSection = logEl.parentElement;
+      document.getElementById('event-log-slot').appendChild(logEl);
+      oldSection.remove();
+      async function pollConsole() {
+        try {
+          const response = await fetch('/api/admin/logs', {cache:'no-store'});
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const data = await response.json();
+          renderLogRows('console-log', data.logs || []);
+          document.getElementById('console-log-status').textContent = '최신 로그가 위에 표시됩니다';
+        } catch (e) { document.getElementById('console-log-status').textContent = '서버 로그 갱신 실패: ' + e.message; }
+        finally { setTimeout(pollConsole, 1000); }
+      }
+      pollConsole();
+    }
+    document.querySelectorAll('[data-copy-log]').forEach(button => button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(document.getElementById(button.dataset.copyLog).innerText);
+        document.getElementById('console-log-status').textContent = '로그를 복사했습니다';
+      } catch { document.getElementById('console-log-status').textContent = '복사 권한이 없습니다. 로그를 선택해 복사해주세요.'; }
+    }));
     let hardwareMode = 'master';
     let hardwareBusy = false;
     let activeMasterPort = '';
@@ -929,6 +985,11 @@
     }
     function renderHardware(h) {
       if (!h || hardwareBusy) return;
+      if (CONTROL_MODE === 'hardware') {
+        const isHeartbeat = r => r.kind === 'heartbeat' || /"type"\s*:\s*"heartbeat"/.test(r.line);
+        renderLogRows('heartbeat-log', (h.raw || []).filter(isHeartbeat), 'receive');
+        renderLogRows('serial-log', (h.raw || []).filter(r => !isHeartbeat(r)), 'receive');
+      }
       hardwareMode = h.mode;
       const on = h.mode === 'master';
       document.getElementById('master-toggle').checked = on;
