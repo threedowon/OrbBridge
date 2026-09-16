@@ -168,6 +168,9 @@ def _consume_line(line: str, port: str | None = None, generation: int | None = N
         if t not in ("heartbeat", "added", "removed", "snapshot", "led_ack"):
             return
         if t == "led_ack":
+            if "ack_wait_ms" in evt and (type(evt["ack_wait_ms"]) is not int or
+                                         not 0 <= evt["ack_wait_ms"] <= 0xffffffff):
+                return
             if type(evt.get("effect")) is not int or not 0 <= evt["effect"] <= 9:
                 return
             if any(type(evt.get(k)) is not int or not 0 <= evt[k] <= 0xffffffff

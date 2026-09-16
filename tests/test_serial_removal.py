@@ -26,7 +26,7 @@ def test_led_timestamps_and_ack_do_not_modify_game(capsys):
             patch.object(main.hardware_io, "_snapshot", return_value={"mode": "master"}):
         main.send_led_effect(1)
     main.handle_serial_message(dict(type="led_ack", slave=1, effect=1,
-                                   received_ms=0xfffffffe, applied_ms=3))
+                                   received_ms=0xfffffffe, applied_ms=3, ack_wait_ms=2500))
     output = capsys.readouterr().out
     assert writes == ["C1"]
     assert "PC 전송 요청 시각" in output
@@ -34,6 +34,7 @@ def test_led_timestamps_and_ack_do_not_modify_game(capsys):
     assert "[led] [slave 1] [수신]" in output
     assert "적용 확인 이펙트=1" in output
     assert "처리=5ms" in output
+    assert "응답송신대기=2500ms" in output
     assert "PC 확인 응답 수신 시각" in output
     assert not main._slaves
     assert main._game_runtime is None

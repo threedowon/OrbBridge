@@ -79,6 +79,7 @@ uint8_t slaveId = 0;        // setup 에서 DIP 로 결정한다
 #define T_REMOVED 2
 #define T_HEART   3
 #define T_LED_ACK 5
+#define T_LED_ACK_TIMING 6
 
 Adafruit_NeoPixel led(1, RGB_PIN, NEO_GRB + NEO_KHZ800);
 HardwareSerial RS485(1);
@@ -236,7 +237,7 @@ void drainBus() {
 }
 
 // carrier-sense 로 바이너리 프레임 전송 (조용할 때 + 랜덤 백오프)
-void csSendBytes(const uint8_t* buf, int len) {
+void csSendBytes(const uint8_t* buf, int len, uint32_t ackAppliedMs) {
   for (int t = 0; t < CS_MAX_TRIES; t++) {
     drainBus();
     if (millis() - lastBusRxMs >= BUS_IDLE_MS) {
@@ -245,7 +246,18 @@ void csSendBytes(const uint8_t* buf, int len) {
       unsigned long t0 = millis();
       while (millis() - t0 < backoff) drainBus();
       if (millis() - lastBusRxMs >= BUS_IDLE_MS) {
-        RS485.write(buf, len);
+        if (len == FRAME_LEN && buf[1] == T_LED_ACK_TIMING) {
+          uint8_t timed[FRAME_LEN];
+          memcpy(timed, buf, FRAME_LEN);
+          uint32_t waitMs = millis() - ackAppliedMs;
+          uint16_t bounded = waitMs > 65535UL ? 65535 : (uint16_t)waitMs;
+          timed[10] = bounded & 0xff;
+          timed[11] = bounded >> 8;
+          timed[12] = crc8(&timed[1], 11);
+          RS485.write(timed, FRAME_LEN);
+        } else {
+          RS485.write(buf, len);
+        }
         RS485.flush();
         lastBusRxMs = millis();
         return;
@@ -275,7 +287,7 @@ void sendFrame(uint8_t type, uint8_t cell, const byte* uid, uint16_t state) {
     for (int i = 0; i < 8; i++) f[4 + i] = uid[i];
   }
   f[12] = crc8(&f[1], 11);
-  csSendBytes(f, FRAME_LEN);
+  csSendBytes(f, FRAME_LEN, 0);
 }
 
 // 반복 전송 사이의 간격. 그냥 delay 하면 그동안 master 의 LED 명령을 놓치고
@@ -491,16 +503,19 @@ void sendLedAck() {
   if (usbDirect) {
     Serial.println(String("{\"type\":\"led_ack\",\"transport\":\"usb\",\"slave\":") +
       slaveId + ",\"effect\":" + effect + ",\"received_ms\":" + received +
-      ",\"applied_ms\":" + applied + "}");
+      ",\"applied_ms\":" + applied + ",\"ack_wait_ms\":" + (uint32_t)(millis() - applied) + "}");
     return;
   }
-  uint8_t frame[FRAME_LEN] = {STX, T_LED_ACK, slaveId, effect};
+  uint8_t frame[FRAME_LEN] = {STX, T_LED_ACK_TIMING, slaveId, effect};
   for (int i = 0; i < 4; ++i) {
     frame[4 + i] = (received >> (8 * i)) & 0xff;
-    frame[8 + i] = (applied >> (8 * i)) & 0xff;
   }
+  uint32_t duration = applied - received;
+  uint16_t bounded = duration > 65535UL ? 65535 : (uint16_t)duration;
+  frame[8] = bounded & 0xff;
+  frame[9] = bounded >> 8;
   frame[12] = crc8(&frame[1], 11);
-  csSendBytes(frame, FRAME_LEN);
+  csSendBytes(frame, FRAME_LEN, applied);
 }
 
 void setup() {

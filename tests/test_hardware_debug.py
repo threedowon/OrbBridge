@@ -99,6 +99,11 @@ def test_led_ack_is_forwarded_without_occupancy_changes(debug, mode, transport):
     line(d, "COM1", **{**event, "effect": 10})
     line(d, "COM1", **{**event, "applied_ms": -1})
     assert received == [event]
+    line(d, "COM1", **{**event, "ack_wait_ms": -1})
+    assert received == [event]
+    timed = {**event, "ack_wait_ms": 2500, "timing_capped": False}
+    line(d, "COM1", **timed)
+    assert received == [event, timed]
 
 
 def test_multi_usb_route_snapshot_led_and_return_to_master(debug):
