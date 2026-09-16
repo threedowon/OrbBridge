@@ -1,0 +1,32 @@
+Designator,Val,Package,Mid X,Mid Y,Rotation,Layer
+C1,100nF,C_0805_2012Metric,131.45,-72.0,0.0,top
+J1,Conn_01x22_Socket,PinSocket_1x22_P2.54mm_Vertical,129.46,-107.63,0.0,top
+J17,RS485 (IN),"TerminalBlock_Phoenix_MKDS-1,5-3_1x03_P5.00mm_Horizontal",129.0,-65.0,180.0,top
+J18,RS485 (OUT),"TerminalBlock_Phoenix_MKDS-1,5-3_1x03_P5.00mm_Horizontal",156.94,-65.0,180.0,top
+J19,MCU_PWR,"TerminalBlock_Phoenix_MKDS-1,5-2_1x02_P5.00mm_Horizontal",164.5,-128.5,0.0,top
+J2,SlOT GND,"TerminalBlock_Phoenix_MPT-0,5-2-2.54_1x02_P2.54mm_Horizontal",115.505,-108.43,-90.0,top
+J3,SLOT DQ 1-8,"TerminalBlock_Phoenix_MPT-0,5-8-2.54_1x08_P2.54mm_Horizontal",116.5,-93.39,-90.0,top
+J4,SLOT DQ 9-16,"TerminalBlock_Phoenix_MPT-0,5-8-2.54_1x08_P2.54mm_Horizontal",116.5,-123.89,-90.0,top
+J5,LED GPIO,"TerminalBlock_Phoenix_MPT-0,5-2-2.54_1x02_P2.54mm_Horizontal",165.5825,-86.77,90.0,top
+J6,Conn_01x22_Socket,PinSocket_1x22_P2.54mm_Vertical,154.86,-107.63,0.0,top
+R1,4.7k,R_0805_2012Metric,124.0875,-83.5,0.0,top
+R10,4.7k,R_0805_2012Metric,124.0,-116.95,0.0,top
+R11,4.7k,R_0805_2012Metric,124.0,-119.9,0.0,top
+R12,4.7k,R_0805_2012Metric,124.0,-122.85,0.0,top
+R13,4.7k,R_0805_2012Metric,124.0,-125.8,0.0,top
+R14,4.7k,R_0805_2012Metric,124.0,-128.75,0.0,top
+R15,4.7k,R_0805_2012Metric,123.91,-131.55,0.0,top
+R16,4.7k,R_0805_2012Metric,123.91,-134.5,0.0,top
+R18,10k,R_0805_2012Metric,166.4125,-80.5,0.0,top
+R19,10k,R_0805_2012Metric,162.5,-80.5,0.0,top
+R2,4.7k,R_0805_2012Metric,124.0875,-86.45,0.0,top
+R20,120,R_0805_2012Metric,164.0875,-92.54,0.0,top
+R3,4.7k,R_0805_2012Metric,124.0875,-89.4,0.0,top
+R4,4.7k,R_0805_2012Metric,124.0875,-92.35,0.0,top
+R5,4.7k,R_0805_2012Metric,124.0875,-95.3,0.0,top
+R6,4.7k,R_0805_2012Metric,124.0875,-98.25,0.0,top
+R7,4.7k,R_0805_2012Metric,124.0875,-101.2,0.0,top
+R8,4.7k,R_0805_2012Metric,124.155,-104.12,0.0,top
+R9,4.7k,R_0805_2012Metric,124.0,-114.0,0.0,top
+SW3,SW_DIP_x04,SW_DIP_SPSTx04_Slide_KingTek_DSHP04TS_W7.62mm_P1.27mm,165.0,-99.16,0.0,top
+U3,MAX3485,SOIC-8_3.9x4.9mm_P1.27mm,124.975,-74.135,270.0,top
