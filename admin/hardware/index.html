@@ -593,10 +593,7 @@
         </div>
         <div id="hardware-status" style="white-space:pre-wrap;font-size:12px;margin-top:10px" aria-live="polite"></div>
         <div id="hardware-error" style="color:var(--err);font-size:12px" role="alert"></div>
-        <details style="margin-top:12px">
-          <summary>원시 시리얼 로그</summary>
-          <pre id="hardware-raw" style="max-height:220px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px"></pre>
-        </details>
+        <button id="open-serial-log" style="margin-top:12px" type="button">시리얼 로그 새 창 열기</button>
       </div>
 
       <div class="slave-section hardware-only">
@@ -916,6 +913,11 @@
       updateGameButtons();
     }
 
+    document.getElementById('open-serial-log').addEventListener('click', () => {
+      const logWindow = window.open('/admin/serial-log', 'orbbridge-serial-log', 'width=1100,height=760,resizable=yes,scrollbars=yes');
+      if (logWindow) logWindow.focus();
+      else addLog('error', '팝업이 차단됐습니다. 브라우저에서 팝업을 허용해주세요.', 'log-warn');
+    });
     let hardwareMode = 'master';
     let hardwareBusy = false;
     let activeMasterPort = '';
@@ -955,7 +957,6 @@
         if (c.error) {const error=document.createElement('p');error.className='connection-error';error.textContent=c.error;card.appendChild(error);}
         status.appendChild(card);
       }
-      document.getElementById('hardware-raw').textContent = h.raw.map(r => `${new Date(r.ts).toLocaleTimeString()} ${r.line}`).join('\n');
       if (on && h.connections.length) {
         activeMasterPort = h.connections[0].port;
       }

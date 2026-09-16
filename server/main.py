@@ -814,7 +814,8 @@ def send_led_effect(effect) -> dict:
     sent_at = datetime.now().isoformat(sep=" ", timespec="milliseconds")
     if not _serial_writer.send_line(f"C{value}"):
         raise RuntimeError("일부 또는 전체 포트 전송 실패 — 하드웨어 연결 상태를 확인하세요")
-    print(f"[led] {sent_at} 이펙트 {value} 전송 (PC 전송 요청 시각)")
+    route = "master" if hardware_io._snapshot()["mode"] == "master" else "slave USB"
+    print(f"[led] [{route}] [송신] {sent_at} 이펙트={value} (PC 전송 요청 시각)")
     return {"ok": True, "effect": value}
 
 
@@ -845,7 +846,7 @@ def handle_serial_message(event: dict) -> None:
                 type(effect) is int and 0 <= effect <= 9 and
                 all(type(v) is int and 0 <= v <= 0xffffffff for v in (rx, applied))):
             duration = (applied - rx) & 0xffffffff
-            print(f"[led] {received_at} 적용 확인 slave={sid} 이펙트={effect} "
+            print(f"[led] [slave {sid}] [수신] {received_at} 적용 확인 이펙트={effect} "
                   f"보드수신={rx}ms 보드출력완료={applied}ms 처리={duration}ms "
                   "(PC 확인 응답 수신 시각)")
         return
