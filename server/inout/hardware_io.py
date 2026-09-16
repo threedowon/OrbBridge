@@ -165,11 +165,17 @@ def _consume_line(line: str, port: str | None = None, generation: int | None = N
 
         if type(slave_id) is not int or not 1 <= slave_id <= 99:
             return
-        if t not in ("heartbeat", "added", "removed", "snapshot"):
+        if t not in ("heartbeat", "added", "removed", "snapshot", "led_ack"):
             return
-        if t != "heartbeat" and (type(cell) is not int or not 1 <= cell <= 16):
+        if t == "led_ack":
+            if type(evt.get("effect")) is not int or not 0 <= evt["effect"] <= 9:
+                return
+            if any(type(evt.get(k)) is not int or not 0 <= evt[k] <= 0xffffffff
+                   for k in ("received_ms", "applied_ms")):
+                return
+        if t not in ("heartbeat", "led_ack") and (type(cell) is not int or not 1 <= cell <= 16):
             return
-        if t != "heartbeat" and not isinstance(evt.get("id", ""), str):
+        if t not in ("heartbeat", "led_ack") and not isinstance(evt.get("id", ""), str):
             return
         if _mode == "direct":
             if evt.get("transport") != "usb":
@@ -183,6 +189,8 @@ def _consume_line(line: str, port: str | None = None, generation: int | None = N
                 source["error"] = f"중복 slave ID {slave_id}: DIP 스위치 확인"
                 return
             source["error"] = ""
+        if t == "led_ack":
+            return evt  # Diagnostics do not change occupancy or event counters.
         s = _touch_slave(slave_id)
         s["port"] = port or ""
         s["last_seen_ms"] = now_ms()
@@ -376,7 +384,7 @@ def _handle_line(line: str, port=None, generation=None) -> None:
     with _dispatch_lock:
         event = _consume_line(line, port, generation)
         if event is not None:
-            if _mode == "direct":
+            if _mode == "direct" and event.get("type") != "led_ack":
                 c = _connections.get(port)
                 if c is not None and not c.get("ready"):
                     c["ready"] = True

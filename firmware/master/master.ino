@@ -48,6 +48,7 @@
 #define T_ADDED   1
 #define T_REMOVED 2
 #define T_HEART   3
+#define T_LED_ACK 5
 
 Adafruit_NeoPixel led(1, RGB_PIN, NEO_GRB + NEO_KHZ800);
 HardwareSerial RS485(1);
@@ -159,6 +160,15 @@ void emitFrame(const uint8_t* f) {
     uint16_t state = (uint16_t)f[4] | ((uint16_t)f[5] << 8);
     json = String("{\"type\":\"heartbeat\",\"slave\":") + slave + ",\"state\":" + state + "}";
     pcSendLine(json);
+  } else if (type == T_LED_ACK && cell <= 9) {
+    uint32_t received = 0, applied = 0;
+    for (int i = 0; i < 4; ++i) {
+      received |= (uint32_t)f[4 + i] << (8 * i);
+      applied |= (uint32_t)f[8 + i] << (8 * i);
+    }
+    pcSendLine(String("{\"type\":\"led_ack\",\"slave\":") + slave +
+      ",\"effect\":" + cell + ",\"received_ms\":" + received +
+      ",\"applied_ms\":" + applied + "}");
   } else if (type == T_ADDED || type == T_REMOVED) {
     const char* HX = "0123456789ABCDEF";
     json = String("{\"type\":\"") + (type == T_ADDED ? "added" : "removed") +
