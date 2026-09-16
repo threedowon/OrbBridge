@@ -302,7 +302,13 @@ void setup() {
   // flush() 뒤에 수동으로 DE 를 내릴 필요가 없다.
   RS485.setPins(RX_PIN, TX_PIN, -1, DE_PIN);
   RS485.setMode(UART_MODE_RS485_HALF_DUPLEX);
-  Serial.println("#master firmware=rs485-led-v2");
+  // Our frames are only 13 bytes. Do not rely on core-version defaults or
+  // RX-idle interrupts to move short packets from the hardware FIFO.
+  bool fifoReady = RS485.setRxFIFOFull(1);
+  bool timeoutReady = RS485.setRxTimeout(1);
+  Serial.println("#master firmware=rs485-rx-v3");
+  Serial.print("#master rx fifo1="); Serial.print(fifoReady ? "ok" : "FAILED");
+  Serial.print(" timeout1="); Serial.println(timeoutReady ? "ok" : "FAILED");
 
   led.setPixelColor(0, led.Color(0, 255, 0));   // 준비 완료: 초록
   led.show();

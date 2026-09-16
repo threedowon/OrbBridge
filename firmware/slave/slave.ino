@@ -559,6 +559,13 @@ void setup() {
   // flush() 뒤에 수동으로 딜레이를 주거나 DE 를 내릴 필요가 없다.
   RS485.setPins(RX_PIN, TX_PIN, -1, DE_PIN);
   RS485.setMode(UART_MODE_RS485_HALF_DUPLEX);
+  // C<n> commands are shorter than a typical UART FIFO threshold.
+  // Expose each byte promptly even when RX-idle interrupts are ineffective.
+  bool fifoReady = RS485.setRxFIFOFull(1);
+  bool timeoutReady = RS485.setRxTimeout(1);
+  Serial.print("#slave firmware=rs485-rx-v3 fifo1=");
+  Serial.print(fifoReady ? "ok" : "FAILED");
+  Serial.print(" timeout1="); Serial.println(timeoutReady ? "ok" : "FAILED");
 
   randomSeed(slaveId * 7919 + 13);
   lastHeartbeatMs = millis() - (unsigned long)slaveId * 300;
