@@ -17,6 +17,7 @@
 
 #include <Adafruit_NeoPixel.h>
 #include <HardwareSerial.h>
+#include "LedBroadcast.h"
 
 #define TX_PIN       39
 #define RX_PIN       40
@@ -66,6 +67,8 @@ unsigned long ledOffAt = 0;
 unsigned long lastDebugMs = 0;
 unsigned long relayCount = 0;   // 유효 프레임 relay 수
 unsigned long badCount = 0;     // CRC 불일치(깨진 프레임) 수
+unsigned long lastBusRxMs = 0;
+LedBroadcast ledBroadcast;
 
 // 바이너리 프레임 조립 버퍼
 uint8_t frame[FRAME_LEN];
@@ -201,6 +204,7 @@ void feedByte(uint8_t b) {
 
 void pollRs485() {
   while (RS485.available()) {
+    lastBusRxMs = millis();
     feedByte((uint8_t)RS485.read());
   }
 }
@@ -213,13 +217,9 @@ void pollUsbCommand() {
   while (Serial.available()) {
     char c = (char)Serial.read();
     if (c == '\n') {
-      if (usbLine.length() >= 2 && usbLine[0] == 'C') {
-        for (int r = 0; r < 5; r++) {
-          RS485.print(usbLine);
-          RS485.print('\n');
-          RS485.flush();
-          delay(3);
-        }
+      if (usbLine.length() == 2 && usbLine[0] == 'C' &&
+          usbLine[1] >= '0' && usbLine[1] <= '9') {
+        ledBroadcast.queue(usbLine[1] - '0', millis());
       } else if (usbLine.length() >= 2 && usbLine[0] == 'D') {
         digitalWrite(PIN_DFESTA_OUT, usbLine[1] == '1' ? HIGH : LOW);
       }
@@ -228,6 +228,27 @@ void pollUsbCommand() {
       if (usbLine.length() < 16) usbLine += c;
       else usbLine = "";
     }
+  }
+}
+
+void pollLedBroadcast() {
+  pollRs485();
+  unsigned long now = millis();
+  if (ledBroadcast.ready(now, lastBusRxMs)) {
+    // Complete command in one write; leading newline clears stale text.
+    const uint8_t command[] = {'\n', 'C',
+      (uint8_t)('0' + ledBroadcast.effect()), '\n'};
+    RS485.write(command, sizeof(command));
+    RS485.flush(true);  // TX completion only; preserve received bytes.
+    ledBroadcast.sent(millis());
+  }
+  if (ledBroadcast.finished(millis())) {
+    Serial.print("#master led C");
+    Serial.print(ledBroadcast.effect());
+    Serial.print(" sent=");
+    Serial.print(ledBroadcast.count());
+    Serial.println("/5 (UART TX; slave receipt unconfirmed)");
+    ledBroadcast.stop();
   }
 }
 
@@ -260,6 +281,7 @@ void setup() {
   // flush() 뒤에 수동으로 DE 를 내릴 필요가 없다.
   RS485.setPins(RX_PIN, TX_PIN, -1, DE_PIN);
   RS485.setMode(UART_MODE_RS485_HALF_DUPLEX);
+  Serial.println("#master firmware=rs485-led-v2");
 
   led.setPixelColor(0, led.Color(0, 255, 0));   // 준비 완료: 초록
   led.show();
@@ -269,6 +291,7 @@ void setup() {
 void loop() {
   pollRs485();
   pollUsbCommand();   // PC → RS485 LED 명령 전달
+  pollLedBroadcast();
   pollButtons();
   pollHallStart();
   updateLed();
