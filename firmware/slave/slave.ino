@@ -88,8 +88,9 @@ const int BUS_COUNT = 16;
 OneWire buses[BUS_COUNT] = {
   OneWire(4), OneWire(5), OneWire(6), OneWire(7),
   OneWire(15), OneWire(16), OneWire(17), OneWire(18),
-  OneWire(8), OneWire(1), OneWire(9), OneWire(10),
-  OneWire(11), OneWire(12), OneWire(13), OneWire(14)
+  // PCB SLOT09..SLOT15 = GPIO8..GPIO14; SLOT16 = GPIO1 (J6 pin 4).
+  OneWire(8), OneWire(9), OneWire(10), OneWire(11),
+  OneWire(12), OneWire(13), OneWire(14), OneWire(1)
 };
 
 Adafruit_NeoPixel ringLow (LED_COUNT_LOW,  RING_PIN_LOW,  NEO_GRB + NEO_KHZ800);
