@@ -6,6 +6,7 @@ if __name__ == "__main__":
 import json
 import threading
 import time
+from datetime import datetime
 from copy import deepcopy
 
 from server.app_paths import ensure_data_files, melodies_dir
@@ -810,9 +811,10 @@ def send_led_effect(effect) -> dict:
             f"effect must be {LED_EFFECT_MIN}-{LED_EFFECT_MAX}, got {value}"
         )
 
+    sent_at = datetime.now().isoformat(sep=" ", timespec="milliseconds")
     if not _serial_writer.send_line(f"C{value}"):
         raise RuntimeError("일부 또는 전체 포트 전송 실패 — 하드웨어 연결 상태를 확인하세요")
-    print(f"[led] 이펙트 {value} 전송")
+    print(f"[led] {sent_at} 이펙트 {value} 전송 (PC 전송 요청 시각)")
     return {"ok": True, "effect": value}
 
 
@@ -834,6 +836,19 @@ def blackout_leds() -> None:
 def handle_serial_message(event: dict) -> None:
     """USB/serial 한 줄 JSON — orb 이벤트 또는 game 버튼."""
     t = event.get("type")
+
+    if t == "led_ack":
+        received_at = datetime.now().isoformat(sep=" ", timespec="milliseconds")
+        sid, effect = event.get("slave"), event.get("effect")
+        rx, applied = event.get("received_ms"), event.get("applied_ms")
+        if (type(sid) is int and SLAVE_ID_MIN <= sid <= SLAVE_ID_MAX and
+                type(effect) is int and 0 <= effect <= 9 and
+                all(type(v) is int and 0 <= v <= 0xffffffff for v in (rx, applied))):
+            duration = (applied - rx) & 0xffffffff
+            print(f"[led] {received_at} 적용 확인 slave={sid} 이펙트={effect} "
+                  f"보드수신={rx}ms 보드출력완료={applied}ms 처리={duration}ms "
+                  "(PC 확인 응답 수신 시각)")
+        return
 
     # 슬레이브 생존 추적: slave 필드가 있는 모든 메시지로 last_seen 을 갱신하고,
     # heartbeat 는 online/offline 판정 기준으로 별도 기록. (admin /api/status 로 노출)

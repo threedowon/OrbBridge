@@ -1,6 +1,39 @@
 from unittest.mock import patch
+import sys
+import pytest
 
 from test_main_runtime_integration import _load_main_module
+
+
+@pytest.fixture(autouse=True)
+def restore_test_imports():
+    names = ("serial", "server.main", "server.inout.serial_io")
+    previous = {name: sys.modules.get(name) for name in names}
+    paths = sys.path[:]
+    yield
+    sys.path[:] = paths
+    for name, module in previous.items():
+        if module is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = module
+
+
+def test_led_timestamps_and_ack_do_not_modify_game(capsys):
+    main = _load_main_module()
+    writes = []
+    with patch.object(main._serial_writer, "send_line", side_effect=lambda cmd: writes.append(cmd) or True):
+        main.send_led_effect(1)
+    main.handle_serial_message(dict(type="led_ack", slave=1, effect=1,
+                                   received_ms=0xfffffffe, applied_ms=3))
+    output = capsys.readouterr().out
+    assert writes == ["C1"]
+    assert "PC 전송 요청 시각" in output
+    assert "적용 확인 slave=1 이펙트=1" in output
+    assert "처리=5ms" in output
+    assert "PC 확인 응답 수신 시각" in output
+    assert not main._slaves
+    assert main._game_runtime is None
 
 
 def test_quick_removal_clears_slot_and_allows_same_orb_to_return():

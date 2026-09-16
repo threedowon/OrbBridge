@@ -83,6 +83,24 @@ def test_master_health_requires_master_heartbeat(debug):
     assert d._snapshot()["master"]["health"] == "disconnected"
 
 
+@pytest.mark.parametrize("mode,transport", [("master", {}), ("direct", {"transport": "usb"})])
+def test_led_ack_is_forwarded_without_occupancy_changes(debug, mode, transport):
+    d, devices = debug
+    d.configure_connection(mode, ["COM1"])
+    wait_for(lambda: "COM1" in devices and d._connections["COM1"]["open"])
+    received = []
+    d.on_message = received.append
+    event = dict(type="led_ack", slave=1, effect=2, received_ms=123, applied_ms=130, **transport)
+    line(d, "COM1", **event)
+    assert received == [event]
+    assert d._snapshot()["cells"] == []
+    assert d._snapshot()["slaves"] == []
+    assert b"C0\n" not in devices["COM1"].writes
+    line(d, "COM1", **{**event, "effect": 10})
+    line(d, "COM1", **{**event, "applied_ms": -1})
+    assert received == [event]
+
+
 def test_multi_usb_route_snapshot_led_and_return_to_master(debug):
     d, devices = debug
     d.configure_connection("direct", ["COM2", "COM3"])

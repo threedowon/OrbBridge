@@ -78,6 +78,7 @@ uint8_t slaveId = 0;        // setup 에서 DIP 로 결정한다
 #define T_ADDED   1
 #define T_REMOVED 2
 #define T_HEART   3
+#define T_LED_ACK 5
 
 Adafruit_NeoPixel led(1, RGB_PIN, NEO_GRB + NEO_KHZ800);
 HardwareSerial RS485(1);
@@ -123,6 +124,10 @@ unsigned long effectStart = 0;
 unsigned long lastAnimMs = 0;
 LedCommandParser ledCommandParser;
 String usbCmdLine;
+bool ledAckPending = false;
+uint8_t ledAckEffect = 0;
+uint32_t ledReceivedMs = 0;
+uint32_t ledAppliedMs = 0;
 bool usbDirect = false;
 unsigned long usbLeaseMs = 0;
 // USB diagnostics: distinguish an idle scanner, no ROM, and ROM CRC failures.
@@ -132,6 +137,21 @@ uint16_t usbRomSeenMask = 0;
 uint16_t usbCrcErrorMask = 0;
 void sendHeartbeat();
 void applyEffectOnce();   // 전방 선언
+void runEffectAnim();
+
+void applyLedCommand(int effect) {
+  ledReceivedMs = millis();
+  ledEffect = effect;
+  effectStart = ledReceivedMs;
+  applyEffectOnce();
+  if (effect >= 7) {
+    lastAnimMs = millis() - 30;
+    runEffectAnim();  // Acknowledge only after the first frame is output.
+  }
+  ledAppliedMs = millis();
+  ledAckEffect = effect;
+  ledAckPending = true;
+}
 
 // Debug PC renews U1 every second. Disconnect/crash restores RS485 after 5s.
 // USB commands never propagate to the RS485 bus.
@@ -150,9 +170,7 @@ void pollUsb() {
       } else if (usbDirect && usbCmdLine.length() == 2 &&
                  usbCmdLine[0] == 'C' && usbCmdLine[1] >= '0' && usbCmdLine[1] <= '9') {
         usbLedCommandCount++;
-        ledEffect = usbCmdLine[1] - '0';
-        effectStart = millis();
-        applyEffectOnce();
+        applyLedCommand(usbCmdLine[1] - '0');
       }
       usbCmdLine = "";
     } else if (c != '\r') {
@@ -212,9 +230,7 @@ void drainBus() {
     lastBusRxMs = millis();
     int effect = ledCommandParser.feed(c, lastBusRxMs);
     if (!usbDirect && effect >= 0) {
-      ledEffect = effect;
-      effectStart = millis();
-      applyEffectOnce();
+      applyLedCommand(effect);
     }
   }
 }
@@ -465,6 +481,28 @@ void scanBus(int i) {
   }
 }
 
+// Do not transmit from drainBus(): csSendBytes() itself drains the bus.
+void sendLedAck() {
+  if (!ledAckPending) return;
+  const uint8_t effect = ledAckEffect;
+  const uint32_t received = ledReceivedMs;
+  const uint32_t applied = ledAppliedMs;
+  ledAckPending = false;
+  if (usbDirect) {
+    Serial.println(String("{\"type\":\"led_ack\",\"transport\":\"usb\",\"slave\":") +
+      slaveId + ",\"effect\":" + effect + ",\"received_ms\":" + received +
+      ",\"applied_ms\":" + applied + "}");
+    return;
+  }
+  uint8_t frame[FRAME_LEN] = {STX, T_LED_ACK, slaveId, effect};
+  for (int i = 0; i < 4; ++i) {
+    frame[4 + i] = (received >> (8 * i)) & 0xff;
+    frame[8 + i] = (applied >> (8 * i)) & 0xff;
+  }
+  frame[12] = crc8(&frame[1], 11);
+  csSendBytes(frame, FRAME_LEN);
+}
+
 void setup() {
   // DIP 경고를 볼 수 있어야 하므로 USB Serial 은 항상 연다.
   // (DEBUG_USB 는 셀별 CRC 로그 같은 시끄러운 출력만 켠다)
@@ -527,6 +565,7 @@ void loop() {
   }
 
   runEffectAnim();   // 애니메이션 이펙트(7~9) 갱신
+  sendLedAck();
   updateLed();
   delay(1);
 }
