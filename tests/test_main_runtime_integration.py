@@ -1,3 +1,4 @@
+import pytest
 import importlib
 import re
 from pathlib import Path
@@ -497,8 +498,8 @@ def test_config_rules_expose_120_second_time_over_and_30_second_idle_timers():
         updated["game_rules"] = {"time_over_s": 180, "idle_s": 45}
         main.load_config = lambda: updated
         main.reload_melody_data()
-        assert main.time_over_s == 180
-        assert main.idle_s == 45
+        assert main.time_over_s == 120
+        assert main.idle_s == 30
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
@@ -650,5 +651,60 @@ def test_successive_games_follow_the_configured_melody_sequence():
         if main._game_runtime is not None:
             main._game_runtime.close()
         sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("server.main", "server.inout.serial_io", "serial"):
+            sys.modules.pop(name, None)
+
+
+def test_software_settings_persist_timers_without_hot_reload(tmp_path, monkeypatch):
+    from server.data_store import load_config, save_config
+    main = _load_main_module()
+    path = tmp_path / "config.json"
+    original = main.config.copy()
+    save_config(original, path)
+    monkeypatch.setattr(main, "load_config", lambda: load_config(path))
+    monkeypatch.setattr(main, "save_config", lambda value: save_config(value, path))
+    try:
+        settings = main.update_software_settings({"game_rules": {"time_over_s": 180, "idle_s": 45}})
+        assert settings["restart_required"]
+        assert settings["debug_mode"] is False
+        assert settings["active_timers"] == {"time_over_s": 120, "idle_s": 30}
+        assert load_config(path)["game_rules"] == {"time_over_s": 180, "idle_s": 45}
+        assert load_config(path)["input_mode"] == original["input_mode"]
+        main.reload_melody_data()
+        assert (main.time_over_s, main.idle_s) == (120, 30)
+        for value in (0, -1, True, "bad", float("inf"), None):
+            with pytest.raises(ValueError):
+                main.update_software_settings({"game_rules": {"time_over_s": value, "idle_s": 45}})
+        assert load_config(path)["game_rules"]["time_over_s"] == 180
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        for name in ("server.main", "server.inout.serial_io", "serial"):
+            sys.modules.pop(name, None)
+
+
+def test_debug_start_preserves_orbs_and_allows_restart_from_resetting():
+    main = _load_main_module()
+    try:
+        runtime = main.get_game_runtime()
+        runtime.add_orb(orb_id="debug-orb", slave=1, cell=1, voice="aespa_1", known=True)
+        with pytest.raises(main.InvalidTransition):
+            main.start_game()
+        main.update_software_settings({"debug_mode": True})
+        main.start_game()
+        assert main.get_game_state()["state"] == "RUNNING"
+        assert main.get_game_state()["cell_count"] == 1
+        with pytest.raises(main.InvalidTransition):
+            main.start_game()
+        main.end_game()
+        main.start_game()
+        assert main.get_game_state()["cell_count"] == 1
+        main.end_game()
+        main.update_software_settings({"debug_mode": False})
+        with pytest.raises(main.InvalidTransition):
+            main.start_game()
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
         for name in ("server.main", "server.inout.serial_io", "serial"):
             sys.modules.pop(name, None)
