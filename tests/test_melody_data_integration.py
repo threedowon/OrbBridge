@@ -53,8 +53,6 @@ def test_one_melody_document_drives_answer_playback_and_rules():
         "12": "R",
     }
     assert game_rules_from_melody(document) == {
-        "time_over_s": 120.0,
-        "idle_s": 30.0,
         "dfesta_presses_required": 1,
     }
 
@@ -123,8 +121,6 @@ def test_melody_register_round_trip_preserves_game_rules():
     saved = to_save_payload(normalized)
 
     assert saved["game_rules"] == {
-        "time_over_s": 90.0,
-        "idle_s": 20.0,
         "dfesta_presses_required": 2,
     }
 

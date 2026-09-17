@@ -639,9 +639,9 @@
       </div>
 
       <div class="game-section software-only">
-        <div class="section-title">게임 제어</div>
+        <div class="section-title">게임 제어 · Enter로 시작</div>
         <div class="toolbar">
-          <button class="primary" id="btn-game-start" data-game-action="start">start</button>
+          <button class="primary" id="btn-game-start" data-game-action="start" aria-keyshortcuts="Enter" title="Enter 키로 게임 시작">start</button>
           <button id="btn-game-reset" data-game-action="reset">reset</button>
           <button id="btn-auto-complete">자동완성</button>
           <span id="usb-game-controls" hidden>
@@ -1163,6 +1163,22 @@
           void fetchStatus();
         }
       });
+    });
+
+    document.addEventListener('keydown', event => {
+      if (CONTROL_MODE !== 'software' || event.key !== 'Enter' || event.isComposing ||
+          event.keyCode === 229 || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (event.repeat) {
+        if (target?.closest('#btn-game-start')) event.preventDefault();
+        return;
+      }
+      // Preserve text entry and native keyboard actions on other controls.
+      if (target?.closest('input, textarea, select, button, a, [role="button"], [role="textbox"], [role="combobox"]') || target?.isContentEditable) return;
+      const startButton = document.getElementById('btn-game-start');
+      if (event.defaultPrevented || startButton.disabled) return;
+      event.preventDefault();
+      startButton.click();
     });
 
     async function runAdminAction(path, successText) {

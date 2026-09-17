@@ -24,6 +24,7 @@ from server.game.melody_manager import (
     MelodyManager,
     answer_sequence_from_melody,
     game_rules_from_melody,
+    game_timers_from_config,
 )
 from server.game.scheduler import PlaybackMode, PlaybackScheduler, parse_melody
 from server.inout import hardware_io
@@ -42,7 +43,7 @@ melody_path     = melodies_dir() / f"{melody_id}.json"
 melody_document = _melody_manager.load(melody_id)
 playback_melody = parse_melody(melody_document)
 answer_sequence = answer_sequence_from_melody(melody_document)
-game_rules      = game_rules_from_melody(melody_document)
+game_rules      = {**game_rules_from_melody(melody_document), **game_timers_from_config(config)}
 time_over_s     = game_rules["time_over_s"]
 idle_s          = game_rules["idle_s"]
 dfesta_presses_required = game_rules["dfesta_presses_required"]
@@ -474,7 +475,7 @@ def reload_melody_data() -> None:
     selected_document = _melody_manager.load(selected_id)
     selected_playback = parse_melody(selected_document)
     selected_answers = answer_sequence_from_melody(selected_document)
-    selected_rules = game_rules_from_melody(selected_document)
+    selected_rules = {**game_rules_from_melody(selected_document), **game_timers_from_config(config)}
 
     melody_id = selected_id
     melody_path = selected_path

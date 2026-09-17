@@ -92,8 +92,6 @@ class MelodyRegisterApp:
         self.step_note_var = tk.StringVar(master=self.root, value="C4")
         self.step_dur_var = tk.StringVar(master=self.root, value="1")
         self.step_lyric_var = tk.StringVar(master=self.root, value="")
-        self.time_over_var = tk.StringVar(master=self.root, value="120")
-        self.idle_var = tk.StringVar(master=self.root, value="30")
         self.dfesta_var = tk.StringVar(master=self.root, value="1")
         self.rotation_mode_var = tk.StringVar(master=self.root, value="sequence")
 
@@ -325,10 +323,7 @@ class MelodyRegisterApp:
 
         row3 = tk.Frame(meta, bg=C["canvas"])
         row3.pack(fill="x", pady=4)
-        self._label(row3, "TimeOver(s)").grid(row=0, column=0, sticky="w", padx=(0, 8))
-        self._entry(row3, self.time_over_var, 7).grid(row=0, column=1, sticky="w", padx=(0, 16))
-        self._label(row3, "Idle(s)").grid(row=0, column=2, sticky="w", padx=(0, 8))
-        self._entry(row3, self.idle_var, 7).grid(row=0, column=3, sticky="w", padx=(0, 16))
+        self._label(row3, "시간 제한: data/config.json 공통 설정").grid(row=0, column=0, columnspan=4, sticky="w", padx=(0, 16))
         self._label(row3, "DFesta 횟수").grid(row=0, column=4, sticky="w", padx=(0, 8))
         self._entry(row3, self.dfesta_var, 5).grid(row=0, column=5, sticky="w")
 
@@ -431,8 +426,6 @@ class MelodyRegisterApp:
             self.bpm_var,
             self.range_low_var,
             self.range_high_var,
-            self.time_over_var,
-            self.idle_var,
             self.dfesta_var,
         ):
             var.trace_add("write", lambda *_: self._mark_dirty_summary())
@@ -451,8 +444,6 @@ class MelodyRegisterApp:
             data["bpm"] = 120
         data["range"] = [self.range_low_var.get(), self.range_high_var.get()]
         data["game_rules"] = {
-            "time_over_s": self.time_over_var.get().strip(),
-            "idle_s": self.idle_var.get().strip(),
             "dfesta_presses_required": self.dfesta_var.get().strip(),
         }
         data["_file_id"] = self._active_id or data.get("_file_id", data["songId"])
@@ -568,8 +559,6 @@ class MelodyRegisterApp:
         self.range_low_var.set(rng[0])
         self.range_high_var.set(rng[1])
         rules = data.get("game_rules") or {}
-        self.time_over_var.set(str(rules.get("time_over_s", 120)))
-        self.idle_var.set(str(rules.get("idle_s", 30)))
         self.dfesta_var.set(str(rules.get("dfesta_presses_required", 1)))
 
         self._rebuild_tree()

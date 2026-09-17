@@ -1,4 +1,5 @@
 import importlib
+import re
 from pathlib import Path
 import sys
 import time
@@ -401,7 +402,7 @@ def test_admin_keeps_start_and_reset_but_hides_manual_end():
     )
 
     for action in ("start", "reset"):
-        assert f'data-game-action="{action}">{action}</button>' in html
+        assert re.search(rf'data-game-action="{action}"[^>]*>{action}</button>', html)
     assert 'data-game-action="end"' not in html
 
 
@@ -477,7 +478,7 @@ def test_idle_transition_log_matches_runtime_until_reset_is_complete():
             sys.modules.pop(name, None)
 
 
-def test_melody_rules_expose_120_second_time_over_and_30_second_idle_timers():
+def test_config_rules_expose_120_second_time_over_and_30_second_idle_timers():
     main = _load_main_module()
 
     try:
@@ -489,6 +490,15 @@ def test_melody_rules_expose_120_second_time_over_and_30_second_idle_timers():
         assert 119 <= timers["remaining_time_over_s"] <= 120
         assert 29 <= timers["remaining_idle_s"] <= 30
         assert started["game"]["completion"]["dfesta_presses_required"] == 1
+        main.reset_game()
+        main.get_game_runtime().barrier()
+        from copy import deepcopy
+        updated = deepcopy(main.config)
+        updated["game_rules"] = {"time_over_s": 180, "idle_s": 45}
+        main.load_config = lambda: updated
+        main.reload_melody_data()
+        assert main.time_over_s == 180
+        assert main.idle_s == 45
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()

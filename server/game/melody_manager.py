@@ -70,22 +70,29 @@ def _positive_rule(value, default, name: str, *, integer: bool = False):
 
 
 def game_rules_from_melody(document: Mapping) -> dict:
-    """멜로디의 game_rules를 검증된 런타임 규칙으로 정규화한다."""
+    """곡별 규칙을 검증한다. 시간 제한은 공통 config에서만 읽는다."""
 
     raw = document.get("game_rules") or {}
     if not isinstance(raw, Mapping):
         raise ValueError("game_rules must be an object")
     return {
-        "time_over_s": _positive_rule(
-            raw.get("time_over_s"), DEFAULT_TIME_OVER_S, "time_over_s"
-        ),
-        "idle_s": _positive_rule(raw.get("idle_s"), DEFAULT_IDLE_S, "idle_s"),
         "dfesta_presses_required": _positive_rule(
             raw.get("dfesta_presses_required"),
             DEFAULT_DFESTA_PRESSES_REQUIRED,
             "dfesta_presses_required",
             integer=True,
         ),
+    }
+
+
+def game_timers_from_config(config: Mapping) -> dict:
+    """모든 곡에 적용할 공통 시간 제한(초). 누락된 값은 기존 기본값 사용."""
+    raw = config.get("game_rules", {})
+    if not isinstance(raw, Mapping):
+        raise ValueError("config.game_rules must be an object")
+    return {
+        "time_over_s": _positive_rule(raw.get("time_over_s"), DEFAULT_TIME_OVER_S, "time_over_s"),
+        "idle_s": _positive_rule(raw.get("idle_s"), DEFAULT_IDLE_S, "idle_s"),
     }
 
 
