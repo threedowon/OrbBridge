@@ -653,6 +653,20 @@
         </div>
       </div>
 
+      <div class="game-section software-only">
+        <div class="section-title">디버그 · 시간 설정</div>
+        <label><input type="checkbox" id="debug-mode"> Debug mode — 오브가 남아 있어도 게임 시작</label>
+        <p>디버그 모드는 즉시 적용되며 서버 재시작 시 꺼집니다.</p>
+        <form id="timer-settings" class="midi-fields">
+          <label>게임 제한 시간(초)<input id="game-time" type="number" min="0.001" step="any" required></label>
+          <label>Idle 시간(초)<input id="idle-time" type="number" min="0.001" step="any" required></label>
+          <button type="submit" id="save-timers">시간 설정 저장</button>
+        </form>
+        <p>시간 설정은 디버그 모드와 관계없이 config.json에 저장되며 서버 재시작 후 적용됩니다.</p>
+        <p id="active-timers"></p>
+        <p id="settings-message" role="status" aria-live="polite"></p>
+      </div>
+
       <div class="midi-section software-only">
         <div class="section-title">MIDI 진단</div>
         <div class="midi-card">
@@ -707,6 +721,7 @@
     let currentGameState = 'READY';
     let currentCellCount = 0;
     let adminActionRunning = false;
+    let debugMode = false;
 
     const gridEl = document.getElementById('grid');
     const logEl = document.getElementById('event-log');
@@ -850,7 +865,7 @@
 
     function updateGameButtons() {
       document.getElementById('btn-game-start').disabled =
-        adminActionRunning || currentGameState !== 'READY' || currentCellCount !== 0;
+        adminActionRunning || !(debugMode ? ['READY', 'RESETTING'].includes(currentGameState) : currentGameState === 'READY' && currentCellCount === 0);
       document.getElementById('btn-game-reset').disabled =
         adminActionRunning || currentGameState === 'READY';
       document.getElementById('btn-auto-complete').disabled =
@@ -907,6 +922,8 @@
     }
 
     function renderStatus(s) {
+      debugMode = Boolean(s.debug_mode);
+      document.getElementById('debug-mode').checked = debugMode;
       if (!s) return;
       const serialOk = s.serial?.connected;
       const tableMode = s.input_mode === 'table';
@@ -1130,6 +1147,60 @@
         try { handleWsMessage(JSON.parse(e.data)); } catch { /* 잘못된 메시지는 무시한다. */ }
       };
     }
+
+    function renderSoftwareSettings(settings, fillInputs = false) {
+      debugMode = settings.debug_mode;
+      document.getElementById('debug-mode').checked = debugMode;
+      if (fillInputs) {
+        document.getElementById('game-time').value = settings.saved_timers.time_over_s;
+        document.getElementById('idle-time').value = settings.saved_timers.idle_s;
+      }
+      document.getElementById('active-timers').textContent =
+        `현재 적용: 게임 ${settings.active_timers.time_over_s}초 · Idle ${settings.active_timers.idle_s}초` +
+        (settings.restart_required ? ' / 저장한 시간을 적용하려면 서버를 재시작하세요.' : '');
+      updateGameButtons();
+    }
+
+    async function loadSoftwareSettings() {
+      try {
+        const response = await fetch('/api/admin/software/settings');
+        if (!response.ok) throw new Error('시간 설정을 불러오지 못했습니다. 페이지를 새로고침하세요.');
+        renderSoftwareSettings(await response.json(), true);
+      } catch (error) {
+        document.getElementById('settings-message').textContent = error.message;
+      }
+    }
+
+    document.getElementById('debug-mode').addEventListener('change', async event => {
+      const checkbox = event.target;
+      checkbox.disabled = true;
+      try {
+        const settings = await postGame('/api/admin/software/settings', {debug_mode: checkbox.checked});
+        renderSoftwareSettings(settings);
+        document.getElementById('settings-message').textContent = settings.debug_mode ? '디버그 모드 켜짐' : '디버그 모드 꺼짐';
+      } catch (error) {
+        checkbox.checked = debugMode;
+        document.getElementById('settings-message').textContent = error.message;
+      } finally { checkbox.disabled = false; }
+    });
+
+    document.getElementById('timer-settings').addEventListener('submit', async event => {
+      event.preventDefault();
+      const button = document.getElementById('save-timers');
+      button.disabled = true;
+      try {
+        const settings = await postGame('/api/admin/software/settings', {game_rules: {
+          time_over_s: Number(document.getElementById('game-time').value),
+          idle_s: Number(document.getElementById('idle-time').value),
+        }});
+        renderSoftwareSettings(settings);
+        document.getElementById('settings-message').textContent = 'config.json에 저장했습니다. 서버 재시작 후 적용됩니다.';
+      } catch (error) {
+        document.getElementById('settings-message').textContent = error.message;
+      } finally { button.disabled = false; }
+    });
+
+    if (CONTROL_MODE === 'software') void loadSoftwareSettings();
 
     async function postGame(path, body = {}) {
       const res = await fetch(path, {

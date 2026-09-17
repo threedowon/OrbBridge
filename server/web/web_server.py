@@ -49,6 +49,8 @@ def start_http_server(
     get_cells: Callable[[], dict] | None = None,
     get_events: Callable[[], list] | None = None,
     on_game_start=None,
+    get_software_settings=None,
+    on_software_settings=None,
     on_game_end=None,
     on_game_reset=None,
     on_game_listen=None,
@@ -141,6 +143,10 @@ def start_http_server(
                 self.send_response(302)
                 self.send_header("Location", "/admin")
                 self.end_headers()
+                return
+
+            if path == "/api/admin/software/settings":
+                self._run_callback(get_software_settings)
                 return
 
             if path == "/api/admin/logs":
@@ -285,6 +291,10 @@ def start_http_server(
                     self._json(500, {"ok": False, "error": str(exc)})
                     return
                 self._json(200, result if isinstance(result, dict) else {"ok": True})
+                return
+
+            if self.path == "/api/admin/software/settings":
+                self._run_callback(on_software_settings, data)
                 return
 
             if self.path == "/api/game/start":

@@ -204,11 +204,11 @@ class GameEngine:
     def cell_count(self) -> int:
         return len(self._cells)
 
-    def start(self) -> GameState:
+    def start(self, *, allow_occupied: bool = False) -> GameState:
         """start 이벤트를 처리하고 READY에서 RUNNING으로 전이한다."""
 
         now = self._now()
-        self._check_start()
+        self._check_start(allow_occupied=allow_occupied)
         self.end_reason = None
         self._started_at = now
         self._last_activity_at = now
@@ -488,12 +488,12 @@ class GameEngine:
             raise ValueError("orb_id must not be empty")
         return normalized
 
-    def _check_start(self) -> None:
+    def _check_start(self, *, allow_occupied: bool = False) -> None:
         """CheckStart 조건을 검사한다."""
 
         if self.state is not GameState.READY:
             raise InvalidTransition(f"START is invalid from {self.state.value}")
-        if not self._table_is_clear():
+        if not allow_occupied and not self._table_is_clear():
             raise TableNotEmpty("START requires an empty table")
 
     def _set_state(self, state: GameState) -> None:

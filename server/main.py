@@ -10,7 +10,7 @@ from datetime import datetime
 from copy import deepcopy
 
 from server.app_paths import ensure_data_files, melodies_dir
-from server.data_store import find_orb, load_config, load_mapping
+from server.data_store import find_orb, load_config, load_mapping, save_config
 from server.game.game_engine import (
     EndReason,
     GameEngine,
@@ -43,7 +43,10 @@ melody_path     = melodies_dir() / f"{melody_id}.json"
 melody_document = _melody_manager.load(melody_id)
 playback_melody = parse_melody(melody_document)
 answer_sequence = answer_sequence_from_melody(melody_document)
-game_rules      = {**game_rules_from_melody(melody_document), **game_timers_from_config(config)}
+_startup_timers = game_timers_from_config(config)
+_debug_mode = False
+_settings_lock = threading.Lock()
+game_rules      = {**game_rules_from_melody(melody_document), **_startup_timers}
 time_over_s     = game_rules["time_over_s"]
 idle_s          = game_rules["idle_s"]
 dfesta_presses_required = game_rules["dfesta_presses_required"]
@@ -353,6 +356,7 @@ def get_status() -> dict:
             if slave["slave"] in observed:
                 slave["online"] = observed[slave["slave"]]["online"]
         return {
+            "debug_mode": _debug_mode,
             "input_mode": input_mode,
             "game": game,
             "current_stage": current_stage,
@@ -475,7 +479,7 @@ def reload_melody_data() -> None:
     selected_document = _melody_manager.load(selected_id)
     selected_playback = parse_melody(selected_document)
     selected_answers = answer_sequence_from_melody(selected_document)
-    selected_rules = {**game_rules_from_melody(selected_document), **game_timers_from_config(config)}
+    selected_rules = {**game_rules_from_melody(selected_document), **_startup_timers}
 
     melody_id = selected_id
     melody_path = selected_path
@@ -522,26 +526,57 @@ def _publish_transition(result: RuntimeResult) -> dict:
     return result.snapshot
 
 
+def get_software_settings() -> dict:
+    with _settings_lock:
+        saved = game_timers_from_config(load_config())
+        return {"debug_mode": _debug_mode, "saved_timers": saved,
+                "active_timers": dict(_startup_timers),
+                "restart_required": saved != _startup_timers}
+
+
+def update_software_settings(data: dict) -> dict:
+    global _debug_mode
+    if not isinstance(data, dict):
+        raise ValueError("settings must be an object")
+    if "debug_mode" in data and not isinstance(data["debug_mode"], bool):
+        raise ValueError("debug_mode must be a boolean")
+    with _settings_lock:
+        if "game_rules" in data:
+            rules = data["game_rules"]
+            if not isinstance(rules, dict) or any(
+                rules.get(key) is None for key in ("time_over_s", "idle_s")
+            ):
+                raise ValueError("게임 시간과 idle 시간을 모두 입력하세요")
+            timers = game_timers_from_config({"game_rules": rules})
+            document = load_config()
+            document.setdefault("game_rules", {}).update(timers)
+            save_config(document)
+        if "debug_mode" in data:
+            _debug_mode = data["debug_mode"]
+    return {"ok": True, **get_software_settings()}
+
+
 def start_game() -> dict:
     if _hardware_switching.is_set():
         raise RuntimeError("하드웨어 연결을 변경 중입니다")
     runtime = get_game_runtime()
     _cancel_playback()
 
+    debug_mode = _debug_mode
     current = runtime.snapshot()
-    if current["state"] != GameState.READY.value:
+    if current["state"] not in (("READY", "RESETTING") if debug_mode else ("READY",)):
         raise InvalidTransition(
             f"START is invalid from {current['state']}; RESET must complete first"
         )
-    if current["cell_count"]:
+    if current["cell_count"] and not debug_mode:
         raise InvalidTransition("START requires an empty table")
 
     try:
         reload_melody_data()
-        runtime.replace_engine(_new_game_engine())
+        runtime.replace_engine(_new_game_engine(), allow_occupied=debug_mode)
         # 브라우저가 판정·재생과 같은 문서를 먼저 적용한 뒤 RUNNING을 받게 한다.
         _publish_web_event("/game/melody", [get_active_melody()])
-        started = runtime.start_game()
+        started = runtime.start_game(allow_occupied=debug_mode)
     except Exception:
         _melody_manager.cancel()
         raise
@@ -1251,6 +1286,8 @@ def run_main() -> None:
         get_cells=get_cells,
         get_events=get_events,
         on_game_start=start_game,
+        get_software_settings=get_software_settings,
+        on_software_settings=update_software_settings,
         on_game_end=end_game,
         on_game_reset=reset_game,
         on_game_listen=request_listen,

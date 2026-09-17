@@ -52,6 +52,7 @@ class GameRuntime:
         self,
         engine: GameEngine,
         *,
+        allow_occupied: bool = False,
         tick_interval_s: float = 0.05,
         on_state_change: StateCallback | None = None,
     ) -> None:
@@ -121,16 +122,17 @@ class GameRuntime:
         self,
         engine: GameEngine,
         *,
+        allow_occupied: bool = False,
         timeout: float = 2.0,
     ) -> RuntimeResult:
-        """READY이면서 테이블이 비었을 때 설정이 다른 엔진으로 교체한다."""
+        """대기 중 엔진을 교체한다. 디버그 시작은 회수 대기와 기존 오브도 허용한다."""
 
         if not isinstance(engine, GameEngine):
             raise TypeError("engine must be a GameEngine")
-        return self._submit("replace_engine", timeout=timeout, engine=engine)
+        return self._submit("replace_engine", timeout=timeout, engine=engine, allow_occupied=allow_occupied)
 
-    def start_game(self, *, timeout: float = 2.0) -> RuntimeResult:
-        return self._submit("start", timeout=timeout)
+    def start_game(self, *, allow_occupied: bool = False, timeout: float = 2.0) -> RuntimeResult:
+        return self._submit("start", timeout=timeout, allow_occupied=allow_occupied)
 
     def end_game(self, reason="manual", *, timeout: float = 2.0) -> RuntimeResult:
         return self._submit("end", timeout=timeout, reason=reason)
@@ -255,12 +257,18 @@ class GameRuntime:
 
         if action == "replace_engine":
             current = self._engine.snapshot()
-            if current["state"] != "READY" or current["cell_count"]:
+            debug = payload.get("allow_occupied", False)
+            if current["state"] not in (("READY", "RESETTING") if debug else ("READY",)) or (current["cell_count"] and not debug):
                 raise RuntimeError("engine can only be replaced while READY and empty")
-            self._engine = payload["engine"]
+            replacement = payload["engine"]
+            if debug:
+                for cell in current["cells"].values():
+                    replacement.add_orb(**{key: cell[key] for key in
+                        ("orb_id", "slave", "cell", "voice", "known")})
+            self._engine = replacement
             value = None
         elif action == "start":
-            value = self._engine.start()
+            value = self._engine.start(allow_occupied=payload.get("allow_occupied", False))
         elif action == "end":
             value = self._engine.end(payload["reason"])
         elif action == "dfesta":

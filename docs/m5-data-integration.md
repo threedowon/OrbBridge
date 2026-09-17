@@ -27,7 +27,8 @@ data/config.json
 
 ## 런타임 갱신
 
-서버는 게임 시작 직전에 `data/config.json`과 다음 멜로디를 다시 읽는다.
+서버는 게임 시작 직전에 `data/config.json`의 곡 선택 설정과 다음 멜로디를 다시 읽는다.
+게임/Idle 제한 시간은 서버 시작 때 읽은 값을 유지한다.
 같은 메모리 snapshot에서 정답 시퀀스와 Scheduler 입력을 만들고,
 `/game/melody`를 `/game/state`보다 먼저 전송한다. 따라서 Melody Register 저장 후
 다음 Admin start 한 번으로 Screen·Admin과 Python 판정·재생이 함께 갱신된다.
@@ -60,3 +61,9 @@ data/config.json
 - `stage_data.json`, 편집기 동기화 옵션, `/screen/melodies` 경로가 남지 않는다.
 - WebSocket 재접속 시 게임 상태와 같은 멜로디를 복구한다.
 - PyInstaller 배포물도 `data/` 구조를 그대로 사용한다.
+
+### Software 운영 설정
+
+`/admin/software`에서 Debug mode를 켜면 오브가 남은 READY/RESETTING 상태에서도 게임을 시작할 수 있습니다. 슬롯 정보는 유지되며 RUNNING 중 중복 시작은 막습니다. 디버그 모드는 서버 재시작 시 꺼집니다.
+
+게임/Idle 제한 시간은 같은 화면에서 `data/config.json`의 `game_rules`에 저장합니다. 시간은 서버 시작 시 고정되므로 저장 후 서버를 재시작해야 적용됩니다. 디버그 모드와 무관하게 저장할 수 있습니다.
