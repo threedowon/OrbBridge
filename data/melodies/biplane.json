@@ -8,8 +8,6 @@
     "C5"
   ],
   "game_rules": {
-    "time_over_s": 120,
-    "idle_s": 30,
     "dfesta_presses_required": 1
   },
   "steps": [

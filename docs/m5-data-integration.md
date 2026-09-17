@@ -17,7 +17,10 @@ data/config.json
 - 모든 JSON은 `data/` 아래에만 둔다.
 - `stage_data.json`은 제거한다.
 - 멜로디 `steps`가 정답 순서와 재생 순서의 공통 원본이다.
-- `game_rules`가 TimeOver·Idle·DFesta 입력 횟수를 함께 보관한다.
+- `data/config.json`의 `game_rules`에 공통 `time_over_s`(기본 120초)와
+  `idle_s`(기본 30초)를 보관한다. 각 값은 0보다 큰 초 단위 숫자다.
+- 멜로디의 `game_rules`에는 곡별 `dfesta_presses_required`만 보관한다.
+  이전 멜로디 파일에 남은 시간 설정은 무시하며 재저장 시 제거한다.
 - `current_stage`는 기존 운영 표시값으로 `data/config.json`에 유지한다.
 - 여러 멜로디는 `melody_rotation.playlist` 순서로 게임마다 순환한다.
 - 로드·규칙 검증·순번 관리는 `server/game/melody_manager.py` 하나가 담당한다.
@@ -42,8 +45,6 @@ data/config.json
   "bpm": 114,
   "range": ["C4", "C5"],
   "game_rules": {
-    "time_over_s": 120,
-    "idle_s": 30,
     "dfesta_presses_required": 1
   },
   "steps": [
@@ -59,4 +60,3 @@ data/config.json
 - `stage_data.json`, 편집기 동기화 옵션, `/screen/melodies` 경로가 남지 않는다.
 - WebSocket 재접속 시 게임 상태와 같은 멜로디를 복구한다.
 - PyInstaller 배포물도 `data/` 구조를 그대로 사용한다.
-
