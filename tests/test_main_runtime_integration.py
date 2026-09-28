@@ -476,12 +476,18 @@ def test_state_log_uses_authoritative_state_names_only():
             sys.modules.pop(name, None)
 
 
-def test_idle_transition_log_matches_runtime_until_reset_is_complete():
+def test_idle_transition_log_matches_runtime_until_reset_is_complete(monkeypatch):
     main = _load_main_module()
     main.reload_melody_data = lambda: None
     main.answer_sequence = {"1": "C"}
     main.time_over_s = None
     main.idle_s = 0.02
+    original_factory = main._new_game_engine
+    def without_intro_delay():
+        engine = original_factory()
+        engine.initial_timer_delay_s = 0
+        return engine
+    monkeypatch.setattr(main, "_new_game_engine", without_intro_delay)
 
     try:
         main.start_game()
@@ -804,6 +810,42 @@ def test_debug_melody_restart_and_99_requirement_are_temporary(monkeypatch, tmp_
         main.update_software_settings({"debug_mode": False})
         assert runtime.snapshot()["completion"]["dfesta_presses_required"] == 3
         assert json.loads((tmp_path / "added.json").read_text())["game_rules"]["dfesta_presses_required"] == 3
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        for name in ("server.main", "server.inout.serial_io", "serial"):
+            sys.modules.pop(name, None)
+
+
+@pytest.mark.parametrize("song_id", ["dynamite", "Iam", "biplane"])
+def test_initial_listen_duration_plus_one_precedes_both_countdowns(monkeypatch, song_id):
+    from server.game.game_engine import GameEngine
+    main = _load_main_module()
+    now = [100.0]
+    def engine_with_clock(*args, **kwargs):
+        return GameEngine(*args, **kwargs, clock=lambda: now[0])
+    monkeypatch.setattr(main, "GameEngine", engine_with_clock)
+    config = deepcopy(main.config)
+    config["melody"] = song_id
+    config["melody_rotation"] = {"mode": "fixed", "playlist": [song_id]}
+    monkeypatch.setattr(main, "load_config", lambda: deepcopy(config))
+    try:
+        main.start_game()
+        runtime = main.get_game_runtime()
+        delay = sum(step.duration_beats for step in main.playback_melody.steps) * 60 / main.playback_melody.bpm + 1
+        now[0] += delay - 0.1
+        runtime.record_activity()
+        timers = runtime.snapshot()["timers"]
+        assert timers["remaining_time_over_s"] == main.time_over_s
+        assert timers["remaining_idle_s"] == main.idle_s
+        now[0] += 0.6
+        runtime.record_activity()
+        assert runtime.snapshot()["timers"]["remaining_time_over_s"] == pytest.approx(main.time_over_s - 0.5)
+        assert runtime.snapshot()["timers"]["remaining_idle_s"] == main.idle_s
+        main.request_listen()
+        now[0] += 1
+        runtime.record_activity()
+        assert runtime.snapshot()["timers"]["remaining_time_over_s"] == pytest.approx(main.time_over_s - 1.5)
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()

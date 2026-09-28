@@ -98,6 +98,7 @@ class GameEngine:
         time_over_s: float | None,
         idle_s: float | None,
         dfesta_presses_required: int = 1,
+        initial_timer_delay_s: float = 0,
         clock: Callable[[], float] = monotonic,
     ) -> None:
         self._answers = self._normalize_answers(answers)
@@ -109,6 +110,10 @@ class GameEngine:
 
         self.time_over_s = self._normalize_timeout(time_over_s, "time_over_s")
         self.idle_s = self._normalize_timeout(idle_s, "idle_s")
+        if isinstance(initial_timer_delay_s, bool) or not isfinite(initial_timer_delay_s) or initial_timer_delay_s < 0:
+            raise ValueError("initial_timer_delay_s must be a finite non-negative number")
+        self.initial_timer_delay_s = float(initial_timer_delay_s)
+        self._timers_start_at: float | None = None
         self.dfesta_presses_required = self._normalize_press_count(
             dfesta_presses_required
         )
@@ -211,6 +216,7 @@ class GameEngine:
         self._check_start(allow_occupied=allow_occupied)
         self.end_reason = None
         self._started_at = now
+        self._timers_start_at = now + self.initial_timer_delay_s
         self._last_activity_at = now
         self._ended_at = None
         self._dfesta_presses = 0
@@ -422,15 +428,15 @@ class GameEngine:
         remaining_idle_s = None
         if self.state is GameState.RUNNING:
             if self.time_over_s is not None and self._started_at is not None:
-                remaining_time_over_s = max(
+                remaining_time_over_s = min(self.time_over_s, max(
                     0.0,
-                    self._started_at + self.time_over_s - now,
-                )
+                    self._timers_start_at + self.time_over_s - now,
+                ))
             if self.idle_s is not None and self._last_activity_at is not None:
-                remaining_idle_s = max(
+                remaining_idle_s = min(self.idle_s, max(
                     0.0,
-                    self._last_activity_at + self.idle_s - now,
-                )
+                    max(self._last_activity_at, self._timers_start_at) + self.idle_s - now,
+                ))
 
         presses_remaining = max(
             0,
@@ -518,6 +524,7 @@ class GameEngine:
             raise RuntimeError("cannot enter READY while the table is occupied")
         self.end_reason = None
         self._started_at = None
+        self._timers_start_at = None
         self._last_activity_at = None
         self._ended_at = None
         self._dfesta_presses = 0
@@ -533,7 +540,7 @@ class GameEngine:
         if self.time_over_s is not None and self._started_at is not None:
             deadlines.append(
                 (
-                    self._started_at + self.time_over_s,
+                    self._timers_start_at + self.time_over_s,
                     0,
                     EndReason.TIME_OVER,
                 )
@@ -541,7 +548,7 @@ class GameEngine:
         if self.idle_s is not None and self._last_activity_at is not None:
             deadlines.append(
                 (
-                    self._last_activity_at + self.idle_s,
+                    max(self._last_activity_at, self._timers_start_at) + self.idle_s,
                     1,
                     EndReason.IDLE,
                 )

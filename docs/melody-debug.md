@@ -23,3 +23,13 @@ The selection is validated before interrupting playback. Debug actions do not ed
 melody JSON or config; Debug Mode is off after server restart.
 
 Existing MIDI routing, scheduling, harmony, velocity and hardware controls are unchanged.
+
+## Initial Listen timer grace
+
+Every game start (including debug restarts) holds TimeOver and Idle countdowns for
+`initial Listen plan duration + 1 second`, measured from the game start. Duration
+uses the selected melody BPM and all step lengths, including rests. The displayed
+remaining values stay at their configured limits during this period. Activity
+inside the grace period cannot start the Idle countdown early. Normal activity
+afterwards resets Idle only. Later Listen requests retain their existing behavior;
+they do not grant another intro grace period. Manual reset/end still work immediately.

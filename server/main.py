@@ -26,7 +26,7 @@ from server.game.melody_manager import (
     game_rules_from_melody,
     game_timers_from_config,
 )
-from server.game.scheduler import PlaybackMode, PlaybackScheduler, parse_melody
+from server.game.scheduler import PlaybackMode, PlaybackScheduler, parse_melody, build_plan
 from server.inout import hardware_io
 
 ensure_data_files()
@@ -264,6 +264,7 @@ def _new_game_engine() -> GameEngine:
         time_over_s=time_over_s,
         idle_s=idle_s,
         dfesta_presses_required=99 if _debug_mode else dfesta_presses_required,
+        initial_timer_delay_s=build_plan(PlaybackMode.LISTEN, playback_melody).duration_s + 1.0,
     )
 
 
