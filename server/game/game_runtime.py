@@ -142,6 +142,9 @@ class GameRuntime:
 
         return self._submit("dfesta", timeout=timeout)
 
+    def set_dfesta_requirement(self, count: int, *, timeout: float = 2.0) -> RuntimeResult:
+        return self._submit("dfesta_requirement", timeout=timeout, count=count)
+
     def record_activity(self, *, timeout: float = 2.0) -> RuntimeResult:
         """셀 변경이 없는 입력을 Idle 타이머 활동으로 등록한다."""
 
@@ -273,6 +276,9 @@ class GameRuntime:
             value = self._engine.end(payload["reason"])
         elif action == "dfesta":
             value = self._engine.press_dfesta()
+        elif action == "dfesta_requirement":
+            self._engine.dfesta_presses_required = self._engine._normalize_press_count(payload["count"])
+            value = None
         elif action == "record_activity":
             value = self._engine.record_activity()
         elif action == "reset":

@@ -150,6 +150,9 @@ def rotation_plan_from_config(
         missing.insert(0, fixed_id)
     if missing:
         raise ValueError(f"melody file does not exist: {', '.join(dict.fromkeys(missing))}")
+    if mode == MODE_SEQUENCE:
+        # Keep the configured order, then discover newly registered songs.
+        playlist += tuple(value for value in sorted(available) if value not in playlist)
     return MelodyPlan(mode, playlist, fixed_id)
 
 
@@ -172,8 +175,13 @@ class MelodyManager:
     def _sync_plan(self, config: Mapping) -> MelodyPlan:
         plan = rotation_plan_from_config(config, self.available_ids())
         if self._plan is None or self._plan.signature != plan.signature:
+            next_id = None
+            if (self._plan and self._plan.mode == plan.mode == MODE_SEQUENCE
+                    and tuple(value for value in plan.playlist if value in self._plan.playlist)
+                    == self._plan.playlist):
+                next_id = self._plan.playlist[self._next_index]
             self._plan = plan
-            self._next_index = 0
+            self._next_index = plan.playlist.index(next_id) if next_id in plan.playlist else 0
             self._pending_index = None
         return plan
 

@@ -765,3 +765,47 @@ def test_debug_start_preserves_orbs_and_allows_restart_from_resetting():
             main._game_runtime.close()
         for name in ("server.main", "server.inout.serial_io", "serial"):
             sys.modules.pop(name, None)
+
+
+def test_debug_melody_restart_and_99_requirement_are_temporary(monkeypatch, tmp_path):
+    import json
+    from server.game.melody_manager import MelodyManager
+    main = _load_main_module()
+    song = deepcopy(main.melody_document)
+    song["game_rules"] = {"dfesta_presses_required": 3}
+    for name in ["original", "added"]:
+        (tmp_path / f"{name}.json").write_text(json.dumps(song), encoding="utf-8")
+    config = deepcopy(main.config)
+    config["melody"] = "original"
+    config["melody_rotation"] = {"mode": "sequence", "playlist": ["original"]}
+    monkeypatch.setattr(main, "load_config", lambda: deepcopy(config))
+    monkeypatch.setattr(main, "_melody_manager", MelodyManager(tmp_path))
+    try:
+        main.start_game()
+        runtime = main.get_game_runtime()
+        runtime.add_orb(orb_id="kept", slave=1, cell=1, voice="aespa_1", known=True)
+        with pytest.raises(ValueError):
+            main.update_software_settings({"debug_melody": "added"})
+        assert main.melody_id == "original"
+        main.update_software_settings({"debug_mode": True})
+        assert runtime.snapshot()["completion"]["dfesta_presses_required"] == 99
+        before = main._melody_manager.snapshot()
+        for bad in ["../config", "missing", None]:
+            with pytest.raises(ValueError):
+                main.update_software_settings({"debug_melody": bad})
+        assert runtime.snapshot()["state"] == "RUNNING"
+        settings = main.update_software_settings({"debug_melody": "added"})
+        assert settings["current_melody"] == "added"
+        assert settings["available_melodies"] == ["added", "original"]
+        assert runtime.snapshot()["cell_count"] == 1
+        assert runtime.snapshot()["state"] == "RUNNING"
+        assert runtime.snapshot()["completion"]["dfesta_presses_required"] == 99
+        assert main._melody_manager.snapshot() == before
+        main.update_software_settings({"debug_mode": False})
+        assert runtime.snapshot()["completion"]["dfesta_presses_required"] == 3
+        assert json.loads((tmp_path / "added.json").read_text())["game_rules"]["dfesta_presses_required"] == 3
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        for name in ("server.main", "server.inout.serial_io", "serial"):
+            sys.modules.pop(name, None)
