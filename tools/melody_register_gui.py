@@ -92,6 +92,8 @@ class MelodyRegisterApp:
         self.step_note_var = tk.StringVar(master=self.root, value="C4")
         self.step_dur_var = tk.StringVar(master=self.root, value="1")
         self.step_lyric_var = tk.StringVar(master=self.root, value="")
+        self.harmony_a_var = tk.StringVar(master=self.root, value="")
+        self.harmony_b_var = tk.StringVar(master=self.root, value="")
         self.dfesta_var = tk.StringVar(master=self.root, value="1")
         self.rotation_mode_var = tk.StringVar(master=self.root, value="sequence")
 
@@ -390,6 +392,16 @@ class MelodyRegisterApp:
         self._btn(edit, "▲", self._move_step_up, small=True).pack(side="left", padx=(0, 4))
         self._btn(edit, "▼", self._move_step_down, small=True).pack(side="left")
 
+        harmony_edit = tk.Frame(right, bg=C["canvas"])
+        harmony_edit.pack(fill="x", padx=14, pady=(0, 8))
+        for label, variable in (("화음 A", self.harmony_a_var), ("화음 B", self.harmony_b_var)):
+            self._label(harmony_edit, label).pack(side="left", padx=(0, 8))
+            ttk.Combobox(
+                harmony_edit, textvariable=variable,
+                values=("", *EDITOR_NOTE_CHOICES_UI), width=6, state="readonly",
+            ).pack(side="left", padx=(0, 12))
+        self._label(harmony_edit, "DFesta 전용 · 둘 다 비우면 멜로디 · 위의 적용 버튼으로 반영").pack(side="left")
+
         log_frame = tk.Frame(outer, bg=C["canvas"])
         log_frame.pack(fill="x", pady=(10, 0))
         tk.Label(
@@ -628,6 +640,9 @@ class MelodyRegisterApp:
         self.step_note_var.set(step.get("note", "C4"))
         self.step_dur_var.set(str(step.get("duration", 1)))
         self.step_lyric_var.set(step.get("lyric", ""))
+        harmony = step.get("harmony", ("", ""))
+        self.harmony_a_var.set(harmony[0])
+        self.harmony_b_var.set(harmony[1])
 
     def _apply_step_edit(self) -> None:
         idx = self._selected_step_index()
@@ -641,9 +656,21 @@ class MelodyRegisterApp:
         if dur <= 0:
             messagebox.showerror("Melody Register", "duration은 0보다 커야 합니다.")
             return
+        note = self.step_note_var.get().strip() or NOTE_REST
+        harmony = [self.harmony_a_var.get().strip(), self.harmony_b_var.get().strip()]
+        edited = dict(self._data["steps"][idx], note=note, duration=dur)
+        if note == NOTE_REST:
+            edited.pop("harmony", None)
+        elif any(harmony):
+            edited["harmony"] = harmony
+        else:
+            edited.pop("harmony", None)
+        errors = validate_melody({**self._collect_form(), "steps": [edited]})
+        if errors:
+            messagebox.showerror("Melody Register", "\n".join(errors))
+            return
         steps = self._data.setdefault("steps", [])
-        steps[idx]["note"] = self.step_note_var.get().strip() or NOTE_REST
-        steps[idx]["duration"] = dur
+        steps[idx] = edited
         lyric = self.step_lyric_var.get().strip()
         if lyric:
             steps[idx]["lyric"] = lyric

@@ -13,6 +13,7 @@ import json
 import logging
 from math import isfinite
 from pathlib import Path
+import random
 import threading
 import time
 from typing import Callable, Mapping, Sequence
@@ -31,6 +32,8 @@ NOTE_PITCH = {
 }
 REST_NAMES = {"R", "REST"}
 PLAYBACK_LEAD_S = 0.25
+DFESTA_PARTS = ("melody", "harmony_a", "harmony_b")
+DEFAULT_DFESTA_WEIGHTS = (70.0, 15.0, 15.0)
 
 
 class PlaybackMode(str, Enum):
@@ -48,6 +51,7 @@ class MelodyStep:
     index: int
     pitch: int | None
     duration_beats: float
+    harmony: tuple[int | None, int | None] | None = None
 
 
 @dataclass(frozen=True)
@@ -56,6 +60,7 @@ class Melody:
 
     bpm: float
     steps: tuple[MelodyStep, ...]
+    dfesta_weights: tuple[float, float, float] = DEFAULT_DFESTA_WEIGHTS
 
     @property
     def beat_seconds(self) -> float:
@@ -118,6 +123,19 @@ def parse_melody(raw: Mapping) -> Melody:
     if not raw_steps:
         raise ValueError("melody steps must be a non-empty array")
 
+    dfesta = raw.get("dfesta", {})
+    if not isinstance(dfesta, Mapping):
+        raise ValueError("dfesta must be an object")
+    weights = dfesta.get("weights", dict(zip(DFESTA_PARTS, DEFAULT_DFESTA_WEIGHTS)))
+    if not isinstance(weights, Mapping) or set(weights) != set(DFESTA_PARTS):
+        raise ValueError("dfesta.weights must contain melody, harmony_a and harmony_b")
+    parsed_weights = tuple(
+        _positive_number(weights[part], f"dfesta.weights.{part}")
+        for part in DFESTA_PARTS
+    )
+    if not isfinite(sum(parsed_weights)) or parsed_weights[0] <= sum(parsed_weights[1:]):
+        raise ValueError("dfesta melody weight must exceed the two harmony weights combined")
+
     steps = []
     for index, raw_step in enumerate(raw_steps):
         if isinstance(raw_step, Mapping):
@@ -126,14 +144,24 @@ def parse_melody(raw: Mapping) -> Melody:
         else:
             note = raw_step
             duration = 1
+        pitch = _pitch_from_name(note)
+        harmony = None
+        if isinstance(raw_step, Mapping) and "harmony" in raw_step:
+            values = raw_step["harmony"]
+            if not isinstance(values, (list, tuple)) or len(values) != 2:
+                raise ValueError(f"step {index + 1} harmony must contain exactly two notes")
+            harmony = tuple(_pitch_from_name(value) for value in values)
+            if any((value is None) != (pitch is None) for value in harmony):
+                raise ValueError(f"step {index + 1} harmony must rest together with melody")
         steps.append(
             MelodyStep(
                 index=index,
-                pitch=_pitch_from_name(note),
+                pitch=pitch,
                 duration_beats=_positive_number(duration, f"step {index + 1} duration"),
+                harmony=harmony,
             )
         )
-    return Melody(bpm=bpm, steps=tuple(steps))
+    return Melody(bpm=bpm, steps=tuple(steps), dfesta_weights=parsed_weights)
 
 
 def load_melody(path: Path) -> Melody:
@@ -173,16 +201,41 @@ def _ordered_cells(cells: Mapping[str, Mapping]) -> list[Mapping]:
     )
 
 
+def _assign_dfesta_parts(
+    voices: list[str], melody: Melody, rng: random.Random,
+) -> dict[str, int]:
+    """정수 인원 비율을 먼저 정하고 가수만 추첨한다. 한 plan 동안 성부는 고정된다."""
+
+    count = len(voices)
+    # 정상 게임은 곡의 각 유음 step에 오브가 필요하다(현재 곡은 8~11개).
+    # 진단/중복 voice 등으로 인원이 부족하면 안전하게 기존 유니즌을 유지한다.
+    if count < 5 or not any(step.harmony is not None for step in melody.steps):
+        return dict.fromkeys(voices, 0)
+
+    total_weight = sum(melody.dfesta_weights)
+    targets = [count * (weight / total_weight) for weight in melody.dfesta_weights]
+    counts = [count // 2 + 1, 1, 1]
+    for _ in range(count - sum(counts)):
+        part = max(range(3), key=lambda index: targets[index] - counts[index])
+        counts[part] += 1
+    shuffled = list(voices)
+    rng.shuffle(shuffled)
+    roles = [part for part, size in enumerate(counts) for _ in range(size)]
+    return dict(zip(shuffled, roles))
+
+
 def build_plan(
     mode: PlaybackMode | str,
     melody: Melody,
     cells: Mapping[str, Mapping] | None = None,
+    *,
+    rng: random.Random | None = None,
 ) -> PlaybackPlan:
     """worker 시작 전에 모든 음표와 절대 offset을 계산한다.
 
     Listen은 전용 ``_listen`` 경로로 즉시 시작한다.
     Play는 배치된 오브를 실제 열과 pitch로 재생한다.
-    DFesta는 배치된 고유 voice가 목표 멜로디를 함께 재생하게 한다.
+    DFesta는 배치된 고유 voice를 멜로디 과반과 두 화음 성부로 나눈다.
     """
 
     mode = PlaybackMode(mode)
@@ -201,6 +254,11 @@ def build_plan(
             continue
         seen_voices.add(voice)
         dfesta_voices.append(voice)
+
+    dfesta_parts = (
+        _assign_dfesta_parts(dfesta_voices, melody, rng if rng is not None else random.Random())
+        if mode is PlaybackMode.DFESTA else {}
+    )
 
     cues = []
     for step in melody.steps:
@@ -241,10 +299,11 @@ def build_plan(
                 )
             duration_ms = full_duration_ms
         elif mode is PlaybackMode.DFESTA and step.pitch is not None:
+            pitches = (step.pitch, *(step.harmony or (step.pitch, step.pitch)))
             notes.extend(
                 {
                     "voice": voice,
-                    "pitch": step.pitch,
+                    "pitch": pitches[dfesta_parts[voice]],
                     "duration_ms": full_duration_ms,
                 }
                 for voice in dfesta_voices

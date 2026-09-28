@@ -136,6 +136,12 @@ READY → RUNNING → RESETTING → READY
 - `data/portmapping.json`: voice 그룹 → MIDI 포트·채널
 - `data/voice_catalog.json`: 화면 표시색·멤버 이름
 
+DFesta는 곡의 `steps[].harmony`에 지정한 두 화음 성부와 멜로디를 함께
+재생한다. 기본 인원 비중은 멜로디/화음 A/화음 B = 70/15/15이며, 멤버의
+성부는 재생마다 무작위로 배정한다. 허용 음은 기존 C4~C5의 8개이고
+loopMIDI/Ableton 설정은 그대로 사용한다. 화음이 없는 기존 JSON은 유니즌으로
+재생한다. [합창 데이터·편곡·박자 검토](docs/dfesta-choir.md).
+
 서버는 게임 시작 직전에 설정과 다음 멜로디를 다시 읽고 `/game/melody`를
 `RUNNING` 상태보다 먼저 전송한다. `sequence`는 성공한 start에만 순번을
 진행하며 마지막 곡 뒤에는 첫 곡으로 돌아간다.

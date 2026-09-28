@@ -1,5 +1,6 @@
 import pytest
 import importlib
+from copy import deepcopy
 import re
 from pathlib import Path
 import sys
@@ -78,6 +79,51 @@ def _load_main_module():
     module._playback_scheduler = FakeScheduler()
     module._websocket_service = FakeWebSocketService()
     return module
+
+
+@pytest.mark.parametrize("melody_id", ["dynamite", "Iam", "biplane"])
+def test_completed_game_starts_harmony_plan_and_keeps_final_dfesta(monkeypatch, melody_id):
+    from server.game.scheduler import build_plan
+
+    main = _load_main_module()
+    config = deepcopy(main.config)
+    config["melody"] = melody_id
+    config["melody_rotation"] = {"mode": "fixed", "playlist": [melody_id]}
+    monkeypatch.setattr(main, "load_config", lambda: deepcopy(config))
+    monkeypatch.setattr(main, "load_mapping", lambda: {
+        f"ORB-{i}": {"voice": f"voice_{i}"} for i in range(12)
+    })
+    plans = []
+    scheduler = main._playback_scheduler
+    original_start = scheduler.start
+
+    def start(mode, melody, cells=None):
+        plans.append(build_plan(mode, melody, cells))
+        return original_start(mode, melody, cells)
+
+    scheduler.start = start
+    try:
+        main.start_game()
+        main.auto_complete_game()
+        previous_cancels = scheduler.cancel_count
+        result = main.request_dfesta()
+        assert result["counted"] is True
+        assert result["game"]["end_reason"] == "complete"
+        assert scheduler.cancel_count == previous_cancels
+        assert plans[-1].mode.value == "dfesta"
+        for cue in plans[-1].cues:
+            if cue.notes:
+                assert len({note["pitch"] for note in cue.notes}) == 3
+                assert len(cue.notes) == result["game"]["cell_count"]
+        main.collect_all_orbs()
+        assert main.get_game_state()["state"] == "READY"
+        assert scheduler.cancel_count == previous_cancels
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("server.main", "server.inout.serial_io", "serial"):
+            sys.modules.pop(name, None)
 
 
 def test_main_routes_web_event_through_runtime_snapshot_and_midi():
@@ -479,7 +525,17 @@ def test_idle_transition_log_matches_runtime_until_reset_is_complete():
             sys.modules.pop(name, None)
 
 
-def test_config_rules_expose_120_second_time_over_and_30_second_idle_timers():
+def _use_test_timers(monkeypatch):
+    """운영 config의 진단용 시간 값과 무관하게 테스트 시작 설정을 고정한다."""
+    from server import data_store
+
+    config = data_store.load_config()
+    config["game_rules"] = {"time_over_s": 120, "idle_s": 30}
+    monkeypatch.setattr(data_store, "load_config", lambda: deepcopy(config))
+
+
+def test_config_rules_expose_120_second_time_over_and_30_second_idle_timers(monkeypatch):
+    _use_test_timers(monkeypatch)
     main = _load_main_module()
 
     try:
@@ -657,6 +713,7 @@ def test_successive_games_follow_the_configured_melody_sequence():
 
 def test_software_settings_persist_timers_without_hot_reload(tmp_path, monkeypatch):
     from server.data_store import load_config, save_config
+    _use_test_timers(monkeypatch)
     main = _load_main_module()
     path = tmp_path / "config.json"
     original = main.config.copy()
