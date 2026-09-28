@@ -26,7 +26,7 @@ from server.game.melody_manager import (
     game_rules_from_melody,
     game_timers_from_config,
 )
-from server.game.scheduler import PlaybackMode, PlaybackScheduler, parse_melody
+from server.game.scheduler import PlaybackMode, PlaybackScheduler, parse_melody, build_plan
 from server.inout import hardware_io
 
 ensure_data_files()
@@ -263,7 +263,8 @@ def _new_game_engine() -> GameEngine:
         answer_sequence,
         time_over_s=time_over_s,
         idle_s=idle_s,
-        dfesta_presses_required=dfesta_presses_required,
+        dfesta_presses_required=99 if _debug_mode else dfesta_presses_required,
+        initial_timer_delay_s=build_plan(PlaybackMode.LISTEN, playback_melody).duration_s + 1.0,
     )
 
 
@@ -464,7 +465,7 @@ def parse_cell(cell: int):
     return q, note
 
 # ── 게임 상태 전이 ──────────────────────────────────────
-def reload_melody_data() -> None:
+def reload_melody_data(melody_override: str | None = None) -> None:
     """config를 다시 읽고 다음 게임용 멜로디와 규칙을 고정한다."""
     global answer_sequence, time_over_s, idle_s, dfesta_presses_required
     global melody_id, melody_path, melody_document, playback_melody, game_rules
@@ -474,7 +475,7 @@ def reload_melody_data() -> None:
     input_mode = str(config.get("input_mode", "table")).lower().strip()
     if input_mode not in ("table", "serial"):
         raise ValueError("input_mode must be table or serial")
-    selected_id = _melody_manager.reserve(config)
+    selected_id = melody_override or _melody_manager.reserve(config)
     selected_path = melodies_dir() / f"{selected_id}.json"
     selected_document = _melody_manager.load(selected_id)
     selected_playback = parse_melody(selected_document)
@@ -530,6 +531,8 @@ def get_software_settings() -> dict:
     with _settings_lock:
         saved = game_timers_from_config(load_config())
         return {"debug_mode": _debug_mode, "saved_timers": saved,
+                "available_melodies": _melody_manager.available_ids(),
+                "current_melody": melody_id,
                 "active_timers": dict(_startup_timers),
                 "restart_required": saved != _startup_timers}
 
@@ -541,6 +544,19 @@ def update_software_settings(data: dict) -> dict:
     if "debug_mode" in data and not isinstance(data["debug_mode"], bool):
         raise ValueError("debug_mode must be a boolean")
     with _settings_lock:
+        selected = data.get("debug_melody")
+        if "debug_melody" in data:
+            if _hardware_switching.is_set():
+                raise RuntimeError("하드웨어 연결을 변경 중입니다")
+            if not data.get("debug_mode", _debug_mode):
+                raise ValueError("멜로디 변경은 디버그 모드에서만 가능합니다")
+            if not isinstance(selected, str) or selected not in _melody_manager.available_ids():
+                raise ValueError("멜로디 파일을 찾을 수 없습니다")
+            # Validate before interrupting the current game.
+            candidate = _melody_manager.load(selected)
+            parse_melody(candidate)
+            answer_sequence_from_melody(candidate)
+            game_rules_from_melody(candidate)
         if "game_rules" in data:
             rules = data["game_rules"]
             if not isinstance(rules, dict) or any(
@@ -553,10 +569,16 @@ def update_software_settings(data: dict) -> dict:
             save_config(document)
         if "debug_mode" in data:
             _debug_mode = data["debug_mode"]
+            _publish_transition(get_game_runtime().set_dfesta_requirement(
+                99 if _debug_mode else dfesta_presses_required))
+        if selected is not None:
+            _cancel_playback()
+            reset_game()
+            start_game(melody_override=selected)
     return {"ok": True, **get_software_settings()}
 
 
-def start_game() -> dict:
+def start_game(melody_override: str | None = None) -> dict:
     if _hardware_switching.is_set():
         raise RuntimeError("하드웨어 연결을 변경 중입니다")
     runtime = get_game_runtime()
@@ -572,7 +594,10 @@ def start_game() -> dict:
         raise InvalidTransition("START requires an empty table")
 
     try:
-        reload_melody_data()
+        if melody_override is None:
+            reload_melody_data()
+        else:
+            reload_melody_data(melody_override)
         runtime.replace_engine(_new_game_engine(), allow_occupied=debug_mode)
         # 브라우저가 판정·재생과 같은 문서를 먼저 적용한 뒤 RUNNING을 받게 한다.
         _publish_web_event("/game/melody", [get_active_melody()])

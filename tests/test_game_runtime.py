@@ -322,3 +322,20 @@ def test_runtime_preserves_end_reason_in_snapshot():
     finally:
         runtime.close()
 
+
+
+
+def test_dfesta_debug_requirement_keeps_game_running_until_99_presses():
+    runtime = GameRuntime(make_engine(answers={"1": "C"}))
+    runtime.start()
+    try:
+        runtime.start_game()
+        runtime.add_orb(orb_id="orb-c", slave=1, cell=1, voice="voice", known=True)
+        runtime.set_dfesta_requirement(99)
+        for _ in range(98):
+            result = runtime.press_dfesta()
+            assert result.snapshot["state"] == "RUNNING"
+        assert result.snapshot["completion"]["dfesta_presses_remaining"] == 1
+        assert runtime.press_dfesta().snapshot["state"] == "RESETTING"
+    finally:
+        runtime.close()

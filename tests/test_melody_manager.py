@@ -78,3 +78,19 @@ def test_invalid_rotation_settings_are_rejected(rotation, message):
             {"melody": "dynamite", "melody_rotation": rotation},
             AVAILABLE,
         )
+
+
+
+def test_added_file_joins_sequence_without_restarting_cursor(tmp_path):
+    manager = MelodyManager(_melody_directory(tmp_path))
+    config = {"melody": "dynamite", "melody_rotation": {"mode": "sequence", "playlist": AVAILABLE}}
+    assert manager.reserve(config) == "dynamite"
+    manager.commit()
+    (tmp_path / "new_song.json").write_text("{}", encoding="utf-8")
+    for expected in ["Iam", "biplane", "new_song", "dynamite"]:
+        assert manager.reserve(config) == expected
+        manager.commit()
+    fixed = {"melody": "Iam", "melody_rotation": {"mode": "fixed", "playlist": ["Iam"]}}
+    assert manager.reserve(fixed) == "Iam"
+    manager.commit()
+    assert manager.reserve(fixed) == "Iam"
