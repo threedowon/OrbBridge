@@ -2,18 +2,21 @@
 
 브라우저의 여러 ``setTimeout``에 분산돼 있던 재생 시각을 하나의
 ``PlaybackScheduler``로 모은다. 변경 불가능한 cue 목록을 만든 뒤,
-취소 가능한 worker 하나가 monotonic 절대시각 기준으로 실행한다.
+취소 가능한 worker 하나가 고해상도 perf_counter 절대시각 기준으로 실행한다.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections import deque
 from enum import Enum
 import json
 import logging
 from math import isfinite
 from pathlib import Path
+from queue import SimpleQueue
 import random
+import sys
 import threading
 import time
 from typing import Callable, Mapping, Sequence
@@ -333,7 +336,7 @@ class PlaybackScheduler:
         *,
         send_notes: Callable[[list[dict]], object],
         publish_event: Callable[[dict], object],
-        clock: Callable[[], float] = time.monotonic,
+        clock: Callable[[], float] = time.perf_counter,
     ) -> None:
         if not callable(send_notes) or not callable(publish_event):
             raise TypeError("send_notes and publish_event must be callable")
@@ -347,7 +350,18 @@ class PlaybackScheduler:
         self._mode: PlaybackMode | None = None
         self._cancel: threading.Event | None = None
         self._thread: threading.Thread | None = None
+        self._workers: set[threading.Thread] = set()
         self._closed = False
+        self._timing_lock = threading.Lock()
+        self._timing_run_id = 0
+        self._timing_mode: str | None = None
+        self._timing_samples: deque[dict] = deque(maxlen=256)
+        # WebSocket/화면 callback의 lock이나 I/O가 MIDI clock을 멈추지 않게 한다.
+        self._events: SimpleQueue = SimpleQueue()
+        self._publisher = threading.Thread(
+            target=self._publish_loop, daemon=True, name="orbbridge-playback-events",
+        )
+        self._publisher.start()
 
     def snapshot(self) -> dict:
         """스레드 객체를 노출하지 않고 현재 재생 식별자를 반환한다."""
@@ -358,6 +372,31 @@ class PlaybackScheduler:
                 "active": bool(thread and thread.is_alive()),
                 "run_id": self._run_id,
                 "mode": self._mode.value if self._mode is not None else None,
+                "timing": self._timing_snapshot(),
+            }
+
+    def _timing_snapshot(self) -> dict:
+        with self._timing_lock:
+            samples = [dict(sample) for sample in self._timing_samples]
+            return {
+                "run_id": self._timing_run_id,
+                "mode": self._timing_mode,
+                "python_version": sys.version.split()[0],
+                "clock": "perf_counter" if self._clock is time.perf_counter else "custom",
+                "clock_resolution_ms": (
+                    time.get_clock_info("perf_counter").resolution * 1000
+                    if self._clock is time.perf_counter else None
+                ),
+                "samples": samples,
+                "max_dispatch_late_ms": max(
+                    (sample["dispatch_late_ms"] for sample in samples), default=0.0,
+                ),
+                "max_send_ms": max(
+                    (sample["send_ms"] for sample in samples), default=0.0,
+                ),
+                "max_note_on_late_ms": max(
+                    (sample.get("note_on_late_ms", 0.0) for sample in samples), default=0.0,
+                ),
             }
 
     def start(
@@ -376,6 +415,10 @@ class PlaybackScheduler:
                 self._cancel.set()
             self._run_id += 1
             run_id = self._run_id
+            with self._timing_lock:
+                self._timing_run_id = run_id
+                self._timing_mode = plan.mode.value
+                self._timing_samples.clear()
             cancel = threading.Event()
             thread = threading.Thread(
                 target=self._run,
@@ -386,6 +429,12 @@ class PlaybackScheduler:
             self._cancel = cancel
             self._thread = thread
             self._mode = plan.mode
+            self._workers.add(thread)
+            # start는 run 순서로 먼저 queue에 넣고 MIDI worker를 시작한다.
+            self._safe_publish({
+                "type": "start", "run_id": run_id, "mode": plan.mode.value,
+                "step_count": len(plan.cues),
+            })
             thread.start()
         return {
             "run_id": run_id,
@@ -408,26 +457,75 @@ class PlaybackScheduler:
                 return
             self._closed = True
             cancel = self._cancel
-            thread = self._thread
+            threads = list(self._workers)
             if cancel is not None:
                 cancel.set()
-        if thread is not None and thread is not threading.current_thread():
-            thread.join(max(0.0, timeout))
+        deadline = time.monotonic() + max(0.0, timeout)
+        for thread in threads:
+            if thread is not threading.current_thread():
+                thread.join(max(0.0, deadline - time.monotonic()))
+        self._events.put(None)
+        if self._publisher is not threading.current_thread():
+            self._publisher.join(max(0.0, deadline - time.monotonic()))
 
     def _safe_publish(self, event: dict) -> None:
-        try:
-            self._publish_event(event)
-        except Exception:
-            LOGGER.exception("scheduler event publish failed")
+        self._events.put(event)
 
-    def _safe_send(self, notes: tuple[dict, ...]) -> None:
+    def _publish_loop(self) -> None:
+        while True:
+            event = self._events.get()
+            if event is None:
+                return
+            try:
+                self._publish_event(event)
+            except Exception:
+                LOGGER.exception("scheduler event publish failed")
+
+    def _safe_send(self, notes: tuple[dict, ...]) -> object:
         if not notes:
             return
         try:
-            self._send_notes([dict(note) for note in notes])
+            return self._send_notes([dict(note) for note in notes])
         except Exception:
             # MIDI 오류가 Scheduler 시각 처리와 다음 beat 이벤트를 중단하지 않게 한다.
             LOGGER.exception("scheduler MIDI send failed")
+
+    def _record_timing(self, run_id, cue, due, dispatched, finished, results):
+        sample = {
+            "step": cue.step,
+            "offset_ms": round(cue.offset_s * 1000, 3),
+            "note_count": len(cue.notes),
+            "dispatch_late_ms": round(max(0.0, dispatched - due) * 1000, 3),
+            "send_ms": round(max(0.0, finished - dispatched) * 1000, 3),
+        }
+        sent = [
+            result for result in (results if isinstance(results, list) else [])
+            if isinstance(result, dict) and result.get("ok")
+            and "note_on_completed_s" in result
+        ]
+        sample["sent_count"] = len(sent)
+        sample["error_count"] = sum(
+            not result.get("ok", False)
+            for result in (results if isinstance(results, list) else [])
+            if isinstance(result, dict)
+        )
+        if sent:
+            first = min(result["note_on_started_s"] for result in sent)
+            last = max(result["note_on_started_s"] for result in sent)
+            sample.update(
+                note_on_late_ms=round(max(0.0, last - due) * 1000, 3),
+                note_on_spread_ms=round((last - first) * 1000, 3),
+                note_on_completed_late_ms=round(max(
+                    0.0, max(result["note_on_completed_s"] for result in sent) - due,
+                ) * 1000, 3),
+                driver_send_ms=round(max(
+                    result["note_on_completed_s"] - result["note_on_started_s"]
+                    for result in sent
+                ) * 1000, 3),
+            )
+        with self._timing_lock:
+            if run_id == self._timing_run_id:
+                self._timing_samples.append(sample)
 
     def _run(
         self,
@@ -436,27 +534,20 @@ class PlaybackScheduler:
         cancel: threading.Event,
     ) -> None:
         started_at = self._clock()
-        self._safe_publish(
-            {
-                "type": "start",
-                "run_id": run_id,
-                "mode": plan.mode.value,
-                "step_count": len(plan.cues),
-            }
-        )
         cancelled = False
 
         for cue in plan.cues:
-            remaining = started_at + cue.offset_s - self._clock()
-            if remaining > 0 and cancel.wait(remaining):
-                cancelled = True
-                break
-            if cancel.is_set():
+            if not self._wait_until(started_at + cue.offset_s, cancel):
                 cancelled = True
                 break
 
-            # 이벤트 발행과 MIDI 출력은 같은 Python beat에 속한다.
-            # screen은 이 이벤트를 표시할 뿐 다음 시각을 계산하지 않는다.
+            # MIDI를 먼저 전송한다. 표시/진단 작업은 전송 뒤, 별도 publisher에서.
+            dispatched = self._clock()
+            results = self._safe_send(cue.notes)
+            finished = self._clock()
+            self._record_timing(
+                run_id, cue, started_at + cue.offset_s, dispatched, finished, results,
+            )
             event = {
                 "type": "beat",
                 "run_id": run_id,
@@ -466,14 +557,9 @@ class PlaybackScheduler:
                 "notes": [dict(note) for note in cue.notes],
             }
             self._safe_publish(event)
-            self._safe_send(cue.notes)
 
         if not cancelled:
-            remaining = started_at + plan.duration_s - self._clock()
-            if remaining > 0 and cancel.wait(remaining):
-                cancelled = True
-            elif cancel.is_set():
-                cancelled = True
+            cancelled = not self._wait_until(started_at + plan.duration_s, cancel)
 
         self._safe_publish(
             {
@@ -484,7 +570,26 @@ class PlaybackScheduler:
             }
         )
         with self._lock:
+            self._workers.discard(threading.current_thread())
             if self._run_id == run_id:
                 self._cancel = None
                 self._thread = None
                 self._mode = None
+
+    def _wait_until(self, deadline: float, cancel: threading.Event) -> bool:
+        """긴 대기는 즉시 취소 가능하게, 마지막 20ms는 짧은 sleep으로 기다린다.
+
+        Windows Event.wait는 clock 해상도와 별개로 OS tick 단위로 깨울 수 있다.
+        Python 3.11+의 sleep은 고해상도 waitable timer를 사용한다. busy spin 없이
+        매번 deadline을 다시 확인하고, 마지막 구간은 2ms 이하의 sleep을 요청한다.
+        """
+
+        while not cancel.is_set():
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                return True
+            if remaining > 0.020:
+                cancel.wait(remaining - 0.020)
+            else:
+                time.sleep(min(remaining, 0.002))
+        return False

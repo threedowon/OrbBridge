@@ -10,9 +10,9 @@ M3는 Listen·Play·DFesta의 박자 계산과 MIDI 출력을 브라우저에서
 Serial / HTTP game command
   → main.py
   → PlaybackScheduler
-      ├─ absolute monotonic deadline
+      ├─ absolute perf_counter deadline
       ├─ midi_out.trigger_many()
-      └─ WebSocket playback event
+      └─ queue → 별도 publisher → WebSocket playback event
             → screen beat 표시
 ```
 
@@ -26,6 +26,10 @@ Serial / HTTP game command
 모든 offset은 BPM과 앞선 step duration의 누적값으로 한 번 계산한다.
 각 beat가 끝난 뒤 다음 beat를 상대 지연하는 방식이 아니므로 처리 시간이
 누적되어 템포가 밀리지 않는다.
+
+Windows의 낮은 해상도 monotonic clock 및 화면 callback과의 결합을 제거한
+후속 수정은 [MIDI 타이밍 조사](midi-timing.md)를 참조한다. 절대 deadline은
+누적 오차를 방지하지만 OS나 driver가 스레드를 정지시킬 때의 실시간 보장은 아니다.
 
 ## 동시 실행과 취소
 

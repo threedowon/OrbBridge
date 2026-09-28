@@ -171,6 +171,10 @@ py -m tools.midi_debug --list
 loopMIDI 포트 복구 파일은
 `audioengine/loopmidi_portsetup.reg`이다. MIDI 단음·8음 순회·전체 voice 동시
 테스트는 `/admin/software`의 MIDI 진단에서도 실행할 수 있다.
+Play/DFesta의 지연 수치는 같은 패널에서 확인하고 **타이밍 기록 저장**으로
+마지막 재생의 JSON을 받을 수 있다. [MIDI 타이밍 조사·재검증](docs/midi-timing.md).
+장치 목록과 멤버 채널은 연결 시 읽는다. loopMIDI 장치나 voice 라벨을 변경한
+뒤에는 재생을 멈추고 **포트 재연결**을 누른다.
 
 ## 웹 동기화
 

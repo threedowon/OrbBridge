@@ -692,6 +692,8 @@
             <button id="btn-midi-reconnect">포트 재연결</button>
           </div>
           <div class="midi-job" id="midi-job">대기</div>
+          <div class="midi-job" id="playback-timing">재생 타이밍: 기록 없음</div>
+          <button id="btn-timing-save" disabled>타이밍 기록 저장</button>
         </div>
       </div>
 
@@ -956,6 +958,16 @@
         button.disabled = adminActionRunning || currentGameState !== 'RUNNING';
       });
       renderSlaves(s.slaves);
+      const timing = s.playback?.timing;
+      const samples = timing?.samples || [];
+      const sentCount = samples.reduce((total, sample) => total + (sample.sent_count || 0), 0);
+      const errorCount = samples.reduce((total, sample) => total + (sample.error_count || 0), 0);
+      document.getElementById('playback-timing').textContent = samples.length
+        ? `재생 #${timing.run_id} · 전송 ${sentCount}음 · 오류 ${errorCount} · ` +
+          `최대 시작 지연 ${Number(timing.max_note_on_late_ms || 0).toFixed(2)}ms · ` +
+          `최대 묶음 처리 ${Number(timing.max_send_ms || 0).toFixed(2)}ms`
+        : '재생 타이밍: 기록 없음';
+      document.getElementById('btn-timing-save').disabled = !samples.length;
       updateGameButtons();
     }
 
@@ -972,6 +984,7 @@
       const job = payload?.job || {};
       const ready = Boolean(midi.ready);
       setDot('dot-midi', ready ? 'ok' : 'err');
+      document.getElementById('lbl-midi').title = '장치 목록은 연결 시 확인합니다. 장치나 멤버 라벨 변경 후 포트 재연결을 누르세요.';
       document.getElementById('lbl-midi').textContent = ready
         ? `MIDI ${midi.opened_ports?.length || 0} ports`
         : 'MIDI 연결 안 됨';
@@ -1306,6 +1319,29 @@
       try {
         renderMidiStatus(await postMidi('/api/admin/midi/reconnect'));
         addLog('midi', '포트 재연결 완료', 'log-info');
+      } catch (error) {
+        addLog('midi', error.message, 'log-warn');
+      }
+    });
+
+    document.getElementById('btn-timing-save').addEventListener('click', async () => {
+      try {
+        const response = await fetch('/api/status');
+        if (!response.ok) throw new Error('타이밍 조회 실패');
+        const status = await response.json();
+        if (!status.playback?.timing?.samples?.length) throw new Error('저장할 재생 기록이 없습니다.');
+        const report = {
+          captured_at: new Date().toISOString(), melody: status.melody,
+          input_mode: status.input_mode, playback: status.playback,
+        };
+        const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `orbbridge-timing-${status.playback.run_id}.json`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
       } catch (error) {
         addLog('midi', error.message, 'log-warn');
       }

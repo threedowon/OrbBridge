@@ -180,3 +180,99 @@ def test_close_is_idempotent_and_rejects_new_playback():
     with pytest.raises(RuntimeError, match="closed"):
         scheduler.start("listen", parse_melody(melody_raw()))
 
+
+@pytest.mark.parametrize("blocked_event", ["start", "beat"])
+def test_slow_display_cannot_hold_up_midi(blocked_event):
+    entered = threading.Event()
+    release = threading.Event()
+    sent = threading.Event()
+    batches = []
+
+    def publish(event):
+        if event["type"] == blocked_event:
+            entered.set()
+            release.wait(2)
+
+    def send(notes):
+        batches.append(notes)
+        if len(batches) == 3:
+            sent.set()
+
+    scheduler = PlaybackScheduler(send_notes=send, publish_event=publish)
+    melody = parse_melody({"bpm": 6000, "steps": ["C4", "D4", "E4"]})
+    try:
+        scheduler.start("listen", melody)
+        assert entered.wait(1)
+        assert sent.wait(0.5), "display callback blocked MIDI playback"
+    finally:
+        release.set()
+        scheduler.close()
+
+
+def test_wait_rechecks_deadline_after_early_wakeup(monkeypatch):
+    now = [0.0]
+    waits = []
+
+    class EarlyWake:
+        def is_set(self):
+            return False
+
+        def wait(self, timeout):
+            waits.append(timeout)
+            now[0] += max(timeout / 2, 0.001)
+            return False
+
+    def sleep(duration):
+        now[0] += duration
+
+    monkeypatch.setattr("server.game.scheduler.time.sleep", sleep)
+    scheduler = PlaybackScheduler(
+        send_notes=lambda notes: None, publish_event=lambda event: None,
+        clock=lambda: now[0],
+    )
+    try:
+        # The mock eventually reaches the 20ms precision window despite early wakes.
+        assert scheduler._wait_until(0.05, EarlyWake())
+        assert now[0] >= 0.05
+        assert len(waits) > 1
+        cancelled = threading.Event()
+        cancelled.set()
+        assert not scheduler._wait_until(1.0, cancelled)
+    finally:
+        scheduler.close()
+
+
+def test_timing_distinguishes_dispatch_and_driver_delay():
+    ended = threading.Event()
+
+    def send(notes):
+        started = time.perf_counter()
+        time.sleep(0.025)
+        return [{"ok": True, "note_on_started_s": started,
+                 "note_on_completed_s": time.perf_counter()}]
+
+    scheduler = PlaybackScheduler(
+        send_notes=send,
+        publish_event=lambda event: ended.set() if event["type"] == "end" else None,
+    )
+    try:
+        scheduler.start("listen", parse_melody({"bpm": 6000, "steps": ["C4"]}))
+        assert ended.wait(1)
+        timing = scheduler.snapshot()["timing"]
+        assert timing["clock"] == "perf_counter"
+        sample = timing["samples"][0]
+        assert sample["sent_count"] == 1
+        assert sample["error_count"] == 0
+        assert sample["driver_send_ms"] >= 20
+        assert sample["send_ms"] >= 20
+        assert sample["note_on_completed_late_ms"] >= sample["note_on_late_ms"] + 20
+        # A second run owns a new diagnostic record, without old notes mixed in.
+        ended.clear()
+        scheduler.start("listen", parse_melody({"bpm": 6000, "steps": ["REST"]}))
+        assert ended.wait(1)
+        timing = scheduler.snapshot()["timing"]
+        assert timing["run_id"] == 2
+        assert len(timing["samples"]) == 1
+        assert timing["samples"][0]["note_count"] == 0
+    finally:
+        scheduler.close()

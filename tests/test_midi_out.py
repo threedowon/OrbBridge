@@ -131,3 +131,154 @@ def test_invalid_note_does_not_block_valid_notes(monkeypatch, tmp_path):
     finally:
         midi_out.shutdown()
 
+
+def test_status_poll_does_not_enumerate_devices(monkeypatch, tmp_path):
+    midi_out, fake = _load_midi(monkeypatch, ["alpha"])
+    mapping = _mapping_file(tmp_path, {"alpha": {"port": "alpha"}})
+    calls = []
+
+    def enumerate_devices():
+        calls.append(True)
+        return ["alpha"]
+
+    monkeypatch.setattr(fake, "get_output_names", enumerate_devices)
+    try:
+        assert midi_out.ensure_init(mapping)[0]
+        count_after_init = len(calls)
+        for _ in range(20):
+            assert midi_out.runtime_status()["available_ports"] == ["alpha"]
+        assert len(calls) == count_after_init
+    finally:
+        midi_out.shutdown()
+
+
+def test_catalog_is_loaded_before_beats_and_refreshed_on_reconnect(monkeypatch, tmp_path):
+    from server import voice_catalog
+
+    midi_out, fake = _load_midi(monkeypatch, ["alpha"])
+    mapping = _mapping_file(tmp_path, {
+        "alpha": {"port": "alpha", "members": {"first": 1, "second": 2}},
+    })
+    monkeypatch.setattr(midi_out, "PORTMAPPING_PATH", mapping)
+    labels = {"en": "second"}
+    reads = []
+
+    def catalog():
+        reads.append(True)
+        return {"voices": {"alpha_1": {"labels": dict(labels)}}}
+
+    monkeypatch.setattr(voice_catalog, "load_voice_catalog", catalog)
+    try:
+        assert midi_out.ensure_init()[0]
+        assert len(reads) == 1
+        for _ in range(10):
+            assert midi_out.trigger("alpha_1")["channel"] == 2
+        assert len(reads) == 1
+        labels["en"] = "first"
+        assert midi_out.reinitialize()[0]
+        assert midi_out.trigger("alpha_1")["channel"] == 1
+        assert len(reads) == 2
+    finally:
+        midi_out.shutdown()
+
+
+def test_multiport_beats_do_not_start_new_threads(monkeypatch, tmp_path):
+    midi_out, fake = _load_midi(monkeypatch, ["alpha", "beta"])
+    mapping = _mapping_file(tmp_path, {
+        name: {"port": name} for name in ["alpha", "beta"]
+    })
+    started = []
+    original_start = threading.Thread.start
+
+    def start(thread):
+        started.append(thread.name)
+        return original_start(thread)
+
+    try:
+        assert midi_out.ensure_init(mapping)[0]
+        monkeypatch.setattr(threading.Thread, "start", start)
+        for pitch in range(3):
+            results = midi_out.trigger_many([
+                {"voice": "alpha_1", "pitch": pitch},
+                {"voice": "beta_1", "pitch": pitch},
+            ])
+            assert all(result["ok"] for result in results)
+        assert started == []
+    finally:
+        midi_out.shutdown()
+
+
+def test_failed_init_does_not_rescan_on_every_note(monkeypatch, tmp_path):
+    midi_out, fake = _load_midi(monkeypatch, [])
+    mapping = _mapping_file(tmp_path, {"alpha": {"port": "alpha"}})
+    monkeypatch.setattr(midi_out, "PORTMAPPING_PATH", mapping)
+    scans = []
+
+    def enumerate_devices():
+        scans.append(True)
+        return list(fake.names)
+
+    monkeypatch.setattr(fake, "get_output_names", enumerate_devices)
+    try:
+        assert not midi_out.ensure_init()[0]
+        for _ in range(5):
+            assert not midi_out.trigger("alpha_1")["ok"]
+        assert len(scans) == 1
+        fake.names = ["alpha"]
+        fake.ports["alpha"] = FakePort("alpha")
+        assert midi_out.reinitialize()[0]
+        assert midi_out.trigger("alpha_1")["ok"]
+        assert len(scans) == 2
+    finally:
+        midi_out.shutdown()
+
+
+def test_shutdown_waits_for_inflight_batch(monkeypatch, tmp_path):
+    midi_out, fake = _load_midi(monkeypatch, ["alpha", "beta"])
+    mapping = _mapping_file(tmp_path, {name: {"port": name} for name in fake.names})
+    sending = threading.Event()
+    release = threading.Event()
+    closing = threading.Event()
+    closed = threading.Event()
+    port = fake.ports["alpha"]
+    send = port.send
+    failures = []
+
+    def blocked_send(message):
+        if message.type == "note_on":
+            sending.set()
+            release.wait(2)
+        if port.closed:
+            failures.append("send after close")
+        send(message)
+
+    def shutdown():
+        closing.set()
+        midi_out.shutdown()
+        closed.set()
+
+    monkeypatch.setattr(port, "send", blocked_send)
+    sender = threading.Thread(target=lambda: midi_out.trigger_many([
+        {"voice": "alpha_1"}, {"voice": "beta_1"},
+    ]))
+    closer = threading.Thread(target=shutdown)
+    try:
+        assert midi_out.ensure_init(mapping)[0]
+        sender.start()
+        assert sending.wait(1)
+        closer.start()
+        assert closing.wait(1)
+        assert not closed.wait(0.05)
+        release.set()
+        sender.join(1)
+        closer.join(1)
+        assert not sender.is_alive() and not closer.is_alive()
+        assert closed.is_set() and port.closed
+        assert failures == []
+    finally:
+        release.set()
+        if sender.ident is not None:
+            sender.join(2)
+        if closer.ident is not None:
+            closer.join(2)
+        midi_out.shutdown()
