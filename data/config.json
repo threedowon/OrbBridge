@@ -1,8 +1,8 @@
 {
   "current_stage": 1,
   "game_rules": {
-    "time_over_s": 99999,
-    "idle_s": 99999
+    "time_over_s": 99999.0,
+    "idle_s": 99999.0
   },
   "melody": "dynamite",
   "melody_rotation": {
