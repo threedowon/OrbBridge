@@ -18,7 +18,8 @@
       "harmony": [
         "E4",
         "G4"
-      ]
+      ],
+      "velocity": 127
     },
     {
       "step": 2,
@@ -27,7 +28,8 @@
       "harmony": [
         "C4",
         "E4"
-      ]
+      ],
+      "velocity": 127
     },
     {
       "step": 3,
@@ -36,7 +38,8 @@
       "harmony": [
         "C4",
         "E4"
-      ]
+      ],
+      "velocity": 127
     },
     {
       "step": 4,
@@ -45,7 +48,8 @@
       "harmony": [
         "D4",
         "A4"
-      ]
+      ],
+      "velocity": 127
     },
     {
       "step": 5,
@@ -54,7 +58,8 @@
       "harmony": [
         "C4",
         "G4"
-      ]
+      ],
+      "velocity": 127
     },
     {
       "step": 6,
@@ -63,7 +68,8 @@
       "harmony": [
         "B4",
         "G4"
-      ]
+      ],
+      "velocity": 127
     },
     {
       "step": 7,
@@ -72,7 +78,8 @@
       "harmony": [
         "E4",
         "G4"
-      ]
+      ],
+      "velocity": 127
     },
     {
       "step": 8,
@@ -81,27 +88,32 @@
       "harmony": [
         "E4",
         "G4"
-      ]
+      ],
+      "velocity": 127
     },
     {
       "step": 9,
       "note": "REST",
-      "duration": 1
+      "duration": 1,
+      "velocity": 127
     },
     {
       "step": 10,
       "note": "REST",
-      "duration": 1
+      "duration": 1,
+      "velocity": 127
     },
     {
       "step": 11,
       "note": "REST",
-      "duration": 1
+      "duration": 1,
+      "velocity": 127
     },
     {
       "step": 12,
       "note": "REST",
-      "duration": 1
+      "duration": 1,
+      "velocity": 127
     }
   ],
   "dfesta": {

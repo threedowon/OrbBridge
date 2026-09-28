@@ -198,14 +198,15 @@ def test_gui_step_apply_preserves_or_clears_harmony_without_a_window(note, harmo
     def var(value):
         return SimpleNamespace(get=lambda: value)
     app = SimpleNamespace(
-        _data=data, _selected_step_index=lambda: 0,
+        _data=data, _selected=0, velocity_var=var("83"),
         step_note_var=var(note), step_dur_var=var("0.5"), step_lyric_var=var(""),
         harmony_a_var=var(harmony[0] if harmony else ""),
         harmony_b_var=var(harmony[1] if harmony else ""),
-        _collect_form=lambda: data, _rebuild_tree=lambda **_: None,
-        _refresh_summary=lambda: None,
+        _checkpoint=lambda: None, _changed=lambda: None,
     )
     MelodyRegisterApp._apply_step_edit(app)
+    data = app._data
     assert data["steps"][0]["note"] == note
     assert data["steps"][0].get("harmony", []) == harmony
     assert data["steps"][0]["duration"] == 0.5
+    assert data["steps"][0]["velocity"] == 83

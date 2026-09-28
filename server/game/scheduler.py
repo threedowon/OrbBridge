@@ -55,6 +55,7 @@ class MelodyStep:
     pitch: int | None
     duration_beats: float
     harmony: tuple[int | None, int | None] | None = None
+    velocity: int = 127
 
 
 @dataclass(frozen=True)
@@ -148,6 +149,9 @@ def parse_melody(raw: Mapping) -> Melody:
             note = raw_step
             duration = 1
         pitch = _pitch_from_name(note)
+        velocity = raw_step.get("velocity", 127) if isinstance(raw_step, Mapping) else 127
+        if isinstance(velocity, bool) or not isinstance(velocity, int) or not 1 <= velocity <= 127:
+            raise ValueError(f"step {index + 1} velocity must be an integer from 1 to 127")
         harmony = None
         if isinstance(raw_step, Mapping) and "harmony" in raw_step:
             values = raw_step["harmony"]
@@ -162,6 +166,7 @@ def parse_melody(raw: Mapping) -> Melody:
                 pitch=pitch,
                 duration_beats=_positive_number(duration, f"step {index + 1} duration"),
                 harmony=harmony,
+                velocity=velocity,
             )
         )
     return Melody(bpm=bpm, steps=tuple(steps), dfesta_weights=parsed_weights)
@@ -278,6 +283,7 @@ def build_plan(
                     "voice": "_listen",
                     "pitch": step.pitch,
                     "duration_ms": preview_ms,
+                    "velocity": step.velocity,
                 }
             )
             duration_ms = preview_ms
@@ -298,6 +304,7 @@ def build_plan(
                         "voice": voice,
                         "pitch": pitch,
                         "duration_ms": full_duration_ms,
+                        "velocity": step.velocity,
                     }
                 )
             duration_ms = full_duration_ms
@@ -308,6 +315,7 @@ def build_plan(
                     "voice": voice,
                     "pitch": pitches[dfesta_parts[voice]],
                     "duration_ms": full_duration_ms,
+                    "velocity": step.velocity,
                 }
                 for voice in dfesta_voices
             )

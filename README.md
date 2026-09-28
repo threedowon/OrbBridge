@@ -159,6 +159,10 @@ python -m tools.melody_register --list
 Orb Register는 `data/orb_mapping.json`을 관리한다. Melody Register는
 `data/melodies/*.json`의 BPM, 음표, duration, 가사, 게임 규칙과 게임별 재생
 순서를 함께 관리한다. Windows 실행 파일은 `tools\*.bat`에 있다.
+Melody Register는 12 step 피아노롤에서 클릭·드래그로 음정과 길이를 편집한다.
+Triplet, Snap to grid, velocity 막대와 기준음 미리듣기를 지원하며, step의
+velocity는 DFesta의 멜로디·화음 멤버 모두에 동일하게 적용된다.
+[피아노롤 사용법과 JSON 형식](docs/melody-piano-roll.md).
 
 ## 하드웨어 진단과 MIDI 준비
 

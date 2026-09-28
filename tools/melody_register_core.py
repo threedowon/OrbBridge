@@ -121,6 +121,7 @@ def normalize_melody(raw: dict[str, Any], file_id: str = "") -> dict[str, Any]:
             "step": int(step.get("step", i + 1)),
             "note": note,
             "duration": dur_f,
+            "velocity": step.get("velocity", 127),
         }
         lyric = str(step.get("lyric", "")).strip()
         if lyric:
@@ -218,6 +219,7 @@ def to_save_payload(data: dict[str, Any]) -> dict[str, Any]:
             "step": i,
             "note": step.get("note", "?"),
             "duration": float(step.get("duration") or 1),
+            "velocity": step.get("velocity", 127),
         }
         lyric = str(step.get("lyric", "")).strip()
         if lyric:
@@ -273,7 +275,10 @@ def new_melody_template(file_id: str) -> dict[str, Any]:
             "artist": "",
             "bpm": 120,
             "range": DEFAULT_RANGE,
-            "steps": [{"step": 1, "note": "C4", "duration": 1}],
+            "steps": [
+                {"step": i + 1, "note": NOTE_REST, "duration": 1, "velocity": 127}
+                for i in range(BEAT_COLS)
+            ],
         },
         file_id,
     )

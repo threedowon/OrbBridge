@@ -78,7 +78,7 @@ def test_listen_starts_immediately_and_uses_preview_route():
 
     assert plan.cues[0].offset_s == 0
     assert plan.cues[0].notes == (
-        {"voice": "_listen", "pitch": 0, "duration_ms": 230},
+        {"voice": "_listen", "pitch": 0, "duration_ms": 230, "velocity": 127},
     )
     assert plan.cues[1].notes == ()
     assert plan.cues[2].offset_s == pytest.approx(0.75)
@@ -98,8 +98,8 @@ def test_dfesta_deduplicates_voices_and_uses_target_pitch():
     plan = build_plan("dfesta", parse_melody(melody_raw()), cells())
 
     assert plan.cues[0].notes == (
-        {"voice": "aespa_1", "pitch": 0, "duration_ms": 250},
-        {"voice": "bts_1", "pitch": 0, "duration_ms": 250},
+        {"voice": "aespa_1", "pitch": 0, "duration_ms": 250, "velocity": 127},
+        {"voice": "bts_1", "pitch": 0, "duration_ms": 250, "velocity": 127},
     )
     assert plan.cues[1].notes == ()
     assert {note["pitch"] for note in plan.cues[2].notes} == {4}
