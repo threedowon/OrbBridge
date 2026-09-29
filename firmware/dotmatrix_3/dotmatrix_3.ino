@@ -135,7 +135,10 @@ void setup() {
 
   mxconfig.setPixelColorDepthBits(2);
   mxconfig.double_buff = true;
-  mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_20M;
+  mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_10M;
+  mxconfig.latch_blanking = 4;
+	mxconfig.clkphase = false;
+
   display = new MatrixPanel_I2S_DMA(mxconfig);
   if (!display->begin()) {
     Serial.println("Display begin() FAILED");

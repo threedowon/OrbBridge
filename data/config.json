@@ -1,8 +1,8 @@
 {
   "current_stage": 1,
   "game_rules": {
-    "time_over_s": 99999.0,
-    "idle_s": 99999.0
+    "time_over_s": 30.0,
+    "idle_s": 15.0
   },
   "melody": "dynamite",
   "melody_rotation": {
@@ -24,7 +24,7 @@
   },
   "matrix_display": {
     "enabled": true,
-    "port": "COM17",
+    "port": "COM6",
     "baudrate": 115200
   }
 }
