@@ -44,6 +44,9 @@ class FakeScheduler:
     def cancel(self):
         self.cancel_count += 1
 
+    def display_snapshot(self):
+        return self.snapshot()
+
     def close(self, timeout=2.0):
         self.closed = True
 
@@ -63,6 +66,63 @@ class FakeWebSocketService:
     def close(self):
         self.running = False
         self.closed = True
+
+
+def test_matrix_follows_accepted_requests_and_ignores_delayed_web_events(monkeypatch):
+    import json
+    from server.inout.matrix_display import MatrixDisplay
+
+    main = _load_main_module()
+    writes = []
+
+    def write(data):
+        writes.append(json.loads(data))
+        return len(data)
+
+    device = types.SimpleNamespace(write=write, close=lambda: None)
+    matrix = MatrixDisplay(
+        {"enabled": True},
+        serial_module=types.SimpleNamespace(Serial=lambda *args, **kwargs: device),
+        catalog={"voices": {}},
+    )
+    matrix.BOOT_S = 0
+    main._matrix_display = matrix
+    try:
+        main._update_matrix_display()
+        assert writes[-1]["text"] == "PLACE TRAY"
+        assert main.request_play()["ignored"]
+        main._update_matrix_display()
+        assert writes[-1]["text"] == "PLACE TRAY"
+        main.start_game()
+        main._update_matrix_display()
+        assert writes[-1]["text"] == "HINT"
+        main.request_play()
+        main._update_matrix_display()
+        assert writes[-1]["text"] == "LISTENING"
+        main._scheduler_publish_event({
+            "type": "end", "run_id": 1, "mode": "listen", "cancelled": True,
+        })
+        main._update_matrix_display()
+        assert writes[-1]["text"] == "LISTENING"
+        assert main.request_dfesta()["ignored"]
+        main._update_matrix_display()
+        assert writes[-1]["text"] == "LISTENING"
+        main.auto_complete_game()
+        main.request_dfesta()
+        main._update_matrix_display()
+        assert writes[-1]["text"] == "COMPLETE"
+        assert main.get_game_state()["state"] == "RESETTING"
+        main.reset_game()
+        main._update_matrix_display()
+        # The runtime keeps the completion reason when resetting a completed game.
+        assert writes[-1]["text"] == "COMPLETE"
+    finally:
+        matrix.close()
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("server.main", "server.inout.serial_io", "serial"):
+            sys.modules.pop(name, None)
 
 
 def _load_main_module():
@@ -131,6 +191,7 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi():
     midi_calls = []
     matrix_calls = []
     main._matrix_display = types.SimpleNamespace(
+        clear_voice=lambda: None,
         show_voice=lambda voice, snapshot: matrix_calls.append(
             (voice, snapshot["state"])
         )
@@ -688,8 +749,10 @@ def test_start_publishes_the_active_melody_before_running_state():
             sys.modules.pop(name, None)
 
 
-def test_successive_games_follow_the_configured_melody_sequence():
+def test_successive_games_follow_the_configured_melody_sequence(monkeypatch):
     main = _load_main_module()
+    # Keep this rotation fixture independent of songs added for venue testing.
+    monkeypatch.setattr(main._melody_manager, "available_ids", lambda: ["dynamite", "Iam", "biplane"])
 
     def wait_until_ready():
         deadline = time.monotonic() + 1

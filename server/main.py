@@ -599,6 +599,8 @@ def start_game(melody_override: str | None = None) -> dict:
         else:
             reload_melody_data(melody_override)
         runtime.replace_engine(_new_game_engine(), allow_occupied=debug_mode)
+        if _matrix_display is not None:
+            _matrix_display.clear_voice()
         # 브라우저가 판정·재생과 같은 문서를 먼저 적용한 뒤 RUNNING을 받게 한다.
         _publish_web_event("/game/melody", [get_active_melody()])
         started = runtime.start_game(allow_occupied=debug_mode)
@@ -1273,6 +1275,15 @@ def stop_serial_input() -> None:
     hardware_io.stop_serial()
 
 # ── 진입점 ─────────────────────────────────────────────
+def _update_matrix_display() -> None:
+    if _matrix_display is None:
+        return
+    with _scheduler_lock:
+        scheduler = _playback_scheduler
+    playback = scheduler.display_snapshot() if scheduler is not None else {}
+    _matrix_display.update(get_game_state(), playback)
+
+
 def run_main() -> None:
     global _matrix_display
     install_logging()
@@ -1330,8 +1341,10 @@ def run_main() -> None:
 
     try:
         while True:
-            _matrix_display.update(get_game_state())
-            time.sleep(1)
+            # Current snapshots avoid delayed playback callbacks restoring an old
+            # message. Serial I/O stays off the MIDI and game runtime threads.
+            _update_matrix_display()
+            time.sleep(0.05)
     except KeyboardInterrupt:
         print("종료")
     finally:

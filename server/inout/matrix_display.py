@@ -1,107 +1,173 @@
-"""게임 정보를 192×32 도트매트릭스로 보내는 출력 모듈이다."""
+"""Static game information for the 192×32 LED matrix."""
 
 from __future__ import annotations
 
 import json
 import math
 import threading
+import time
 from collections.abc import Mapping
 
 from server.voice_catalog import load_voice_catalog
 
 try:
     import serial
-except ImportError:  # 도트매트릭스를 사용하지 않으면 pyserial 없이도 실행할 수 있다.
+except ImportError:
     serial = None
 
 
 class MatrixDisplay:
-    """가장 최근에 놓인 오브와 게임 제한 시간을 초 단위로 전송한다."""
+    """Resolve the current screen; only the polling thread performs serial I/O."""
 
-    def __init__(self, config: Mapping, *, serial_module=None, catalog=None) -> None:
+    STATUS_HOLD_S = 2.0
+    RESEND_S = 1.0
+    RETRY_S = 1.0
+    BOOT_S = 1.6
+
+    def __init__(self, config: Mapping, *, serial_module=None, catalog=None,
+                 clock=time.monotonic) -> None:
         self.enabled = bool(config.get("enabled", False))
         self.port = str(config.get("port", "COM6"))
         self.baudrate = int(config.get("baudrate", 115200))
         self._serial = serial if serial_module is None else serial_module
         self._voices = (catalog or load_voice_catalog()).get("voices", {})
+        self._clock = clock
         self._device = None
         self._text = ""
-        self._last_seconds: int | None = None
+        self._state = None
+        self._reset_at = 0.0
+        self._last_payload = None
+        self._last_sent_at = float("-inf")
+        self._retry_at = 0.0
+        self._ready_at = 0.0
+        self._closed = False
         self._lock = threading.Lock()
-        self._connect()
+        self._io_lock = threading.Lock()
 
-    def _connect(self) -> bool:
-        if not self.enabled or self._device is not None:
-            return self._device is not None
-        if self._serial is None:
-            print("[dotmatrix] pyserial이 설치되지 않음")
+    def _disconnect(self) -> None:
+        device, self._device = self._device, None
+        self._last_payload = None
+        if device is not None:
+            try:
+                device.close()
+            except Exception:
+                pass
+
+    def _connect(self, now: float) -> bool:
+        if self._device is not None:
+            return now >= self._ready_at
+        if self._serial is None or now < self._retry_at:
             return False
+        self._retry_at = now + self.RETRY_S
         try:
             self._device = self._serial.Serial(
-                self.port,
-                self.baudrate,
-                timeout=1,
-                write_timeout=1,
+                self.port, self.baudrate, timeout=0, write_timeout=0.05,
             )
+            # Opening the USB port can reboot the ESP32. Never sleep on a game thread.
+            self._ready_at = self._clock() + self.BOOT_S
+            self._last_payload = None
         except Exception as exc:
-            print(f"[dotmatrix] 포트 연결 실패 ({self.port}): {exc}")
+            print(f"[dotmatrix] connection failed ({self.port}): {exc}")
             return False
-        print(f"[dotmatrix] 연결됨: {self.port}")
-        return True
-
-    def _write(self, payload: dict) -> bool:
-        if not self._connect():
-            return False
-        line = json.dumps(payload, ensure_ascii=True, separators=(",", ":")) + "\n"
-        try:
-            self._device.write(line.encode("ascii"))
-            return True
-        except Exception as exc:
-            print(f"[dotmatrix] 연결 끊김 ({self.port}): {exc}")
-            self._device.close()
-            self._device = None
-            return False
+        return now >= self._ready_at
 
     def _voice_text(self, voice: str) -> str:
         group, _, index = voice.rpartition("_")
         profile = self._voices.get(voice) or {}
         labels = profile.get("labels") or {}
         member = str(labels.get("en") or index or voice)
-        return f"{group or voice}-{member}".upper()
+        # The built-in font and serial frame have finite capacity. Keep ordinary
+        # labels unchanged, but never leave the panel stuck on an oversized frame.
+        text = f"{group or voice}-{member}".upper()
+        return "".join(c if " " <= c <= "~" else "?" for c in text)[:32]
 
     def show_voice(self, voice: str, snapshot: dict) -> None:
-        """최근 오브 이름을 저장하고 현재 시간을 즉시 보낸다."""
+        """Remember the latest placement without delaying its MIDI note."""
+        if snapshot.get("state") != "RUNNING":
+            return
         with self._lock:
             self._text = self._voice_text(voice)
-            self._last_seconds = None
-        self.update(snapshot)
 
-    def update(self, snapshot: dict) -> None:
-        """표시 초가 바뀌었을 때만 화면을 갱신한다."""
+    def clear_voice(self) -> None:
+        """A new session must not inherit a name, even between two polls."""
         with self._lock:
-            if not self.enabled:
-                return
-            if snapshot.get("state") != "RUNNING":
-                if self._text and self._write({"type": "clear"}):
-                    self._text = ""
-                    self._last_seconds = None
-                return
+            self._text = ""
 
-            remaining = (snapshot.get("timers") or {}).get(
-                "remaining_time_over_s"
+    @staticmethod
+    def _status(text: str) -> dict:
+        return {"type": "status", "text": text}
+
+    def _payload(self, snapshot: dict, playback: dict, now: float) -> dict:
+        state = snapshot.get("state")
+        mode = str(playback.get("mode") or "").upper()
+        if state != self._state:
+            self._state = state
+            self._reset_at = now
+            if state != "RUNNING":
+                self._text = ""
+        if state == "READY":
+            return self._status("PLACE TRAY")
+        if state == "RESETTING":
+            reason = snapshot.get("end_reason")
+            if reason == "complete" and playback.get("active") and mode == "DFESTA":
+                self._reset_at = now
+                return self._status("COMPLETE")
+            elapsed = now - self._reset_at
+            terminal = {"complete": "COMPLETE", "idle": "TIME OVER",
+                        "time_over": "TIME OVER"}.get(reason)
+            if terminal:
+                if elapsed < self.STATUS_HOLD_S:
+                    return self._status(terminal)
+                elapsed -= self.STATUS_HOLD_S
+            return self._status(
+                "RESETTING" if elapsed < self.STATUS_HOLD_S else "CLEAR TABLE"
             )
-            if not self._text or remaining is None:
+        if state != "RUNNING":
+            return {"type": "clear"}
+        if playback.get("active"):
+            message = {"LISTEN": "HINT", "PLAY": "LISTENING",
+                       "DFESTA": "COMPLETE"}.get(mode)
+            if message:
+                return self._status(message)
+        remaining = (snapshot.get("timers") or {}).get("remaining_time_over_s")
+        try:
+            seconds = float(remaining)
+        except (TypeError, ValueError, OverflowError):
+            seconds = float("nan")
+        if not math.isfinite(seconds):
+            return self._status("PLACE ORB")
+        # Keep the existing name/countdown protocol and layout, including before
+        # the first placement (empty name, live countdown).
+        return {"type": "display", "text": self._text,
+                "seconds": min(2147483647, max(0, math.ceil(seconds)))}
+
+    def update(self, snapshot: dict, playback: dict | None = None) -> None:
+        """Send only current state, retry failures, and recover silent board resets."""
+        with self._io_lock:
+            if not self.enabled or self._closed:
                 return
-            seconds = max(0, math.ceil(float(remaining)))
-            if seconds == self._last_seconds:
+            now = self._clock()
+            with self._lock:
+                payload = self._payload(snapshot, playback or {}, now)
+            if not self._connect(now):
                 return
-            if self._write(
-                {"type": "display", "text": self._text, "seconds": seconds}
-            ):
-                self._last_seconds = seconds
+            if payload == self._last_payload and now - self._last_sent_at < self.RESEND_S:
+                return
+            line = (json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
+                    + "\n").encode("ascii")
+            try:
+                written = self._device.write(line)
+                if written != len(line):
+                    raise OSError("incomplete matrix command")
+            except Exception as exc:
+                print(f"[dotmatrix] disconnected ({self.port}): {exc}")
+                self._disconnect()
+                self._retry_at = self._clock() + self.RETRY_S
+                return
+            self._last_payload = payload
+            self._last_sent_at = now
 
     def close(self) -> None:
-        with self._lock:
-            if self._device is not None:
-                self._device.close()
-                self._device = None
+        with self._io_lock:
+            self._closed = True
+            self._disconnect()
