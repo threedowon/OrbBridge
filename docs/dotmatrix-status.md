@@ -13,14 +13,23 @@ Update the Python server and flash the matching matrix sketch together:
 Both updated sketches retain the built-in font, use 2-bit depth, and draw only
 white pixels on black. Status text is uppercase and centered horizontally and
 vertically. Each complete frame is drawn offscreen and swapped once. Repeated
-commands do not redraw the panel. No animation, fades, strobing, color screens,
-or button-controlled test-screen cycle remain in the updated sketches.
+commands do not redraw the panel. Game screens have no animation, fades,
+strobing, or color effects.
+
+On dotmatrix_3, the MatrixPortal UP button (pin 6) cycles through:
+game → panel/bit-depth/refresh info → solid white → red → green → blue →
+test group/name with a 123-second timer → game.
+Each debounced press advances once; holding the button does not repeat.
+Diagnostics stay selected while game updates and heartbeats are received in
+the background. Returning to game displays the latest state immediately,
+or OFFLINE if the connection has timed out. Offline detection does not
+interrupt a diagnostic screen.
 
 | Condition | Display |
 | --- | --- |
 | READY | PLACE TRAY |
 | Accepted Listen, including the initial automatic Listen | HINT during playback |
-| Accepted Play | LISTENING during playback |
+| Accepted Play | PLAYING during playback |
 | Accepted DFesta | COMPLETE during playback |
 | RUNNING without playback | Existing latest orb name and live countdown |
 | Idle or time-over exit | TIME OVER for 2 s, RESETTING for 2 s, then CLEAR TABLE |

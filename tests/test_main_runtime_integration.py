@@ -98,15 +98,15 @@ def test_matrix_follows_accepted_requests_and_ignores_delayed_web_events(monkeyp
         assert writes[-1]["text"] == "HINT"
         main.request_play()
         main._update_matrix_display()
-        assert writes[-1]["text"] == "LISTENING"
+        assert writes[-1]["text"] == "PLAYING"
         main._scheduler_publish_event({
             "type": "end", "run_id": 1, "mode": "listen", "cancelled": True,
         })
         main._update_matrix_display()
-        assert writes[-1]["text"] == "LISTENING"
+        assert writes[-1]["text"] == "PLAYING"
         assert main.request_dfesta()["ignored"]
         main._update_matrix_display()
-        assert writes[-1]["text"] == "LISTENING"
+        assert writes[-1]["text"] == "PLAYING"
         main.auto_complete_game()
         main.request_dfesta()
         main._update_matrix_display()

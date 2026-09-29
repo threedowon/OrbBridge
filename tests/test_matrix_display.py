@@ -75,7 +75,7 @@ def test_running_name_countdown_and_duplicate_suppression(rig):
 
 
 @pytest.mark.parametrize("mode,message", [
-    ("listen", "HINT"), ("play", "LISTENING"), ("dfesta", "COMPLETE"),
+    ("listen", "HINT"), ("play", "PLAYING"), ("dfesta", "COMPLETE"),
 ])
 def test_playback_message_returns_to_latest_orb_on_end_or_cancel(rig, mode, message):
     matrix, device, _, _ = rig
@@ -90,7 +90,7 @@ def test_playback_message_returns_to_latest_orb_on_end_or_cancel(rig, mode, mess
 
 def test_replaced_playback_uses_live_mode_not_old_end_events(rig):
     matrix, device, _, _ = rig
-    for mode, message in [("listen", "HINT"), ("play", "LISTENING"), ("listen", "HINT")]:
+    for mode, message in [("listen", "HINT"), ("play", "PLAYING"), ("listen", "HINT")]:
         matrix.update(running(), playback(mode))
         assert device.writes[-1]["text"] == message
 
@@ -186,7 +186,7 @@ def test_boot_wait_and_heartbeat_recover_silent_reboot(rig):
     assert device.writes == []
     now[0] = 1.6
     matrix.update(running(), playback("play"))
-    assert device.writes[-1]["text"] == "LISTENING"
+    assert device.writes[-1]["text"] == "PLAYING"
     now[0] = 2.6
     matrix.update(running(), playback("play"))
     assert len(device.writes) == 2

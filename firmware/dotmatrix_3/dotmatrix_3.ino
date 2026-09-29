@@ -5,6 +5,7 @@
 #define PANEL_WIDTH 64
 #define PANEL_HEIGHT 32
 #define PANEL_CHAIN 3
+#define UP_BUTTON_PIN 6
 
 HUB75_I2S_CFG::i2s_pins pins = {
   42, 41, 40, 38, 39, 37,
@@ -20,6 +21,12 @@ bool droppingLine = false;
 uint32_t lastSerialByteAt = 0;
 uint32_t lastValidCommandAt = 0;
 bool linkTimedOut = false;
+const int VIEW_MODE_COUNT = 7;
+int viewMode = 0;
+bool viewDirty = false;
+bool buttonRaw = false;
+bool buttonStable = false;
+uint32_t buttonChangedAt = 0;
 
 // ===== 사용자 설정 변수 =====
 const int PADDING_TOP    = 12;  // 상단 여백(px) — 텍스트 시작 y좌표
@@ -102,6 +109,58 @@ void drawStatus(const char *raw) {
   display->print(text);
 }
 
+void drawRuntime() {
+  display->clearScreen();
+  if (linkTimedOut) {
+    drawStatus("OFFLINE");
+    return;
+  }
+  StaticJsonDocument<256> message;
+  if (deserializeJson(message, lastCommand)) return;
+  const char *type = message["type"] | "";
+  if (!strcmp(type, "status")) {
+    drawStatus(message["text"].as<const char *>());
+  } else if (!strcmp(type, "display")) {
+    String text = formatName(message["text"].as<const char *>());
+    drawName(text.c_str());
+    drawCountdown(message["seconds"].as<int>());
+  }
+}
+
+void drawView() {
+  display->clearScreen();
+  display->setTextWrap(false);
+  display->setTextSize(1);
+  display->setTextColor(display->color565(255, 255, 255));
+  if (viewMode == 0) {
+    drawRuntime();
+  } else if (viewMode == 1) {
+    for (int panel = 0; panel < PANEL_CHAIN; panel++) {
+      int x = panel * PANEL_WIDTH + 2;
+      display->setCursor(x, 2);
+      display->printf("PANEL %d", panel + 1);
+      display->setCursor(x, 12);
+      display->printf("BIT %d", mxconfig.getPixelColorDepthBits());
+      display->setCursor(x, 22);
+      display->printf("%d Hz", display->calculated_refresh_rate);
+    }
+  } else if (viewMode == 2) {
+    display->fillScreen(display->color565(255, 255, 255));
+  } else if (viewMode == 3) {
+    display->fillScreen(display->color565(255, 0, 0));
+  } else if (viewMode == 4) {
+    display->fillScreen(display->color565(0, 255, 0));
+  } else if (viewMode == 5) {
+    display->fillScreen(display->color565(0, 0, 255));
+  } else {
+    drawName("Testgroup - testnameabcdefg");
+    drawCountdown(123);
+  }
+  // Render once after processing input, without showing an intermediate frame.
+  display->flipDMABuffer();
+  viewDirty = false;
+}
+
 void handleCommand(const String &line) {
   StaticJsonDocument<256> message;
   if (deserializeJson(message, line)) return;
@@ -115,18 +174,8 @@ void handleCommand(const String &line) {
   linkTimedOut = false;
   if (line == lastCommand) return;
   lastCommand = line;
-  if (!strcmp(type, "clear")) {
-    display->clearScreen();
-  } else if (!strcmp(type, "status")) {
-    drawStatus(message["text"].as<const char *>());
-  } else {
-    display->clearScreen();
-    String text = formatName(message["text"].as<const char *>());
-    drawName(text.c_str());
-    drawCountdown(message["seconds"].as<int>());
-  }
-  // Draw the complete frame offscreen, then swap once; no visible blank frame.
-  display->flipDMABuffer();
+  // Keep receiving the latest game screen while a diagnostic view is selected.
+  if (viewMode == 0) viewDirty = true;
 }
 
 void setup() {
@@ -137,8 +186,7 @@ void setup() {
   mxconfig.double_buff = true;
   mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_10M;
   mxconfig.latch_blanking = 4;
-	mxconfig.clkphase = false;
-
+  mxconfig.clkphase = false;
   display = new MatrixPanel_I2S_DMA(mxconfig);
   if (!display->begin()) {
     Serial.println("Display begin() FAILED");
@@ -151,9 +199,25 @@ void setup() {
   serialLine.reserve(160);
   lastCommand.reserve(160);
   lastValidCommandAt = millis();
+  pinMode(UP_BUTTON_PIN, INPUT_PULLUP);
+  buttonRaw = buttonStable = digitalRead(UP_BUTTON_PIN) == LOW;
+  buttonChangedAt = millis();
 }
 
 void loop() {
+  bool pressed = digitalRead(UP_BUTTON_PIN) == LOW;
+  uint32_t now = millis();
+  if (pressed != buttonRaw) {
+    buttonRaw = pressed;
+    buttonChangedAt = now;
+  }
+  if (buttonRaw != buttonStable && now - buttonChangedAt >= 30) {
+    buttonStable = buttonRaw;
+    if (buttonStable) {
+      viewMode = (viewMode + 1) % VIEW_MODE_COUNT;
+      viewDirty = true;
+    }
+  }
   // A partial/oversized frame must never be interpreted as a new command tail.
   if ((serialLine.length() || droppingLine) && millis() - lastSerialByteAt > 250) {
     serialLine = "";
@@ -179,7 +243,7 @@ void loop() {
   if (!linkTimedOut && millis() - lastValidCommandAt >= 5000) {
     linkTimedOut = true;
     lastCommand = "";
-    drawStatus("OFFLINE");
-    display->flipDMABuffer();
+    if (viewMode == 0) viewDirty = true;
   }
+  if (viewDirty) drawView();
 }

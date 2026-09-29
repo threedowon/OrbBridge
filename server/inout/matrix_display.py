@@ -125,7 +125,7 @@ class MatrixDisplay:
         if state != "RUNNING":
             return {"type": "clear"}
         if playback.get("active"):
-            message = {"LISTEN": "HINT", "PLAY": "LISTENING",
+            message = {"LISTEN": "HINT", "PLAY": "PLAYING",
                        "DFESTA": "COMPLETE"}.get(mode)
             if message:
                 return self._status(message)
