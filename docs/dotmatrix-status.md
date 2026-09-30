@@ -53,11 +53,15 @@ RESETTING game state still waits for cleanup. The orb-only table_is_clear
 condition is unchanged; cleanup_is_clear additionally requires a confirmed absent
 tray. Unknown or stale sensor state never counts as removal.
 
-Set matrix_display.farewell_duration_s in data/config.json (default 2) to choose
+Set matrix_display.farewell_duration_s in data/config.json (default 4) to choose
 n for BOTH GOODBYE and the following blank period. Restart the server to apply
 the setting. Zero skips both periods. Cleanup time comes from the game engine,
 so repeated polls/heartbeats do not extend it and brief state transitions are
 not lost between matrix polls. A new RUNNING state always takes precedence.
+
+If cleanup finishes during TIME OVER (including an already empty table), retain
+TIME OVER for its two-second hold before starting the full GOODBYE/blank periods.
+This display hold does not block a new tray from starting the next game.
 
 ## Tray input
 
@@ -81,6 +85,9 @@ Periodic reports restore state after reconnect without needing a serial query.
 
 Only a known seated=false → seated=true transition starts a game, while READY
 and with no orbs. Identical reports never restart playback or refresh Idle.
+Known tray state changes, including partial seating, refresh Idle during RUNNING.
+Unknown/reconnect reports do not count as activity. An already reached Idle or
+game deadline wins over a simultaneous tray change; the game deadline is unchanged.
 The first occupied report after boot/reconnect does not auto-start; lift and
 replace the tray. A placement during cleanup is not queued for later: remove
 everything first, then place the next tray. Lifting the tray during RUNNING does

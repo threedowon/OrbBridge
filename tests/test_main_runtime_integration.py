@@ -175,7 +175,7 @@ def tray_main(monkeypatch):
             sys.modules.pop(name, None)
 
 
-@pytest.mark.parametrize("return_at", [0.5, 2.5, None])
+@pytest.mark.parametrize("return_at", [0.5, 4.5, None])
 def test_admin_tray_end_to_end_cleanup_and_next_player(tray_main, return_at):
     main, clock, writes = tray_main
     main._update_matrix_display()
@@ -196,10 +196,10 @@ def test_admin_tray_end_to_end_cleanup_and_next_player(tray_main, return_at):
     main._update_matrix_display()
     assert writes[-1]["text"] == "GOODBYE"
     goodbye_index = len(writes)
-    clock[0] = return_at if return_at is not None else 2
+    clock[0] = return_at if return_at is not None else 4
     runtime.barrier()
     main._update_matrix_display()
-    if clock[0] >= 2:
+    if clock[0] >= 4:
         assert writes[-1] == {"type": "clear"}
     if return_at is not None:
         main.set_tray({"present": True})
@@ -208,7 +208,7 @@ def test_admin_tray_end_to_end_cleanup_and_next_player(tray_main, return_at):
         assert writes[-1]["text"] == "HINT"
         assert not any(p.get("text") == "PLACE TRAY" for p in writes[goodbye_index:])
     else:
-        clock[0] = 4
+        clock[0] = 8
         runtime.barrier()
         main._update_matrix_display()
         assert writes[-1]["text"] == "PLACE TRAY"

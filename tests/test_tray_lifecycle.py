@@ -79,7 +79,7 @@ def test_unknown_or_expired_sensor_cannot_clear_table_or_create_start_edge(engin
     assert not game.set_tray(True, True, ttl_s=3)
 
 
-def test_tray_reports_do_not_refresh_idle_timer(engine):
+def test_identical_tray_reports_do_not_refresh_idle_timer(engine):
     game, clock = engine
     game.set_tray(True, True)
     game.start()
@@ -88,6 +88,56 @@ def test_tray_reports_do_not_refresh_idle_timer(engine):
         game.set_tray(True, True, ttl_s=3)
     assert game.snapshot()["state"] == "RESETTING"
     assert game.snapshot()["end_reason"] == "idle"
+
+
+@pytest.mark.parametrize("present,seated", [(False, False), (True, False)])
+def test_actual_tray_change_refreshes_idle(engine, present, seated):
+    game, clock = engine
+    game.set_tray(True, True)
+    game.start()
+    clock.value = 20
+    game.set_tray(present, seated)
+    clock.value = 30
+    game.tick()
+    assert game.snapshot()["state"] == "RUNNING"
+    assert game.snapshot()["timers"]["remaining_idle_s"] == 20
+    clock.value = 50
+    game.tick()
+    assert game.snapshot()["state"] != "RUNNING"
+
+
+def test_unknown_and_reconnect_reports_do_not_count_as_activity(engine):
+    game, clock = engine
+    game.set_tray(True, True)
+    game.start()
+    clock.value = 20
+    game.set_tray(None, None)
+    game.set_tray(True, True)
+    clock.value = 30
+    game.tick()
+    assert game.snapshot()["end_reason"] == "idle"
+
+
+def test_tray_change_at_idle_deadline_preserves_exit_reason(engine):
+    game, clock = engine
+    game.set_tray(True, True)
+    game.start()
+    clock.value = 30
+    game.set_tray(False, False)
+    assert game.snapshot()["state"] == "READY"
+    assert game.snapshot()["cleanup_end_reason"] == "idle"
+
+
+def test_tray_activity_does_not_extend_game_deadline(engine):
+    game, clock = engine
+    game.set_tray(True, True)
+    game.start()
+    for second in [20, 40, 59]:
+        clock.value = second
+        game.set_tray(True, not game.tray_seated)
+    clock.value = 60
+    game.tick()
+    assert game.snapshot()["end_reason"] == "time_over"
 
 
 @pytest.mark.parametrize("present,seated", [

@@ -30,10 +30,10 @@ class MatrixDisplay:
         self.port = str(config.get("port", "COM6"))
         self.baudrate = int(config.get("baudrate", 115200))
         try:
-            farewell = float(config.get("farewell_duration_s", 2))
-            self.farewell_duration_s = farewell if math.isfinite(farewell) and farewell >= 0 else 2.0
+            farewell = float(config.get("farewell_duration_s", 4))
+            self.farewell_duration_s = farewell if math.isfinite(farewell) and farewell >= 0 else 4.0
         except (TypeError, ValueError, OverflowError):
-            self.farewell_duration_s = 2.0
+            self.farewell_duration_s = 4.0
         self._serial = serial if serial_module is None else serial_module
         self._voices = (catalog or load_voice_catalog()).get("voices", {})
         self._clock = clock
@@ -41,6 +41,8 @@ class MatrixDisplay:
         self._text = ""
         self._state = None
         self._reset_at = 0.0
+        self._timeout_until = 0.0
+        self._farewell_shift_s = 0.0
         self._last_payload = None
         self._last_sent_at = float("-inf")
         self._retry_at = 0.0
@@ -105,16 +107,38 @@ class MatrixDisplay:
     def _payload(self, snapshot: dict, playback: dict, now: float) -> dict:
         state = snapshot.get("state")
         mode = str(playback.get("mode") or "").upper()
+        cleared = (snapshot.get("timers") or {}).get("since_table_cleared_s")
+        cleared_timeout = snapshot.get("cleanup_end_reason") in ("idle", "time_over")
         if state != self._state:
+            if state == "RUNNING":
+                self._timeout_until = 0.0
+                self._farewell_shift_s = 0.0
+            elif state == "RESETTING":
+                self._timeout_until = (
+                    now + self.STATUS_HOLD_S
+                    if snapshot.get("end_reason") in ("idle", "time_over") else 0.0
+                )
+            elif state == "READY":
+                # Empty tables can leave RESETTING between two display polls.
+                # Recover that terminal message, but do not replay old cleanups.
+                if (cleared_timeout and self._timeout_until == 0.0
+                        and cleared is not None and cleared < self.STATUS_HOLD_S):
+                    self._timeout_until = now + self.STATUS_HOLD_S
+                self._farewell_shift_s = (
+                    max(0.0, self._timeout_until - now + cleared)
+                    if cleared_timeout and cleared is not None else 0.0
+                )
             self._state = state
             self._reset_at = now
             if state != "RUNNING":
                 self._text = ""
         if state == "READY":
+            if cleared_timeout and now < self._timeout_until:
+                return self._status("TIME OVER")
             if snapshot.get("cell_count", 0):
                 return self._status("PLEASE CLEAR TABLE")
-            cleared = (snapshot.get("timers") or {}).get("since_table_cleared_s")
             if (snapshot.get("tray") or {}).get("present") is False and cleared is not None:
+                cleared -= self._farewell_shift_s
                 if cleared < self.farewell_duration_s:
                     return self._status("GOODBYE")
                 if cleared < self.farewell_duration_s * 2:

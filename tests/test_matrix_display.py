@@ -247,7 +247,7 @@ def test_oversized_and_non_font_labels_cannot_overflow_serial_frame(rig):
     assert device.writes[-1]["text"] == "??-1"
 
 
-@pytest.mark.parametrize("duration", [0, 2, 5])
+@pytest.mark.parametrize("duration", [0, 4, 5])
 def test_goodbye_blackout_then_place_tray_uses_cleanup_clock(rig, duration):
     matrix, device, _, now = rig
     matrix.farewell_duration_s = duration
@@ -267,7 +267,7 @@ def test_goodbye_blackout_then_place_tray_uses_cleanup_clock(rig, duration):
         assert device.writes[-1]["text"] == "PLACE TRAY"
 
 
-@pytest.mark.parametrize("elapsed", [0.5, 2.5])
+@pytest.mark.parametrize("elapsed", [0.5, 4.5])
 def test_new_game_interrupts_goodbye_and_blackout_without_place_tray(rig, elapsed):
     matrix, device, _, now = rig
     matrix.update({"state": "READY", "tray": {"present": False},
@@ -279,3 +279,45 @@ def test_new_game_interrupts_goodbye_and_blackout_without_place_tray(rig, elapse
     matrix.update(running())
     assert device.writes[-1]["text"] == "IVE-LEESEO"
     assert not any(p.get("text") == "PLACE TRAY" for p in device.writes)
+
+
+@pytest.mark.parametrize("reason", ["idle", "time_over"])
+@pytest.mark.parametrize("observed_reset", [False, True])
+def test_timeout_hold_survives_immediate_cleanup(rig, reason, observed_reset):
+    matrix, device, _, now = rig
+    matrix.update(running())
+    if observed_reset:
+        matrix.update({"state": "RESETTING", "end_reason": reason})
+    ready = {"state": "READY", "cleanup_end_reason": reason,
+             "tray": {"present": False}, "timers": {}}
+    for elapsed, expected in [(0, "TIME OVER"), (1.99, "TIME OVER"),
+                              (2, "GOODBYE"), (5.99, "GOODBYE"),
+                              (6, None), (9.99, None), (10, "PLACE TRAY")]:
+        now[0] = elapsed
+        ready["timers"]["since_table_cleared_s"] = elapsed
+        matrix.update(ready)
+        assert device.writes[-1] == ({"type": "clear"} if expected is None else
+                                     {"type": "status", "text": expected})
+
+
+def test_timeout_buffer_is_interrupted_by_new_game(rig):
+    matrix, device, _, now = rig
+    matrix.update({"state": "READY", "cleanup_end_reason": "idle",
+                   "tray": {"present": False},
+                   "timers": {"since_table_cleared_s": 0}})
+    assert device.writes[-1]["text"] == "TIME OVER"
+    matrix.update(running(), playback("listen"))
+    assert device.writes[-1]["text"] == "HINT"
+    now[0] = 3
+    matrix.update(running())
+    assert device.writes[-1]["type"] == "display"
+
+
+def test_late_cleanup_does_not_repeat_timeout(rig):
+    matrix, device, _, now = rig
+    matrix.update({"state": "RESETTING", "end_reason": "idle"})
+    now[0] = 10
+    matrix.update({"state": "READY", "cleanup_end_reason": "idle",
+                   "tray": {"present": False},
+                   "timers": {"since_table_cleared_s": 0}})
+    assert device.writes[-1]["text"] == "GOODBYE"

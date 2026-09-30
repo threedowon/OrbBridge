@@ -24,7 +24,7 @@
   },
   "matrix_display": {
     "enabled": true,
-    "farewell_duration_s": 2.0,
+    "farewell_duration_s": 4.0,
     "port": "COM6",
     "baudrate": 115200
   }

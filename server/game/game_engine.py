@@ -136,6 +136,7 @@ class GameEngine:
         self.tray_seated = tray_present
         self._tray_expires_at: float | None = None
         self._table_cleared_at: float | None = None
+        self._cleanup_end_reason: str | None = None
 
     def _tray_state(self, now: float) -> tuple[bool | None, bool | None]:
         if self._tray_expires_at is not None and now >= self._tray_expires_at:
@@ -158,6 +159,11 @@ class GameEngine:
         if previous != (present, seated):
             self._revision += 1
         self._end_if_needed(now)
+        # Expiry wins at the deadline. Only known physical changes are activity;
+        # reconnect/unknown reports and periodic copies must not postpone Idle.
+        if (self.state is GameState.RUNNING and previous != (present, seated)
+                and previous[0] is not None and present is not None):
+            self._last_activity_at = now
         if self.state is GameState.RESETTING and self._cleanup_is_clear():
             self._enter_ready()
         return previous[1] is False and seated is True
@@ -479,6 +485,7 @@ class GameEngine:
         return {
             "state": self.state.value,
             "tray": dict(zip(("present", "seated"), self._tray_state(now))),
+            "cleanup_end_reason": self._cleanup_end_reason,
             "end_reason": (
                 self.end_reason.value if self.end_reason is not None else None
             ),
@@ -563,6 +570,7 @@ class GameEngine:
         if not self._cleanup_is_clear():
             raise RuntimeError("cannot enter READY while the table is occupied")
         self._table_cleared_at = self._now()
+        self._cleanup_end_reason = self.end_reason.value if self.end_reason is not None else None
         self.end_reason = None
         self._started_at = None
         self._timers_start_at = None
