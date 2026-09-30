@@ -79,13 +79,17 @@ READY → RUNNING → RESETTING → READY
 - `start`: 빈 테이블에서 `READY → RUNNING`
 - 정답 후 DFesta 기준 충족, Idle, TimeOver, `end`, `reset`:
   `RUNNING → RESETTING`
-- 오브를 모두 제거: `RESETTING → READY`
+- 오브와 tray를 모두 제거: `RESETTING → READY`
 - 게임 제어 이벤트: `start`, `end`, `reset`
 - 버튼 이벤트: `listen`, `play`, `dfesta`
 - 종료 사유: `complete`, `idle`, `time_over`, `manual`
 
-게임 시작은 Admin에서만 실행한다. Admin에는 `start`, `reset`, 자동완성,
+게임 시작은 tray의 정상 배치로 실행한다. Admin에는 tray ON/OFF 토글, `reset`, 자동완성,
 모든 오브 회수를 제공한다. `end`는 시리얼·HTTP 외부 제어 호환을 위해 유지한다.
+
+정리 완료 후 LED는 GOODBYE → 암전 → PLACE TRAY 순서로 표시하며,
+다음 tray가 놓이면 대기 표시를 중단하고 새 게임을 시작한다.
+[Tray 시리얼 규약·표시 시간·펌웨어 적용](docs/dotmatrix-status.md).
 
 ## 설정
 

@@ -62,6 +62,22 @@ def wait_for(predicate):
     assert predicate()
 
 
+def test_tray_json_is_forwarded_only_from_master(debug):
+    d, devices = debug
+    events = []
+    d.on_message = events.append
+    d.start_serial("COM1", 115200)
+    wait_for(lambda: "COM1" in devices)
+    event = {"type": "tray", "present": True, "seated": False}
+    devices["COM1"].lines.put((json.dumps(event) + "\n").encode())
+    wait_for(lambda: event in events)
+    events.clear()
+    d.configure_connection("direct", ["COM2"])
+    wait_for(lambda: "COM2" in devices)
+    d._handle_line(json.dumps(event), "COM2")
+    assert events == []
+
+
 def line(d, port, **event):
     d._handle_line(json.dumps(event), port, d._generation)
 

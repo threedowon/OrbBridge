@@ -99,6 +99,7 @@ class GameEngine:
         idle_s: float | None,
         dfesta_presses_required: int = 1,
         initial_timer_delay_s: float = 0,
+        tray_present: bool | None = False,
         clock: Callable[[], float] = monotonic,
     ) -> None:
         self._answers = self._normalize_answers(answers)
@@ -131,6 +132,38 @@ class GameEngine:
         self._ended_at: float | None = None
         self._dfesta_presses = 0
         self._revision = 0
+        self.tray_present = tray_present
+        self.tray_seated = tray_present
+        self._tray_expires_at: float | None = None
+        self._table_cleared_at: float | None = None
+
+    def _tray_state(self, now: float) -> tuple[bool | None, bool | None]:
+        if self._tray_expires_at is not None and now >= self._tray_expires_at:
+            return None, None
+        return self.tray_present, self.tray_seated
+
+    def set_tray(self, present: bool | None, seated: bool | None, *,
+                 ttl_s: float | None = None) -> bool:
+        """Remember tray state; return a known unseated -> seated edge only."""
+        if present is None or seated is None:
+            if present is not None or seated is not None:
+                raise ValueError("unknown tray state must use two null values")
+        elif type(present) is not bool or type(seated) is not bool or (seated and not present):
+            raise ValueError("invalid tray state")
+        ttl_s = self._normalize_timeout(ttl_s, "tray ttl")
+        now = self._now()
+        previous = self._tray_state(now)
+        self.tray_present, self.tray_seated = present, seated
+        self._tray_expires_at = None if ttl_s is None else now + ttl_s
+        if previous != (present, seated):
+            self._revision += 1
+        self._end_if_needed(now)
+        if self.state is GameState.RESETTING and self._cleanup_is_clear():
+            self._enter_ready()
+        return previous[1] is False and seated is True
+
+    def _cleanup_is_clear(self) -> bool:
+        return self._table_is_clear() and self._tray_state(self._now())[0] is False
 
     @staticmethod
     def _normalize_answers(
@@ -242,7 +275,7 @@ class GameEngine:
         """reset 이벤트를 처리하고 필요한 경우 RESETTING으로 전이한다."""
 
         now = self._now()
-        if self.state is GameState.READY and self._table_is_clear():
+        if self.state is GameState.READY and self._cleanup_is_clear():
             return self.state
         if self.state is GameState.RUNNING and self._end_if_needed(now):
             return self.state
@@ -256,7 +289,7 @@ class GameEngine:
         now = self._now()
         if self.state is GameState.RUNNING:
             self._end_if_needed(now)
-        elif self.state is GameState.RESETTING and self._table_is_clear():
+        elif self.state is GameState.RESETTING and self._cleanup_is_clear():
             # 빈 테이블에서도 RESETTING을 한 런타임 tick 동안 노출한 뒤 READY로 간다.
             self._enter_ready()
         return self.state
@@ -376,7 +409,7 @@ class GameEngine:
         if self.state is GameState.RUNNING:
             self._last_activity_at = now
             self._reset_completion_progress_if_incorrect()
-        elif self.state is GameState.RESETTING and self._table_is_clear():
+        elif self.state is GameState.RESETTING and self._cleanup_is_clear():
             self._enter_ready()
         return True
 
@@ -445,6 +478,7 @@ class GameEngine:
 
         return {
             "state": self.state.value,
+            "tray": dict(zip(("present", "seated"), self._tray_state(now))),
             "end_reason": (
                 self.end_reason.value if self.end_reason is not None else None
             ),
@@ -465,6 +499,7 @@ class GameEngine:
                 "is_idle": self.end_reason is EndReason.IDLE,
                 "is_time_over": self.end_reason is EndReason.TIME_OVER,
                 "table_is_clear": table_is_clear,
+                "cleanup_is_clear": self._cleanup_is_clear(),
             },
             "completion": {
                 "waiting_for_dfesta": (
@@ -477,6 +512,11 @@ class GameEngine:
             "cell_count": len(self._cells),
             "cells": cells,
             "timers": {
+                "since_table_cleared_s": (
+                    max(0.0, now - self._table_cleared_at)
+                    if self.state is GameState.READY and self._table_cleared_at is not None
+                    else None
+                ),
                 "elapsed_s": elapsed_s,
                 "time_over_limit_s": self.time_over_s,
                 "idle_limit_s": self.idle_s,
@@ -520,8 +560,9 @@ class GameEngine:
         self._set_state(GameState.RESETTING)
 
     def _enter_ready(self) -> None:
-        if not self._table_is_clear():
+        if not self._cleanup_is_clear():
             raise RuntimeError("cannot enter READY while the table is occupied")
+        self._table_cleared_at = self._now()
         self.end_reason = None
         self._started_at = None
         self._timers_start_at = None

@@ -29,6 +29,11 @@ class MatrixDisplay:
         self.enabled = bool(config.get("enabled", False))
         self.port = str(config.get("port", "COM6"))
         self.baudrate = int(config.get("baudrate", 115200))
+        try:
+            farewell = float(config.get("farewell_duration_s", 2))
+            self.farewell_duration_s = farewell if math.isfinite(farewell) and farewell >= 0 else 2.0
+        except (TypeError, ValueError, OverflowError):
+            self.farewell_duration_s = 2.0
         self._serial = serial if serial_module is None else serial_module
         self._voices = (catalog or load_voice_catalog()).get("voices", {})
         self._clock = clock
@@ -106,6 +111,14 @@ class MatrixDisplay:
             if state != "RUNNING":
                 self._text = ""
         if state == "READY":
+            if snapshot.get("cell_count", 0):
+                return self._status("PLEASE CLEAR TABLE")
+            cleared = (snapshot.get("timers") or {}).get("since_table_cleared_s")
+            if (snapshot.get("tray") or {}).get("present") is False and cleared is not None:
+                if cleared < self.farewell_duration_s:
+                    return self._status("GOODBYE")
+                if cleared < self.farewell_duration_s * 2:
+                    return {"type": "clear"}
             return self._status("PLACE TRAY")
         if state == "RESETTING":
             reason = snapshot.get("end_reason")
@@ -118,10 +131,7 @@ class MatrixDisplay:
             if terminal:
                 if elapsed < self.STATUS_HOLD_S:
                     return self._status(terminal)
-                elapsed -= self.STATUS_HOLD_S
-            return self._status(
-                "RESETTING" if elapsed < self.STATUS_HOLD_S else "CLEAR TABLE"
-            )
+            return self._status("PLEASE CLEAR TABLE")
         if state != "RUNNING":
             return {"type": "clear"}
         if playback.get("active"):

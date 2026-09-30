@@ -155,7 +155,7 @@ def _consume_line(line: str, port: str | None = None, generation: int | None = N
         t = evt.get("type")
 
         # 게임 버튼 이벤트(마스터가 직접 보냄) — slave 필드 없음
-        if t == "game":
+        if t in ("game", "tray"):
             return evt if _mode == "master" else None
 
         slave_id = evt.get("slave")

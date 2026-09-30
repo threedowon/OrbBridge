@@ -71,6 +71,8 @@ EVENT_LOG_LIMIT = 100
 _serial_status = {"connected": False, "port": "", "error": ""}
 _hardware_switching = threading.Event()
 _matrix_display: MatrixDisplay | None = None
+_tray_lock = threading.RLock()
+_tray_hardware = input_mode == "serial"
 
 # ── 게임 런타임 (Serial/HTTP 입력의 단일 writer) ───────
 _runtime_lock = threading.Lock()
@@ -265,6 +267,7 @@ def _new_game_engine() -> GameEngine:
         idle_s=idle_s,
         dfesta_presses_required=99 if _debug_mode else dfesta_presses_required,
         initial_timer_delay_s=build_plan(PlaybackMode.LISTEN, playback_melody).duration_s + 1.0,
+        tray_present=None if _tray_hardware else False,
     )
 
 
@@ -359,6 +362,7 @@ def get_status() -> dict:
         return {
             "debug_mode": _debug_mode,
             "input_mode": input_mode,
+            "tray_simulation": not _tray_hardware,
             "game": game,
             "current_stage": current_stage,
             "melody": melody_id,
@@ -576,6 +580,40 @@ def update_software_settings(data: dict) -> dict:
             reset_game()
             start_game(melody_override=selected)
     return {"ok": True, **get_software_settings()}
+
+
+def set_tray(data: dict, *, hardware: bool = False) -> dict:
+    """Physical reports and the admin toggle share one ordered tray path."""
+    if not isinstance(data, dict) or type(data.get("present")) is not bool:
+        raise ValueError("tray.present must be a boolean")
+    present = data["present"]
+    seated = data.get("seated", present) if not hardware else data.get("seated")
+    if type(seated) is not bool or (seated and not present):
+        raise ValueError("invalid tray.seated")
+    if _hardware_switching.is_set():
+        raise RuntimeError("하드웨어 연결을 변경 중입니다")
+    with _tray_lock:
+        if hardware != _tray_hardware:
+            raise InvalidTransition("실제 Master 연결 중에는 tray 시뮬레이션을 사용할 수 없습니다")
+        runtime = get_game_runtime()
+        before = runtime.snapshot().get("tray")
+        result = runtime.set_tray(present, seated, ttl_s=3.0 if hardware else None)
+        snapshot = _publish_transition(result)
+        if before != snapshot["tray"]:
+            _publish_web_event("/game/tray", [snapshot["tray"]])
+        # Heartbeats refresh the lease only. They never retrigger a game, nor
+        # does the first report after boot/reconnect synthesize a placement.
+        if result.value and snapshot["state"] == "READY" and snapshot["cell_count"] == 0:
+            return start_game()
+        return {"ok": True, "game": snapshot}
+
+
+def _set_tray_source(hardware: bool) -> None:
+    global _tray_hardware
+    with _tray_lock:
+        _tray_hardware = hardware
+        state = None if hardware else False
+        _publish_transition(get_game_runtime().set_tray(state, state))
 
 
 def start_game(melody_override: str | None = None) -> dict:
@@ -900,6 +938,9 @@ def blackout_leds() -> None:
 def handle_serial_message(event: dict) -> None:
     """USB/serial 한 줄 JSON — orb 이벤트 또는 game 버튼."""
     t = event.get("type")
+    if t == "tray":
+        set_tray(event, hardware=True)
+        return
 
     if t == "led_ack":
         received_at = datetime.now().isoformat(sep=" ", timespec="milliseconds")
@@ -1198,6 +1239,8 @@ def _update_serial_status(connected: bool, port: str, error: str) -> None:
         _serial_status.update(
             {"connected": connected, "port": port, "error": error}
         )
+    if _tray_hardware:
+        _publish_transition(get_game_runtime().set_tray(None, None))
     if not connected:
         return
     # ESP 가 재부팅하면 표시등이 LOW 로 돌아가므로 현재 상태를 다시 보낸다.
@@ -1242,7 +1285,10 @@ def configure_hardware(data: dict) -> dict:
         hardware_io.on_ready = lambda: _update_serial_status(True, "", "")
         _hardware_switching.set()
         try:
-            hardware_io.configure_connection(mode, ports, baud, before_start=_clear_hardware_game)
+            def prepare():
+                _clear_hardware_game()
+                _set_tray_source(mode == "master")
+            hardware_io.configure_connection(mode, ports, baud, before_start=prepare)
             input_mode = "serial"
         finally:
             _hardware_switching.clear()
@@ -1255,6 +1301,7 @@ def disconnect_hardware() -> dict:
         try:
             hardware_io.stop_serial()
             _clear_hardware_game()
+            _set_tray_source(False)
         finally:
             _hardware_switching.clear()
     return {"ok": True}
@@ -1278,10 +1325,13 @@ def stop_serial_input() -> None:
 def _update_matrix_display() -> None:
     if _matrix_display is None:
         return
-    with _scheduler_lock:
-        scheduler = _playback_scheduler
-    playback = scheduler.display_snapshot() if scheduler is not None else {}
-    _matrix_display.update(get_game_state(), playback)
+    # Do not expose the brief READY + tray-on snapshot during automatic start.
+    with _tray_lock:
+        snapshot = get_game_state()
+        with _scheduler_lock:
+            scheduler = _playback_scheduler
+        playback = scheduler.display_snapshot() if scheduler is not None else {}
+    _matrix_display.update(snapshot, playback)
 
 
 def run_main() -> None:
@@ -1322,6 +1372,7 @@ def run_main() -> None:
         get_cells=get_cells,
         get_events=get_events,
         on_game_start=start_game,
+        on_game_tray=set_tray,
         get_software_settings=get_software_settings,
         on_software_settings=update_software_settings,
         on_game_end=end_game,

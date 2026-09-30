@@ -49,6 +49,7 @@ def start_http_server(
     get_cells: Callable[[], dict] | None = None,
     get_events: Callable[[], list] | None = None,
     on_game_start=None,
+    on_game_tray=None,
     get_software_settings=None,
     on_software_settings=None,
     on_game_end=None,
@@ -299,6 +300,10 @@ def start_http_server(
 
             if self.path == "/api/game/start":
                 self._run_callback(on_game_start)
+                return
+
+            if self.path == "/api/game/tray":
+                self._run_callback(on_game_tray, data)
                 return
 
             if self.path == "/api/game/end":

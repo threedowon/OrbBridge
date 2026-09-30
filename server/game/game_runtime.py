@@ -153,6 +153,9 @@ class GameRuntime:
     def reset_game(self, *, timeout: float = 2.0) -> RuntimeResult:
         return self._submit("reset", timeout=timeout)
 
+    def set_tray(self, present, seated, *, ttl_s=None, timeout: float = 2.0) -> RuntimeResult:
+        return self._submit("tray", timeout=timeout, present=present, seated=seated, ttl_s=ttl_s)
+
     def add_orb(
         self,
         *,
@@ -264,6 +267,10 @@ class GameRuntime:
             if current["state"] not in (("READY", "RESETTING") if debug else ("READY",)) or (current["cell_count"] and not debug):
                 raise RuntimeError("engine can only be replaced while READY and empty")
             replacement = payload["engine"]
+            # Reloading a melody must not forget the physical tray or renew its lease.
+            replacement.tray_present = self._engine.tray_present
+            replacement.tray_seated = self._engine.tray_seated
+            replacement._tray_expires_at = self._engine._tray_expires_at
             if debug:
                 for cell in current["cells"].values():
                     replacement.add_orb(**{key: cell[key] for key in
@@ -283,6 +290,8 @@ class GameRuntime:
             value = self._engine.record_activity()
         elif action == "reset":
             value = self._engine.reset()
+        elif action == "tray":
+            value = self._engine.set_tray(**payload)
         elif action == "add_orb":
             value = self._engine.add_orb(**payload)
         elif action == "remove_orb":

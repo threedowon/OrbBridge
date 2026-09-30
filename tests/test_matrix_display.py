@@ -95,11 +95,11 @@ def test_replaced_playback_uses_live_mode_not_old_end_events(rig):
         assert device.writes[-1]["text"] == message
 
 
-@pytest.mark.parametrize("reason,first,delay", [
-    ("manual", "RESETTING", 2), ("idle", "TIME OVER", 4),
-    ("time_over", "TIME OVER", 4), ("complete", "COMPLETE", 4),
+@pytest.mark.parametrize("reason,first", [
+    ("manual", "PLEASE CLEAR TABLE"), ("idle", "TIME OVER"),
+    ("time_over", "TIME OVER"), ("complete", "COMPLETE"),
 ])
-def test_reset_progression_cannot_restart_on_repeated_poll(rig, reason, first, delay):
+def test_reset_progression_cannot_restart_on_repeated_poll(rig, reason, first):
     matrix, device, _, now = rig
     reset = {"state": "RESETTING", "end_reason": reason}
     matrix.update(reset, playback("listen"))
@@ -107,15 +107,12 @@ def test_reset_progression_cannot_restart_on_repeated_poll(rig, reason, first, d
     now[0] = 1.9
     matrix.update(reset)
     assert device.writes[-1]["text"] == first
-    now[0] = delay - 0.01
+    now[0] = 2
     matrix.update(reset)
-    assert device.writes[-1]["text"] == "RESETTING"
-    now[0] = delay
-    matrix.update(reset)
-    assert device.writes[-1]["text"] == "CLEAR TABLE"
+    assert device.writes[-1]["text"] == "PLEASE CLEAR TABLE"
     now[0] = 10000
     matrix.update(reset)
-    assert device.writes[-1]["text"] == "CLEAR TABLE"
+    assert device.writes[-1]["text"] == "PLEASE CLEAR TABLE"
     matrix.update({"state": "READY"}, playback("dfesta"))
     assert device.writes[-1]["text"] == "PLACE TRAY"
 
@@ -130,10 +127,10 @@ def test_final_dfesta_stays_complete_until_audio_ends_then_clears(rig):
     matrix.update(reset, playback("dfesta", False))
     now[0] += 2
     matrix.update(reset)
-    assert device.writes[-1]["text"] == "RESETTING"
+    assert device.writes[-1]["text"] == "PLEASE CLEAR TABLE"
     now[0] += 2
     matrix.update(reset)
-    assert device.writes[-1]["text"] == "CLEAR TABLE"
+    assert device.writes[-1]["text"] == "PLEASE CLEAR TABLE"
 
 
 def test_ready_and_new_session_do_not_retain_name_or_status(rig):
@@ -248,3 +245,37 @@ def test_oversized_and_non_font_labels_cannot_overflow_serial_frame(rig):
     matrix.show_voice("한글_1", running())
     matrix.update(running())
     assert device.writes[-1]["text"] == "??-1"
+
+
+@pytest.mark.parametrize("duration", [0, 2, 5])
+def test_goodbye_blackout_then_place_tray_uses_cleanup_clock(rig, duration):
+    matrix, device, _, now = rig
+    matrix.farewell_duration_s = duration
+    # Even a reset/clear completed between display polls must show GOODBYE.
+    ready = {"state": "READY", "tray": {"present": False, "seated": False},
+             "timers": {"since_table_cleared_s": 0}}
+    matrix.update(ready)
+    assert device.writes[-1]["text"] == ("GOODBYE" if duration else "PLACE TRAY")
+    if duration:
+        now[0] = duration
+        ready["timers"]["since_table_cleared_s"] = duration
+        matrix.update(ready)
+        assert device.writes[-1] == {"type": "clear"}
+        now[0] = duration * 2
+        ready["timers"]["since_table_cleared_s"] = duration * 2
+        matrix.update(ready)
+        assert device.writes[-1]["text"] == "PLACE TRAY"
+
+
+@pytest.mark.parametrize("elapsed", [0.5, 2.5])
+def test_new_game_interrupts_goodbye_and_blackout_without_place_tray(rig, elapsed):
+    matrix, device, _, now = rig
+    matrix.update({"state": "READY", "tray": {"present": False},
+                   "timers": {"since_table_cleared_s": elapsed}})
+    matrix.update(running(), playback("listen"))
+    assert device.writes[-1]["text"] == "HINT"
+    now[0] = 10
+    matrix.show_voice("ive_5", running())
+    matrix.update(running())
+    assert device.writes[-1]["text"] == "IVE-LEESEO"
+    assert not any(p.get("text") == "PLACE TRAY" for p in device.writes)

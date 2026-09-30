@@ -141,6 +141,123 @@ def _load_main_module():
     return module
 
 
+@pytest.fixture
+def tray_main(monkeypatch):
+    from server.game.game_engine import GameEngine
+    from server.inout.matrix_display import MatrixDisplay
+    import json
+
+    main = _load_main_module()
+    clock = [0.0]
+    writes = []
+    def write(data):
+        writes.append(json.loads(data))
+        return len(data)
+    device = types.SimpleNamespace(write=write, close=lambda: None)
+    matrix = MatrixDisplay(
+        {"enabled": True}, clock=lambda: clock[0], catalog={"voices": {}},
+        serial_module=types.SimpleNamespace(Serial=lambda *a, **k: device),
+    )
+    matrix.BOOT_S = 0
+    main._matrix_display = matrix
+    monkeypatch.setattr(main, "_tray_hardware", False)
+    monkeypatch.setattr(main, "reload_melody_data", lambda: None)
+    monkeypatch.setattr(main, "_new_game_engine", lambda: GameEngine(
+        {"1": "C"}, time_over_s=60, idle_s=30, clock=lambda: clock[0]))
+    try:
+        yield main, clock, writes
+    finally:
+        matrix.close()
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("server.main", "server.inout.serial_io", "serial"):
+            sys.modules.pop(name, None)
+
+
+@pytest.mark.parametrize("return_at", [0.5, 2.5, None])
+def test_admin_tray_end_to_end_cleanup_and_next_player(tray_main, return_at):
+    main, clock, writes = tray_main
+    main._update_matrix_display()
+    assert writes[-1]["text"] == "PLACE TRAY"
+    main.set_tray({"present": True})
+    assert main.get_game_state()["state"] == "RUNNING"
+    starts = len(main._playback_scheduler.starts)
+    main.set_tray({"present": True})
+    assert len(main._playback_scheduler.starts) == starts
+    runtime = main.get_game_runtime()
+    runtime.add_orb(orb_id="a", slave=1, cell=1)
+    main.end_game()
+    runtime.remove_orb(slave=1, cell=1)
+    main._update_matrix_display()
+    assert main.get_game_state()["state"] == "RESETTING"
+    assert writes[-1]["text"] == "PLEASE CLEAR TABLE"
+    main.set_tray({"present": False})
+    main._update_matrix_display()
+    assert writes[-1]["text"] == "GOODBYE"
+    goodbye_index = len(writes)
+    clock[0] = return_at if return_at is not None else 2
+    runtime.barrier()
+    main._update_matrix_display()
+    if clock[0] >= 2:
+        assert writes[-1] == {"type": "clear"}
+    if return_at is not None:
+        main.set_tray({"present": True})
+        main._update_matrix_display()
+        assert main.get_game_state()["state"] == "RUNNING"
+        assert writes[-1]["text"] == "HINT"
+        assert not any(p.get("text") == "PLACE TRAY" for p in writes[goodbye_index:])
+    else:
+        clock[0] = 4
+        runtime.barrier()
+        main._update_matrix_display()
+        assert writes[-1]["text"] == "PLACE TRAY"
+
+
+def test_serial_tray_boot_heartbeat_partial_removal_and_input_source(tray_main):
+    main, clock, writes = tray_main
+    main._set_tray_source(True)
+    main.handle_serial_message({"type": "tray", "present": True, "seated": True})
+    assert main.get_game_state()["state"] == "READY"  # no start on boot already seated
+    with pytest.raises(main.InvalidTransition):
+        main.set_tray({"present": False})  # admin cannot overwrite live hardware
+    for seated in [False, True]:
+        main.handle_serial_message({"type": "tray", "present": seated, "seated": seated})
+    assert main.get_game_state()["state"] == "RUNNING"
+    starts = len(main._playback_scheduler.starts)
+    clock[0] = 1
+    main.handle_serial_message({"type": "tray", "present": True, "seated": True})
+    assert len(main._playback_scheduler.starts) == starts
+    main.end_game()
+    main.handle_serial_message({"type": "tray", "present": True, "seated": False})
+    assert main.get_game_state()["state"] == "RESETTING"
+    clock[0] = 5
+    main.get_game_runtime().barrier()
+    assert main.get_game_state()["tray"]["present"] is None
+    assert main.get_game_state()["state"] == "RESETTING"
+    main.handle_serial_message({"type": "tray", "present": False, "seated": False})
+    main._update_matrix_display()
+    assert writes[-1]["text"] == "GOODBYE"
+
+
+def test_placing_tray_during_cleanup_does_not_queue_a_later_start(tray_main):
+    main, clock, _ = tray_main
+    main.set_tray({"present": True})
+    runtime = main.get_game_runtime()
+    runtime.add_orb(orb_id="a", slave=1, cell=1)
+    main.end_game()
+    main.set_tray({"present": False})
+    main.set_tray({"present": True})
+    runtime.remove_orb(slave=1, cell=1)
+    starts = len(main._playback_scheduler.starts)
+    main.set_tray({"present": True})
+    assert main.get_game_state()["state"] == "RESETTING"
+    assert len(main._playback_scheduler.starts) == starts
+    main.set_tray({"present": False})
+    main.set_tray({"present": True})
+    assert main.get_game_state()["state"] == "RUNNING"
+
+
 @pytest.mark.parametrize("melody_id", ["dynamite", "Iam", "biplane"])
 def test_completed_game_starts_harmony_plan_and_keeps_final_dfesta(monkeypatch, melody_id):
     from server.game.scheduler import build_plan
@@ -504,13 +621,16 @@ def test_heartbeat_uses_occupancy_mask_instead_of_game_state_field():
             sys.modules.pop(name, None)
 
 
-def test_admin_keeps_start_and_reset_but_hides_manual_end():
-    html = (ROOT / "admin" / "software" / "index.html").read_text(
+@pytest.mark.parametrize("page", ["software", "hardware"])
+def test_admin_has_tray_toggle_and_reset_but_no_momentary_start(page):
+    html = (ROOT / "admin" / page / "index.html").read_text(
         encoding="utf-8"
     )
 
-    for action in ("start", "reset"):
-        assert re.search(rf'data-game-action="{action}"[^>]*>{action}</button>', html)
+    assert 'id="btn-game-tray" aria-pressed="false"' in html
+    assert 'data-game-action="start"' not in html
+    assert 'btn-game-start' not in html
+    assert 'data-game-action="reset"' in html
     assert 'data-game-action="end"' not in html
 
 
