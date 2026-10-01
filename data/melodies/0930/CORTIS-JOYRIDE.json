@@ -1,0 +1,72 @@
+{
+  "songId": "CORTIS-JOYRIDE",
+  "title": "Cortis-Joyride",
+  "artist": "",
+  "bpm": 120,
+  "range": [
+    "C4",
+    "C5"
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "note": "C4",
+      "duration": 0.5
+    },
+    {
+      "step": 2,
+      "note": "C4",
+      "duration": 0.5
+    },
+    {
+      "step": 3,
+      "note": "C5",
+      "duration": 1.0
+    },
+    {
+      "step": 4,
+      "note": "B4",
+      "duration": 1.0
+    },
+    {
+      "step": 5,
+      "note": "G4",
+      "duration": 0.5
+    },
+    {
+      "step": 6,
+      "note": "G4",
+      "duration": 0.5
+    },
+    {
+      "step": 7,
+      "note": "G4",
+      "duration": 0.5
+    },
+    {
+      "step": 8,
+      "note": "G4",
+      "duration": 0.5
+    },
+    {
+      "step": 9,
+      "note": "A4",
+      "duration": 1.0
+    },
+    {
+      "step": 10,
+      "note": "C4",
+      "duration": 1.0
+    },
+    {
+      "step": 11,
+      "note": "C4",
+      "duration": 0.5
+    },
+    {
+      "step": 12,
+      "note": "C4",
+      "duration": 0.5
+    }
+  ]
+}

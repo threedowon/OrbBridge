@@ -1,0 +1,72 @@
+{
+  "songId": "CORTIS-REDRED",
+  "title": "Cortis-Redred",
+  "artist": "",
+  "bpm": 130,
+  "range": [
+    "C4",
+    "C5"
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "note": "D4",
+      "duration": 0.3
+    },
+    {
+      "step": 2,
+      "note": "D4",
+      "duration": 0.3
+    },
+    {
+      "step": 3,
+      "note": "C4",
+      "duration": 0.3
+    },
+    {
+      "step": 4,
+      "note": "D4",
+      "duration": 0.3
+    },
+    {
+      "step": 5,
+      "note": "D4",
+      "duration": 0.3
+    },
+    {
+      "step": 6,
+      "note": "C4",
+      "duration": 0.3
+    },
+    {
+      "step": 7,
+      "note": "D4",
+      "duration": 1.5
+    },
+    {
+      "step": 8,
+      "note": "C4",
+      "duration": 0.5
+    },
+    {
+      "step": 9,
+      "note": "D4",
+      "duration": 0.6
+    },
+    {
+      "step": 10,
+      "note": "C4",
+      "duration": 0.3
+    },
+    {
+      "step": 11,
+      "note": "D4",
+      "duration": 0.6
+    },
+    {
+      "step": 12,
+      "note": "E4",
+      "duration": 0.3
+    }
+  ]
+}

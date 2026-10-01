@@ -1,0 +1,72 @@
+{
+  "songId": "GD-HEARTBREAKER",
+  "title": "Gd-Heartbreaker",
+  "artist": "",
+  "bpm": 120,
+  "range": [
+    "C4",
+    "C5"
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "note": "C4",
+      "duration": 0.75
+    },
+    {
+      "step": 2,
+      "note": "D4",
+      "duration": 0.25
+    },
+    {
+      "step": 3,
+      "note": "E4",
+      "duration": 1.0
+    },
+    {
+      "step": 4,
+      "note": "E4",
+      "duration": 1.0
+    },
+    {
+      "step": 5,
+      "note": "E4",
+      "duration": 1.0
+    },
+    {
+      "step": 6,
+      "note": "E4",
+      "duration": 1.0
+    },
+    {
+      "step": 7,
+      "note": "D4",
+      "duration": 1.0
+    },
+    {
+      "step": 8,
+      "note": "G4",
+      "duration": 1.0
+    },
+    {
+      "step": 9,
+      "note": "D4",
+      "duration": 1.0
+    },
+    {
+      "step": 10,
+      "note": "REST",
+      "duration": 1.0
+    },
+    {
+      "step": 11,
+      "note": "REST",
+      "duration": 1.0
+    },
+    {
+      "step": 12,
+      "note": "REST",
+      "duration": 1.0
+    }
+  ]
+}

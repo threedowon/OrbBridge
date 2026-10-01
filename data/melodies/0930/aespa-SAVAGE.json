@@ -1,0 +1,72 @@
+{
+  "songId": "aespa-SAVAGE",
+  "title": "Aespa-Savage",
+  "artist": "",
+  "bpm": 140,
+  "range": [
+    "C4",
+    "C5"
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "note": "D4",
+      "duration": 1.0
+    },
+    {
+      "step": 2,
+      "note": "F4",
+      "duration": 1.0
+    },
+    {
+      "step": 3,
+      "note": "G4",
+      "duration": 2.0
+    },
+    {
+      "step": 4,
+      "note": "D4",
+      "duration": 1.0
+    },
+    {
+      "step": 5,
+      "note": "F4",
+      "duration": 1.0
+    },
+    {
+      "step": 6,
+      "note": "G4",
+      "duration": 1.0
+    },
+    {
+      "step": 7,
+      "note": "D4",
+      "duration": 1.0
+    },
+    {
+      "step": 8,
+      "note": "D4",
+      "duration": 2.5
+    },
+    {
+      "step": 9,
+      "note": "A4",
+      "duration": 1.0
+    },
+    {
+      "step": 10,
+      "note": "G4",
+      "duration": 0.5
+    },
+    {
+      "step": 11,
+      "note": "F4",
+      "duration": 0.5
+    },
+    {
+      "step": 12,
+      "note": "E4",
+      "duration": 2.0
+    }
+  ]
+}

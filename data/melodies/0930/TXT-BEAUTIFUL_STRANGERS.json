@@ -1,0 +1,72 @@
+{
+  "songId": "TXT-BEAUTIFUL_STRANGERS",
+  "title": "Txt-Beautiful Strangers",
+  "artist": "",
+  "bpm": 150,
+  "range": [
+    "C4",
+    "C5"
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "note": "E4",
+      "duration": 0.5
+    },
+    {
+      "step": 2,
+      "note": "E4",
+      "duration": 0.5
+    },
+    {
+      "step": 3,
+      "note": "G4",
+      "duration": 0.5
+    },
+    {
+      "step": 4,
+      "note": "E4",
+      "duration": 0.5
+    },
+    {
+      "step": 5,
+      "note": "A4",
+      "duration": 3.5
+    },
+    {
+      "step": 6,
+      "note": "C5",
+      "duration": 1.0
+    },
+    {
+      "step": 7,
+      "note": "C5",
+      "duration": 0.5
+    },
+    {
+      "step": 8,
+      "note": "B4",
+      "duration": 1.0
+    },
+    {
+      "step": 9,
+      "note": "G4",
+      "duration": 1.0
+    },
+    {
+      "step": 10,
+      "note": "E4",
+      "duration": 0.5
+    },
+    {
+      "step": 11,
+      "note": "G4",
+      "duration": 1.5
+    },
+    {
+      "step": 12,
+      "note": "A4",
+      "duration": 2.0
+    }
+  ]
+}

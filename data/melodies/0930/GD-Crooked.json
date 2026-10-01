@@ -1,0 +1,72 @@
+{
+  "songId": "GD-Crooked",
+  "title": "Gd-Crooked",
+  "artist": "",
+  "bpm": 115,
+  "range": [
+    "C4",
+    "C5"
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "note": "B4",
+      "duration": 0.5
+    },
+    {
+      "step": 2,
+      "note": "A4",
+      "duration": 0.5
+    },
+    {
+      "step": 3,
+      "note": "B4",
+      "duration": 0.5
+    },
+    {
+      "step": 4,
+      "note": "A4",
+      "duration": 0.5
+    },
+    {
+      "step": 5,
+      "note": "B4",
+      "duration": 0.5
+    },
+    {
+      "step": 6,
+      "note": "G4",
+      "duration": 0.5
+    },
+    {
+      "step": 7,
+      "note": "A4",
+      "duration": 1.0
+    },
+    {
+      "step": 8,
+      "note": "G4",
+      "duration": 1.5
+    },
+    {
+      "step": 9,
+      "note": "REST",
+      "duration": 1.0
+    },
+    {
+      "step": 10,
+      "note": "REST",
+      "duration": 1.0
+    },
+    {
+      "step": 11,
+      "note": "REST",
+      "duration": 1.0
+    },
+    {
+      "step": 12,
+      "note": "REST",
+      "duration": 1.0
+    }
+  ]
+}
