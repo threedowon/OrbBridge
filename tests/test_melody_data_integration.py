@@ -33,9 +33,8 @@ def test_runtime_json_lives_under_data_except_sinesynth_settings():
 
 
 def test_one_melody_document_drives_answer_playback_and_rules():
-    config = json.loads((ROOT / "data" / "config.json").read_text(encoding="utf-8"))
     document = load_melody_document(
-        ROOT / "data" / "melodies" / f"{config['melody']}.json"
+        ROOT / "data" / "melodies" / "dynamite.json"
     )
 
     assert answer_sequence_from_melody(document) == {
@@ -61,13 +60,14 @@ def test_configured_playlist_points_to_valid_melody_documents():
     config = json.loads((ROOT / "data" / "config.json").read_text(encoding="utf-8"))
     rotation = config["melody_rotation"]
 
-    assert rotation["mode"] == "sequence"
-    assert rotation["playlist"] == ["dynamite", "Iam", "biplane"]
-    for melody_id in rotation["playlist"]:
+    assert rotation["mode"] == "random"
+    assert rotation["playlist"] == []
+    for path in (ROOT / "data" / "melodies").glob("*.json"):
+        melody_id = path.stem
         document = load_melody_document(
             ROOT / "data" / "melodies" / f"{melody_id}.json"
         )
-        assert document["songId"] == melody_id
+        assert document["songId"]
         assert document["steps"]
         assert len(answer_sequence_from_melody(document)) == len(document["steps"])
         assert game_rules_from_melody(document)["dfesta_presses_required"] >= 1

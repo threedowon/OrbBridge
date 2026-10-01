@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import random
 import threading
 from dataclasses import dataclass
 from math import isfinite
@@ -12,7 +13,8 @@ from typing import Iterable, Mapping, Sequence
 
 MODE_FIXED = "fixed"
 MODE_SEQUENCE = "sequence"
-SUPPORTED_MODES = {MODE_FIXED, MODE_SEQUENCE}
+MODE_RANDOM = "random"
+SUPPORTED_MODES = {MODE_FIXED, MODE_SEQUENCE, MODE_RANDOM}
 
 DEFAULT_TIME_OVER_S = 120
 DEFAULT_IDLE_S = 30
@@ -100,7 +102,7 @@ def _normalize_playlist(raw: object) -> tuple[str, ...]:
     if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
         raise ValueError("melody_rotation.playlist must be an array")
     playlist = tuple(str(value or "").strip() for value in raw)
-    if not playlist or any(not value for value in playlist):
+    if any(not value for value in playlist):
         raise ValueError("melody_rotation.playlist must contain melody ids")
     if len(set(playlist)) != len(playlist):
         raise ValueError("melody_rotation.playlist contains a duplicate")
@@ -141,33 +143,35 @@ def rotation_plan_from_config(
             raise ValueError("melody_rotation must be an object")
         mode = str(raw_rotation.get("mode") or MODE_FIXED).lower().strip()
         if mode not in SUPPORTED_MODES:
-            raise ValueError("melody_rotation.mode must be fixed or sequence")
+            raise ValueError("melody_rotation.mode must be fixed, sequence or random")
         raw_playlist = raw_rotation.get("playlist")
-        playlist = _normalize_playlist(raw_playlist) if raw_playlist is not None else (fixed_id,)
+        playlist = _normalize_playlist(raw_playlist) if raw_playlist is not None else ()
 
-    missing = [melody_id for melody_id in playlist if melody_id not in available]
+    # Old config references must not make removed sample songs mandatory.
+    playlist = tuple(value for value in playlist if value in available)
     if fixed_id not in available:
-        missing.insert(0, fixed_id)
-    if missing:
-        raise ValueError(f"melody file does not exist: {', '.join(dict.fromkeys(missing))}")
-    if mode == MODE_SEQUENCE:
+        fixed_id = playlist[0] if playlist else sorted(available)[0]
+    if mode in (MODE_SEQUENCE, MODE_RANDOM):
         # Keep the configured order, then discover newly registered songs.
         playlist += tuple(value for value in sorted(available) if value not in playlist)
+    elif not playlist:
+        playlist = (fixed_id,)
     return MelodyPlan(mode, playlist, fixed_id)
 
 
 class MelodyManager:
     """멜로디 파일과 성공한 게임 시작 기준의 순번을 관리한다."""
 
-    def __init__(self, directory: Path) -> None:
+    def __init__(self, directory: Path, *, rng=None) -> None:
         self.directory = Path(directory)
         self._lock = threading.Lock()
         self._plan: MelodyPlan | None = None
         self._next_index = 0
         self._pending_index: int | None = None
+        self._rng = rng if rng is not None else random.Random()
 
     def available_ids(self) -> list[str]:
-        return sorted(path.stem for path in self.directory.glob("*.json"))
+        return sorted(path.stem for path in self.directory.glob("*.json") if path.name.lower() != "config.json")
 
     def load(self, melody_id: str) -> dict:
         return load_melody_document(self.directory / f"{melody_id}.json")
@@ -182,6 +186,8 @@ class MelodyManager:
                 next_id = self._plan.playlist[self._next_index]
             self._plan = plan
             self._next_index = plan.playlist.index(next_id) if next_id in plan.playlist else 0
+            if plan.mode == MODE_RANDOM:
+                self._next_index = self._rng.randrange(len(plan.playlist))
             self._pending_index = None
         return plan
 
@@ -208,8 +214,10 @@ class MelodyManager:
         """게임 시작 성공을 확정하고 다음 순번으로 이동한다."""
 
         with self._lock:
-            if self._plan and self._plan.mode == MODE_SEQUENCE and self._pending_index is not None:
-                self._next_index = (self._pending_index + 1) % len(self._plan.playlist)
+            if self._plan and self._pending_index is not None:
+                self._next_index = (self._rng.randrange(len(self._plan.playlist))
+                                    if self._plan.mode == MODE_RANDOM else
+                                    (self._pending_index + 1) % len(self._plan.playlist))
             self._pending_index = None
 
     def cancel(self) -> None:

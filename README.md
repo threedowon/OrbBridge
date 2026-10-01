@@ -100,8 +100,8 @@ READY → RUNNING → RESETTING → READY
   "current_stage": 1,
   "melody": "dynamite",
   "melody_rotation": {
-    "mode": "sequence",
-    "playlist": ["dynamite", "Iam", "biplane"]
+    "mode": "random",
+    "playlist": []
   },
   "input_mode": "table",
   "web": {
@@ -124,8 +124,8 @@ READY → RUNNING → RESETTING → READY
 |---|---|
 | `input_mode` | `table` 또는 `serial` |
 | `melody` | `fixed` 모드의 기본 멜로디 ID |
-| `melody_rotation.mode` | `sequence`: 게임마다 다음 곡, `fixed`: 첫 곡 고정 |
-| `melody_rotation.playlist` | Melody Register에서 관리하는 게임 순서 |
+| `melody_rotation.mode` | `random`: 매 게임 무작위(연속 중복 가능), `sequence`: 순회, `fixed`: 지정 곡 고정 |
+| `melody_rotation.playlist` | 순회 우선순서. 빈 배열이면 폴더 전체 사용. 삭제된 곡은 제외하고 새 곡은 자동 추가 |
 | `web` | HTTP 바인딩 주소와 포트 |
 | `websocket.host` | 선택값이며 없으면 `web.host` 사용 |
 | `serial` | ESP 마스터 COM 포트와 baudrate |

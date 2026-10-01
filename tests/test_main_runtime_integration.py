@@ -125,6 +125,32 @@ def test_matrix_follows_accepted_requests_and_ignores_delayed_web_events(monkeyp
             sys.modules.pop(name, None)
 
 
+@pytest.mark.parametrize("mode", ["sequence", "random", "fixed"])
+def test_server_starts_without_legacy_melody_files(tmp_path, monkeypatch, mode):
+    import json
+    from server import app_paths, data_store
+    config = data_store.load_config()
+    config["melody"] = "biplane"
+    config["melody_rotation"] = {"mode": mode, "playlist": ["dynamite", "Iam", "biplane"]}
+    document = {"songId": "new_only", "bpm": 120,
+                "steps": [{"step": 1, "note": "C4", "duration": 1, "velocity": 90}]}
+    (tmp_path / "new_only.json").write_text(json.dumps(document), encoding="utf-8")
+    monkeypatch.setattr(app_paths, "ensure_data_files", lambda: None)
+    monkeypatch.setattr(app_paths, "melodies_dir", lambda: tmp_path)
+    monkeypatch.setattr(data_store, "load_config", lambda: deepcopy(config))
+    main = _load_main_module()
+    try:
+        assert main.get_active_melody()["songId"] == "new_only"
+        assert main.start_game()["game"]["state"] == "RUNNING"
+        assert main.get_active_melody()["songId"] == "new_only"
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("server.main", "server.inout.serial_io", "serial"):
+            sys.modules.pop(name, None)
+
+
 def _load_main_module():
     serial_module = types.ModuleType("serial")
     serial_module.SerialException = type("SerialException", (Exception,), {})
@@ -303,8 +329,11 @@ def test_completed_game_starts_harmony_plan_and_keeps_final_dfesta(monkeypatch, 
             sys.modules.pop(name, None)
 
 
-def test_main_routes_web_event_through_runtime_snapshot_and_midi():
+def test_main_routes_web_event_through_runtime_snapshot_and_midi(monkeypatch):
     main = _load_main_module()
+    config = deepcopy(main.config)
+    config["melody_rotation"] = {"mode": "sequence", "playlist": ["dynamite", "Iam", "biplane"]}
+    monkeypatch.setattr(main, "load_config", lambda: deepcopy(config))
     midi_calls = []
     matrix_calls = []
     main._matrix_display = types.SimpleNamespace(
@@ -450,8 +479,11 @@ def test_manual_end_enters_resetting_directly():
             sys.modules.pop(name, None)
 
 
-def test_admin_auto_complete_and_collect_use_runtime_state():
+def test_admin_auto_complete_and_collect_use_runtime_state(monkeypatch):
     main = _load_main_module()
+    config = deepcopy(main.config)
+    config["melody_rotation"] = {"mode": "sequence", "playlist": ["dynamite", "Iam", "biplane"]}
+    monkeypatch.setattr(main, "load_config", lambda: deepcopy(config))
     mapping = {
         f"ORB-{index:02d}": {"voice": f"aespa_{index}"}
         for index in range(1, 13)
@@ -803,7 +835,7 @@ def test_main_fans_out_events_and_builds_complete_web_snapshot():
         snapshot = main.get_web_snapshot()
         assert snapshot["schema_version"] == 3
         assert snapshot["game"]["state"] == "READY"
-        assert snapshot["melody"]["songId"] == "dynamite"
+        assert snapshot["melody"]["songId"] == main.get_active_melody()["songId"]
         assert snapshot["melody"]["steps"]
         assert snapshot["status"]["game"] == snapshot["game"]
         assert snapshot["status"]["cell_count"] == snapshot["game"]["cell_count"]
@@ -860,7 +892,7 @@ def test_start_publishes_the_active_melody_before_running_state():
         )
 
         assert melody_index < running_index
-        assert messages[melody_index][1][0]["songId"] == "dynamite"
+        assert messages[melody_index][1][0]["songId"] == main.get_active_melody()["songId"]
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
@@ -871,6 +903,9 @@ def test_start_publishes_the_active_melody_before_running_state():
 
 def test_successive_games_follow_the_configured_melody_sequence(monkeypatch):
     main = _load_main_module()
+    config = deepcopy(main.config)
+    config["melody_rotation"] = {"mode": "sequence", "playlist": ["dynamite", "Iam", "biplane"]}
+    monkeypatch.setattr(main, "load_config", lambda: deepcopy(config))
     # Keep this rotation fixture independent of songs added for venue testing.
     monkeypatch.setattr(main._melody_manager, "available_ids", lambda: ["dynamite", "Iam", "biplane"])
 
@@ -956,7 +991,7 @@ def test_debug_start_preserves_orbs_and_allows_restart_from_resetting():
             sys.modules.pop(name, None)
 
 
-def test_debug_melody_restart_and_99_requirement_are_temporary(monkeypatch, tmp_path):
+def test_debug_melody_restart_and_999_requirement_are_temporary(monkeypatch, tmp_path):
     import json
     from server.game.melody_manager import MelodyManager
     main = _load_main_module()
@@ -977,7 +1012,7 @@ def test_debug_melody_restart_and_99_requirement_are_temporary(monkeypatch, tmp_
             main.update_software_settings({"debug_melody": "added"})
         assert main.melody_id == "original"
         main.update_software_settings({"debug_mode": True})
-        assert runtime.snapshot()["completion"]["dfesta_presses_required"] == 99
+        assert runtime.snapshot()["completion"]["dfesta_presses_required"] == 999
         before = main._melody_manager.snapshot()
         for bad in ["../config", "missing", None]:
             with pytest.raises(ValueError):
@@ -988,7 +1023,7 @@ def test_debug_melody_restart_and_99_requirement_are_temporary(monkeypatch, tmp_
         assert settings["available_melodies"] == ["added", "original"]
         assert runtime.snapshot()["cell_count"] == 1
         assert runtime.snapshot()["state"] == "RUNNING"
-        assert runtime.snapshot()["completion"]["dfesta_presses_required"] == 99
+        assert runtime.snapshot()["completion"]["dfesta_presses_required"] == 999
         assert main._melody_manager.snapshot() == before
         main.update_software_settings({"debug_mode": False})
         assert runtime.snapshot()["completion"]["dfesta_presses_required"] == 3

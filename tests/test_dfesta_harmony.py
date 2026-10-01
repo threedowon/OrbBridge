@@ -183,6 +183,9 @@ def test_shipped_arrangements_have_three_distinct_diatonic_chord_tones(melody_id
 
 def test_iam_swing_pairs_fill_exact_beats_after_editor_save():
     raw = json.loads((ROOT / "data" / "melodies" / "Iam.json").read_text(encoding="utf-8"))
+    # Explicit triplet fixture: library arrangements may use rounded durations.
+    for index, duration in zip((4, 5, 6, 7), (2/3, 1/3, 1/3, 2/3)):
+        raw["steps"][index]["duration"] = duration
     melody = parse_melody(to_save_payload(normalize_melody(raw)))
     assert sum(step.duration_beats for step in melody.steps[4:6]) == pytest.approx(1, abs=1e-12)
     assert sum(step.duration_beats for step in melody.steps[6:8]) == pytest.approx(1, abs=1e-12)

@@ -698,7 +698,7 @@
       <div class="midi-section software-only">
         <div class="section-title">MIDI 진단</div>
         <div class="debug-tools">
-          <label><input type="checkbox" id="debug-mode"> 디버그 모드 · DFesta 완료 99회</label>
+          <label><input type="checkbox" id="debug-mode"> 디버그 모드 · DFesta 완료 999회</label>
           <p>오브를 유지한 채 게임을 시작할 수 있습니다. 끄면 곡의 원래 완료 횟수로 돌아갑니다.</p>
           <label for="debug-melody">테스트할 멜로디</label>
           <select id="debug-melody" disabled aria-label="테스트할 멜로디"></select>
@@ -1259,7 +1259,7 @@
       try {
         const settings = await postGame('/api/admin/software/settings', {debug_mode: checkbox.checked});
         renderSoftwareSettings(settings);
-        document.getElementById('debug-message').textContent = settings.debug_mode ? '디버그 모드 켜짐 · DFesta 완료 횟수 99회 적용' : '디버그 모드 꺼짐 · 곡의 기본 완료 횟수 복원';
+        document.getElementById('debug-message').textContent = settings.debug_mode ? '디버그 모드 켜짐 · DFesta 완료 횟수 999회 적용' : '디버그 모드 꺼짐 · 곡의 기본 완료 횟수 복원';
       } catch (error) {
         checkbox.checked = debugMode;
         document.getElementById('debug-message').textContent = error.message;
@@ -1277,7 +1277,7 @@
           debug_melody: document.getElementById('debug-melody').value,
         });
         renderSoftwareSettings(settings);
-        document.getElementById('debug-message').textContent = `${settings.current_melody} 시작 · DFesta 완료 99회`;
+        document.getElementById('debug-message').textContent = `${settings.current_melody} 시작 · DFesta 완료 999회`;
         await fetchStatus();
       } catch (error) {
         document.getElementById('debug-message').textContent = error.message;

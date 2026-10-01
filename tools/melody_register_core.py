@@ -15,6 +15,7 @@ from server.game.scheduler import parse_melody
 from server.game.melody_manager import (
     MODE_FIXED,
     MODE_SEQUENCE,
+    MODE_RANDOM,
     game_rules_from_melody,
     rotation_plan_from_config,
 )
@@ -69,8 +70,8 @@ def save_rotation_settings(mode: str, playlist: list[str]) -> dict[str, Any]:
         raise ValueError("게임 순서에 멜로디가 최소 1개 필요합니다.")
 
     normalized_mode = str(mode or "").lower().strip()
-    if normalized_mode not in {MODE_FIXED, MODE_SEQUENCE}:
-        raise ValueError("선택 방식은 fixed 또는 sequence여야 합니다.")
+    if normalized_mode not in {MODE_FIXED, MODE_SEQUENCE, MODE_RANDOM}:
+        raise ValueError("선택 방식은 fixed, sequence 또는 random이어야 합니다.")
 
     config = load_config()
     config["melody"] = normalized[0]

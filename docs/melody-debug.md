@@ -1,5 +1,12 @@
 # Melody discovery and debug audition
 
+Set data/config.json melody_rotation.mode to random (default) or sequence.
+Random draws independently each game, so consecutive repeats are possible.
+An empty playlist includes every melody JSON in the folder, excluding config.json.
+Missing song references are ignored; removed fixed songs fall back to an available song.
+At least one valid melody must remain. Bundled songs seed only a newly created library;
+deleting individual songs does not restore them on startup.
+
 In sequence mode, the configured playlist defines the first songs and their order.
 Other JSON filenames in `data/melodies` are appended in sorted order automatically.
 The folder is checked at each game start. Adding a file does not rewind an existing
@@ -11,7 +18,7 @@ Settings and Log tabs. Game controls remain visible above the tabs.
 
 MIDI Diagnostics contains Debug Mode and a melody selector. Refresh List discovers
 files added while the page was open. Enable Debug Mode to immediately set the
-current game's DFesta completion requirement to 99 presses. This also applies to
+current game's DFesta completion requirement to 999 presses. This also applies to
 subsequent debug games. Disabling it restores the current song's original requirement.
 The accumulated press count is preserved on toggle; normal completion is evaluated
 on the next valid DFesta press. Correct-placement conditions remain unchanged.

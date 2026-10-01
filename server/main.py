@@ -265,7 +265,7 @@ def _new_game_engine() -> GameEngine:
         answer_sequence,
         time_over_s=time_over_s,
         idle_s=idle_s,
-        dfesta_presses_required=99 if _debug_mode else dfesta_presses_required,
+        dfesta_presses_required=999 if _debug_mode else dfesta_presses_required,
         initial_timer_delay_s=build_plan(PlaybackMode.LISTEN, playback_melody).duration_s + 1.0,
         tray_present=None if _tray_hardware else False,
     )
@@ -574,7 +574,7 @@ def update_software_settings(data: dict) -> dict:
         if "debug_mode" in data:
             _debug_mode = data["debug_mode"]
             _publish_transition(get_game_runtime().set_dfesta_requirement(
-                99 if _debug_mode else dfesta_presses_required))
+                999 if _debug_mode else dfesta_presses_required))
         if selected is not None:
             _cancel_playback()
             reset_game()

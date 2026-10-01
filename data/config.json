@@ -4,14 +4,9 @@
     "time_over_s": 30.0,
     "idle_s": 15.0
   },
-  "melody": "dynamite",
   "melody_rotation": {
-    "mode": "sequence",
-    "playlist": [
-      "dynamite",
-      "Iam",
-      "biplane"
-    ]
+    "mode": "random",
+    "playlist": []
   },
   "input_mode": "table",
   "web": {
