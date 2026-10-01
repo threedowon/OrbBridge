@@ -39,8 +39,8 @@ class App(tk.Tk):
     def __init__(self, mapping_path):
         super().__init__()
         self.title('OrbBridge · Sound Monitor')
-        self.geometry('1080x730')
-        self.minsize(920, 650)
+        self.geometry('1080x810')
+        self.minsize(920, 730)
         self.configure(bg=BG)
         self.engine = MonitorEngine()
         self.events = queue.Queue(maxsize=2000)
@@ -52,7 +52,6 @@ class App(tk.Tk):
         self.received = 0
         self.dropped_logs = 0
         self.underruns = 0
-        self.test_tokens = {}
         self.routing = {}
         self.mapping_path = mapping_path
         self.settings = clean_settings({})
@@ -88,6 +87,8 @@ class App(tk.Tk):
         style.configure('Treeview.Heading', background='#2c333b', foreground=MUTED, padding=6)
         style.map('Treeview', background=[('selected', '#365851')])
         style.configure('TCombobox', fieldbackground=PANEL, foreground=INK, arrowcolor=INK)
+        style.configure('TSpinbox', fieldbackground=PANEL, foreground=INK, arrowcolor=INK, insertcolor=INK)
+        style.map('TSpinbox', fieldbackground=[('!disabled', PANEL)], foreground=[('!disabled', INK)])
         style.map('TCombobox', fieldbackground=[('readonly', PANEL)], foreground=[('readonly', INK)], selectbackground=[('readonly', PANEL)], selectforeground=[('readonly', INK)])
         style.configure('TNotebook', background=BG, borderwidth=0)
         style.configure('TNotebook.Tab', background=PANEL, foreground=MUTED, padding=(12, 8))
@@ -115,6 +116,9 @@ class App(tk.Tk):
         audio.columnconfigure(0, weight=1)
         self.audio_status = tk.StringVar(value='오디오 준비 중')
         ttk.Label(audio, textvariable=self.audio_status, foreground=MUTED).grid(row=2, column=0, columnspan=3, sticky='w')
+        self.exclusive = tk.BooleanVar(value=self.settings['exclusive'])
+        ttk.Checkbutton(audio, text='WASAPI 단독 모드 · 다른 앱의 동시 출력이 제한될 수 있음',
+                        variable=self.exclusive, command=self._start_audio).grid(row=3, column=0, columnspan=3, sticky='w', pady=(6, 0))
 
         controls = ttk.Frame(self, padding=(20, 0, 20, 15))
         controls.pack(fill='x')
@@ -136,6 +140,25 @@ class App(tk.Tk):
         self._volume()
         self._tone()
         self.octave = self.settings['octave']
+
+        lengths = ttk.Frame(self, padding=(20, 0, 20, 14))
+        lengths.pack(fill='x')
+        ttk.Label(lengths, text='최대 음 길이 (ms)').pack(side='left')
+        self.length_var = tk.StringVar(value=f"{self.settings['note_length_ms']:g}")
+        self.release_var = tk.StringVar(value=f"{self.settings['release_ms']:g}")
+        for variable, low, high, increment, label in (
+                (self.length_var, 0, 2000, 10, '0 = MIDI 원본'),
+                (self.release_var, 2, 80, 2, '잔향 ms')):
+            spin = ttk.Spinbox(lengths, textvariable=variable, from_=low, to=high, increment=increment,
+                               width=6, command=self._length_settings)
+            spin.pack(side='left', padx=8)
+            spin.bind('<Return>', lambda _: self._length_settings())
+            spin.bind('<FocusOut>', lambda _: self._length_settings())
+            ttk.Label(lengths, text=label, foreground=MUTED).pack(side='left', padx=(0, 12))
+        self.mono_var = tk.BooleanVar(value=self.settings['mono'])
+        ttk.Checkbutton(lengths, text='같은 멤버의 이전 음 끊기', variable=self.mono_var,
+                        command=self._length_settings).pack(side='right')
+        self._length_settings()
 
         keys = ttk.Frame(self, padding=(20, 0, 20, 14))
         keys.pack(fill='x')
@@ -220,12 +243,19 @@ class App(tk.Tk):
             device_id = self.output_devices[index]
             device = sd.query_devices(device_id, 'output')
             rate = int(device['default_samplerate'])
+            host = sd.query_hostapis(device['hostapi'])['name']
+            if self.exclusive.get() and 'WASAPI' not in host:
+                raise ValueError('단독 모드는 WASAPI 출력 장치를 선택해야 한다')
+            extra = sd.WasapiSettings(exclusive=True) if self.exclusive.get() else None
             self.engine.sample_rate = rate
-            self.stream = sd.OutputStream(device=device_id, samplerate=rate, blocksize=256,
+            self.stream = sd.OutputStream(device=device_id, samplerate=rate, blocksize=0,
                                           channels=min(2, device['max_output_channels']), dtype='float32',
-                                          latency='low', callback=self._audio)
+                                          latency=.005 if self.exclusive.get() else 'low',
+                                          extra_settings=extra, callback=self._audio)
             self.stream.start()
-            self.audio_status.set(f"{device['name']} · {rate} Hz · 출력 지연 {self.stream.latency * 1000:.1f} ms")
+            latency_ms = self.stream.latency * 1000
+            warning = ' · 지연 큼: WASAPI 장치를 선택하라' if latency_ms > 40 else ''
+            self.audio_status.set(f"{host} · {rate} Hz · 출력 지연 {latency_ms:.1f} ms{warning}")
         except Exception as exc:
             if self.stream:
                 self.stream.close()
@@ -266,6 +296,15 @@ class App(tk.Tk):
     def _tone(self):
         self.engine.tone = self.tone.get()
 
+    def _length_settings(self):
+        settings = clean_settings({'version': 2, 'note_length_ms': self.length_var.get(),
+                                   'release_ms': self.release_var.get(), 'mono': self.mono_var.get()})
+        self.engine.note_length_ms = settings['note_length_ms']
+        self.engine.release_ms = settings['release_ms']
+        self.engine.mono = settings['mono']
+        self.length_var.set(f"{self.engine.note_length_ms:g}")
+        self.release_var.set(f"{self.engine.release_ms:g}")
+
     def _octave(self):
         self.engine.send('panic')
         self.octave = int(self.octave_var.get())
@@ -279,16 +318,9 @@ class App(tk.Tk):
             return
         for key in keys:
             identity = ('local', 1, key)
-            self.engine.send('on', identity, mapped_pitch(key, self.octave), 100)
-            self._event('로컬', 1, '테스트', NAMES[key - 36], 100, 'ON · 450 ms')
-            token = object()
-            self.test_tokens[identity] = token
-            self.after(450, lambda k=identity, t=token: self._test_off(k, t))
-
-    def _test_off(self, key, token):
-        if self.test_tokens.get(key) is token:
-            self.test_tokens.pop(key)
-            self.engine.send('off', key)
+            length = self.engine.note_length_ms or 250
+            self.engine.send('on', identity, mapped_pitch(key, self.octave), 100, gate_ms=length)
+            self._event('로컬', 1, '테스트', NAMES[key - 36], 100, f'ON · {length:g} ms')
 
     def _event(self, group, channel, member, note, velocity, event):
         stamp = time.strftime('%H:%M:%S')
@@ -373,7 +405,7 @@ class App(tk.Tk):
         db = 20 * math.log10(max(1e-9, meter['peak']))
         self.meter['value'] = max(0, min(60, db + 60))
         self.peak_label.set(f'출력 {db:.1f} dBFS' if db > -80 else '출력 −∞ dBFS')
-        self.stats.set(f"수신 {self.received} · 활성음 {meter['voices']} · 출력 경고 {self.underruns} · 누락 로그 {self.dropped_logs}")
+        self.stats.set(f"수신 {self.received} · 활성음 {meter['voices']} · 큐 {self.engine.queue_ms:.1f} ms · 출력 경고 {self.underruns} · 누락 로그 {self.dropped_logs}")
         for key, button in self.key_buttons.items():
             button.configure(bg=ACCENT if key in meter['keys'] else PANEL, fg=BG if key in meter['keys'] else INK)
         self.after(50, self._poll)
@@ -384,7 +416,9 @@ class App(tk.Tk):
         self._stop_audio()
         try:
             settings = clean_settings({'version': 2, 'volume_db': self.engine.volume_db,
-                        'muted': self.engine.muted, 'octave': self.octave, 'tone': self.engine.tone})
+                        'muted': self.engine.muted, 'octave': self.octave, 'tone': self.engine.tone,
+                        'note_length_ms': self.engine.note_length_ms, 'release_ms': self.engine.release_ms,
+                        'mono': self.engine.mono, 'exclusive': self.exclusive.get()})
             if SETTINGS.exists():
                 raw = json.loads(SETTINGS.read_text(encoding='utf-8'))
                 backup = SETTINGS.with_suffix('.legacy.json')

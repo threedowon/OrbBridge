@@ -54,7 +54,8 @@ class MonitorTests(unittest.TestCase):
         engine = MonitorEngine()
         engine.send('on', ('g', 1, 36), 60, 127)
         attack = engine.render(960)
-        self.assertLess(np.max(np.abs(attack[:24])), .01)
+        self.assertEqual(float(attack[0]), 0)
+        self.assertLess(np.max(np.abs(np.diff(attack))), .01)
         engine.send('off', ('g', 1, 36))
         release = engine.render(2400)
         self.assertEqual(len(engine.voices), 0)
@@ -62,7 +63,9 @@ class MonitorTests(unittest.TestCase):
         self.assertLess(np.max(np.abs(np.diff(release))), .02)
 
     def test_long_note_is_not_cut_after_four_seconds(self):
-        engine = self.engine()
+        engine = MonitorEngine()
+        engine.note_length_ms = 0
+        engine.send('on', ('group', 0, 36), 60, 127)
         engine.render(48000 * 5)
         self.assertEqual(len(engine.voices), 1)
         self.assertFalse(next(iter(engine.voices.values()))['release'])
@@ -123,16 +126,55 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(app.output_devices[2], 1)
 
     def test_local_retrigger_ignores_older_note_off(self):
-        engine = self.engine()
-        key = ('group', 0, 36)
-        old, current = object(), object()
-        app = SimpleNamespace(engine=engine, test_tokens={key: current})
-        App._test_off(app, key, old)
-        engine.render(2400)
+        engine = MonitorEngine()
+        key = ('local', 1, 36)
+        engine.send('on', key, 60, 100, gate_ms=100)
+        engine.render(3840)
+        engine.send('on', key, 60, 100, gate_ms=100)
+        engine.render(3840)
         self.assertIn(key, engine.voices)
-        App._test_off(app, key, current)
-        engine.render(2400)
+        engine.render(1600)
         self.assertFalse(engine.voices)
+
+    def test_gate_ends_inside_large_audio_block(self):
+        engine = MonitorEngine()
+        engine.note_length_ms = 50
+        engine.release_ms = 8
+        engine.send('on', ('g', 1, 36), 60, 127)
+        samples = engine.render(4800)
+        self.assertGreater(np.max(np.abs(samples[100:2000])), .05)
+        self.assertTrue(np.all(samples[2784:] == 0))
+
+    def test_early_note_off_is_not_extended_to_cap(self):
+        engine = MonitorEngine()
+        engine.send('on', ('g', 1, 36), 60, 127)
+        engine.render(960)
+        engine.send('off', ('g', 1, 36))
+        engine.render(480)
+        self.assertFalse(engine.voices)
+
+    def test_same_member_overlap_released_but_other_members_preserved(self):
+        engine = MonitorEngine()
+        for key in [('g', 1, 36), ('g', 2, 36)]:
+            engine.send('on', key, 60, 127)
+        engine.render(480)
+        engine.send('on', ('g', 1, 38), 64, 127)
+        engine.render(480)
+        self.assertEqual(set(engine.voices), {('g', 2, 36), ('g', 1, 38)})
+
+    def test_local_chord_survives_mono_mode(self):
+        engine = MonitorEngine()
+        for note, pitch in [(36, 60), (38, 64), (40, 67)]:
+            engine.send('on', ('local', 1, note), pitch, 100)
+        engine.render(480)
+        self.assertEqual(len(engine.voices), 3)
+
+    def test_length_settings_validate_and_roundtrip(self):
+        settings = clean_settings({'version': 2, 'note_length_ms': 80, 'release_ms': 4,
+                                   'mono': False, 'exclusive': True})
+        self.assertEqual(clean_settings(settings), settings)
+        self.assertEqual(settings['note_length_ms'], 80)
+        self.assertEqual(clean_settings({'version': 2, 'note_length_ms': 'bad'})['note_length_ms'], 150)
 
 
 if __name__ == '__main__':
