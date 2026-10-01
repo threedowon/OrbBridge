@@ -1,89 +1,80 @@
-# SineSynth
+# OrbBridge Sound Monitor
 
-에이블톤 미설치 PC용 로컬 대체 프로그램이다. loopMIDI 입력을 수신해 포트와 채널을 그룹/멤버로 변환하고, 사인파 재생과 실시간 로그를 제공한다.
+Ableton 없이 loopMIDI 수신과 멜로디·합창 음정을 확인하는 로컬 모니터다.
+게임 서버, loopMIDI 포트, 채널 설정은 기존 그대로 사용한다.
 
-## 폴더 배치
+## 실행
 
-```text
-<프로젝트 루트>/
-  server/app_paths.py
-  audioengine/sinesynth.py
-  audioengine/sinesynth_settings.json  # 실행 후 저장되는 설정
-  data/portmapping.json
+이 폴더에서 최초 한 번 설치한다.
+
+```bat
+python -m pip install -r requirements.txt
 ```
 
-스크립트는 `server/app_paths.py`의 `data_dir()`를 우선 사용한다.
+`!run_sinesynth.bat` 또는 저장소 루트에서 다음 명령으로 실행한다.
 
-- 개발 모드: `<repo_root>/data/portmapping.json`
-- PyInstaller 빌드: `<exe 위치>/data/portmapping.json`
-- `app_paths.py`를 못 찾으면 상위 폴더의 `data/portmapping.json`을 탐색한다.
-
-커스텀 매핑 파일을 사용할 수도 있다.
-
-```bash
-python sinesynth.py C:\path\to\portmapping.json
+```bat
+python audioengine/sinesynth/sinesynth.py
 ```
 
-## 설치 및 실행
+사용자 매핑 파일은 첫 인수로 지정할 수 있다.
+기본 매핑은 상위 저장소의 `data/portmapping.json`을 찾는다.
 
-```bash
-pip install -r requirements.txt
-python audioengine/sinesynth.py
-```
+## 사용
 
-## 기능
+- 출력 장치: 최초 실행은 가능한 경우 Windows WASAPI 기본 출력을 우선 선택한다.
+  지원되지 않으면 다른 출력 장치를 선택한다. 실제 스트림 지연이 장치 아래 표시된다.
+  장치 새로고침은 목록만 갱신하며, 출력 다시 연결은 스트림을 다시 연다.
+- 음량: 기본 −18 dB, 범위 −48~0 dB. MIDI velocity 차이를 그대로 반영한다.
+- Sine: 순수 사인파. Soft: 약한 두 번째 배음을 더한 기준음.
+- 옥타브: 기본 C4~C5, 전체를 −2~+2옥타브 이동할 수 있다.
+- 8음 버튼 / 3화음 듣기: 450ms 로컬 테스트다. MIDI 메시지를 외부로 보내지 않는다.
+- MIDI 수신: 최근 300건을 표시한다. 포트 연결 탭에서 그룹별 연결 상태와 오류를 확인한다.
+- MIDI 포트 다시 연결: 기존 입력을 닫고 매핑 파일과 포트를 다시 읽는다.
+- 전체 음 끄기 / Esc: 현재 음을 짧게 감쇠시켜 끈다. 이후 MIDI 수신은 계속된다.
+- 창을 닫으면 음량·음소거·음색·옥타브가 같은 폴더 설정 파일에 저장된다.
 
-- 실행 시 `portmapping.json`과 실제 MIDI 입력 포트를 한 번 매칭해 개방
-- 고정 열 너비 로그 테이블
-  - 시간
-  - 포트 인덱스
-  - 포트명
-  - 채널
-  - 멤버명
-  - NOTE_ON / NOTE_OFF
-  - 원본 노트
-  - 마스터 피치 가산값
-  - 개별 피치 가산값
-  - 최종 피치
-  - 벨로시티
-- MIDI 36~43 수동 테스트 버튼
-  - 버튼 누름: NOTE_ON
-  - 버튼 뗌: NOTE_OFF
-- 마스터 피치: `-48~+48 st`
-- MIDI 36~43 개별 피치: 각 `-12~+12 st`
-- 음소거, 볼륨, 로그 지우기
-- 설정 저장 및 종료 시 자동 저장
+## 고친 소리 처리
 
-## 설정 파일
+MIDI 36~43은 실제 반음계 번호가 아니라 샘플 선택 키다.
 
-설정은 `sinesynth.py`와 같은 폴더의 `sinesynth_settings.json`에 저장된다.
+| MIDI 키 | 재생 음 |
+|---|---|
+| 36 | C4 |
+| 37 | D4 |
+| 38 | E4 |
+| 39 | F4 |
+| 40 | G4 |
+| 41 | A4 |
+| 42 | B4 |
+| 43 | C5 |
 
-```json
-{
-  "master_pitch": 0,
-  "note_offsets": {
-    "36": 0,
-    "37": 0,
-    "38": 0,
-    "39": 0,
-    "40": 0,
-    "41": 0,
-    "42": 0,
-    "43": 0
-  },
-  "volume": 0.4,
-  "muted": false
-}
-```
+여러 멤버의 합은 활성 envelope 합으로 정규화한다. 같은 음을 64명이 내도
+단일 음의 64배로 커지지 않는다. 멜로디/화음 인원 비중은 음량 비중에 반영된다.
+velocity는 정규화 분모에 포함하지 않아 작은 velocity가 자동 증폭되지 않는다.
+마지막 출력에는 여유를 두며 하드 클리핑으로 파형을 잘라내지 않는다.
 
-## 포트 재검색 제거
+8ms attack, 40ms release, 15ms 볼륨 평활화를 샘플 단위로 처리한다.
+기존 4초 강제 종료 대신 누락된 note-off에 대해서만 120초 watchdog을 둔다.
+note_on velocity 0과 CC120/123 채널 음 종료를 처리한다.
+36~43 이외 키는 로그에 표시하고 재생하지 않는다.
 
-기존 재검색은 현재 리스너를 중지하고 `mido.get_input_names()`를 다시 호출한 뒤 포트를 재개방했다. 입력 포트 스레드가 완전히 종료되기 전에 같은 포트를 다시 열면 충돌할 수 있어 제거했다. 포트 구성 변경 후에는 프로그램을 재실행한다.
+MIDI 입력 콜백은 오디오 명령 큐에 직접 전달한다. Tk의 50ms 화면 갱신을 기다리지 않는다.
+로그/명령/동시 음 수는 제한되어 있다. 명령 큐 초과는 전체 감쇠 종료로 복구하며,
+드문 과부하 시 메시지를 모두 보존한다고 보장하지 않는다. 출력 경고와 누락 로그 수를 표시한다.
+실시간 성능은 오디오 장치와 드라이버에 의존한다.
 
-## 참고
+## 이전 설정
 
-loopMIDI는 Windows 전용이므로 동일한 Windows 테스트 PC에서 실행해야 한다.
+이전 master_pitch / note_offsets는 반음계 보정용이므로 새 버전에서 적용하지 않는다.
+version 2가 없는 설정은 기본 −18 dB / C4~C5로 시작한다.
+정상 종료 시 이전 파일은 sinesynth_settings.legacy.json으로 한 번 백업하고 새 설정을 저장한다.
 
-- 피치 설정을 변경하면 기존 활성 보이스를 즉시 제거한다. 변경 후 새 NOTE_ON부터 새 피치가 적용된다.
-- 수동 테스트와 실제 MIDI 입력은 같은 `(그룹, 채널, 원본 노트)` 보이스 키를 사용하므로 같은 음이 이중 생성되지 않는다.
-- Windows에서는 SineSynth 중복 실행을 차단한다. 이전 프로세스와 새 프로세스가 동시에 같은 MIDI를 재생하는 상황을 막는다.
+실제 멤버 음색, Ableton 효과, 공간감은 재현하지 않는다. 멜로디·화음·velocity·MIDI 수신 확인용이다.
+Ableton과 동시에 같은 소리를 출력하면 중복으로 들리므로 한쪽을 음소거한다.
+
+## 검증
+
+이 폴더에서 `python -m unittest -v test_monitor`로 장치 없는 DSP/입력 테스트를 실행한다.
+8음 변환, velocity 비율, 64명 음량, 최대 음량 화음, envelope, 긴 음 유지,
+채널별 종료, mute, 큐 과부하, UI를 거치지 않는 MIDI 처리를 검증한다.
