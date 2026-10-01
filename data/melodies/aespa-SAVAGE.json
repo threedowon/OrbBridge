@@ -12,7 +12,7 @@
       "step": 1,
       "note": "D4",
       "duration": 1,
-      "velocity": 127,
+      "velocity": 111,
       "harmony": [
         "F4",
         "A4"
@@ -22,7 +22,7 @@
       "step": 2,
       "note": "F4",
       "duration": 1,
-      "velocity": 127,
+      "velocity": 116,
       "harmony": [
         "D4",
         "A4"
@@ -32,7 +32,7 @@
       "step": 3,
       "note": "G4",
       "duration": 2,
-      "velocity": 127,
+      "velocity": 122,
       "harmony": [
         "D4",
         "B4"
@@ -42,7 +42,7 @@
       "step": 4,
       "note": "D4",
       "duration": 1,
-      "velocity": 127,
+      "velocity": 106,
       "harmony": [
         "F4",
         "A4"
@@ -52,7 +52,7 @@
       "step": 5,
       "note": "F4",
       "duration": 1,
-      "velocity": 127,
+      "velocity": 112,
       "harmony": [
         "D4",
         "A4"
@@ -62,7 +62,7 @@
       "step": 6,
       "note": "G4",
       "duration": 1,
-      "velocity": 127,
+      "velocity": 119,
       "harmony": [
         "D4",
         "B4"
@@ -72,7 +72,7 @@
       "step": 7,
       "note": "D4",
       "duration": 1,
-      "velocity": 127,
+      "velocity": 107,
       "harmony": [
         "F4",
         "A4"
@@ -82,7 +82,7 @@
       "step": 8,
       "note": "D4",
       "duration": 2.5,
-      "velocity": 127,
+      "velocity": 115,
       "harmony": [
         "F4",
         "A4"
@@ -92,7 +92,7 @@
       "step": 9,
       "note": "A4",
       "duration": 1,
-      "velocity": 127,
+      "velocity": 123,
       "harmony": [
         "D4",
         "F4"
@@ -102,7 +102,7 @@
       "step": 10,
       "note": "G4",
       "duration": 0.5,
-      "velocity": 127,
+      "velocity": 105,
       "harmony": [
         "D4",
         "B4"
@@ -112,7 +112,7 @@
       "step": 11,
       "note": "F4",
       "duration": 0.5,
-      "velocity": 127,
+      "velocity": 96,
       "harmony": [
         "D4",
         "A4"
@@ -122,7 +122,7 @@
       "step": 12,
       "note": "E4",
       "duration": 2,
-      "velocity": 127,
+      "velocity": 106,
       "harmony": [
         "C4",
         "A4"

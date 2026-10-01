@@ -12,7 +12,7 @@
       "step": 1,
       "note": "C5",
       "duration": 1.5,
-      "velocity": 127,
+      "velocity": 116,
       "harmony": [
         "E4",
         "G4"
@@ -22,7 +22,7 @@
       "step": 2,
       "note": "C5",
       "duration": 0.5,
-      "velocity": 127,
+      "velocity": 97,
       "harmony": [
         "E4",
         "G4"
@@ -32,7 +32,7 @@
       "step": 3,
       "note": "B4",
       "duration": 1.5,
-      "velocity": 127,
+      "velocity": 112,
       "harmony": [
         "D4",
         "G4"
@@ -42,7 +42,7 @@
       "step": 4,
       "note": "B4",
       "duration": 0.5,
-      "velocity": 127,
+      "velocity": 94,
       "harmony": [
         "D4",
         "G4"
@@ -52,7 +52,7 @@
       "step": 5,
       "note": "A4",
       "duration": 1.5,
-      "velocity": 127,
+      "velocity": 109,
       "harmony": [
         "C4",
         "E4"
@@ -62,7 +62,7 @@
       "step": 6,
       "note": "A4",
       "duration": 0.5,
-      "velocity": 127,
+      "velocity": 91,
       "harmony": [
         "C4",
         "E4"
@@ -72,7 +72,7 @@
       "step": 7,
       "note": "G4",
       "duration": 1.5,
-      "velocity": 127,
+      "velocity": 105,
       "harmony": [
         "C4",
         "E4"
@@ -82,7 +82,7 @@
       "step": 8,
       "note": "G4",
       "duration": 0.5,
-      "velocity": 127,
+      "velocity": 87,
       "harmony": [
         "C4",
         "E4"
@@ -92,7 +92,7 @@
       "step": 9,
       "note": "F4",
       "duration": 1,
-      "velocity": 127,
+      "velocity": 98,
       "harmony": [
         "C4",
         "A4"

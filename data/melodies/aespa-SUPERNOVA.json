@@ -12,7 +12,7 @@
       "step": 1,
       "note": "E4",
       "duration": 0.5,
-      "velocity": 127,
+      "velocity": 104,
       "harmony": [
         "C4",
         "A4"
@@ -22,7 +22,7 @@
       "step": 2,
       "note": "E4",
       "duration": 0.75,
-      "velocity": 127,
+      "velocity": 116,
       "harmony": [
         "C4",
         "A4"
@@ -38,7 +38,7 @@
       "step": 4,
       "note": "F4",
       "duration": 0.5,
-      "velocity": 127,
+      "velocity": 107,
       "harmony": [
         "C4",
         "A4"
@@ -48,7 +48,7 @@
       "step": 5,
       "note": "F4",
       "duration": 0.75,
-      "velocity": 127,
+      "velocity": 121,
       "harmony": [
         "C4",
         "A4"
@@ -64,7 +64,7 @@
       "step": 7,
       "note": "D4",
       "duration": 0.5,
-      "velocity": 127,
+      "velocity": 102,
       "harmony": [
         "F4",
         "A4"
@@ -74,7 +74,7 @@
       "step": 8,
       "note": "D4",
       "duration": 0.75,
-      "velocity": 127,
+      "velocity": 114,
       "harmony": [
         "F4",
         "A4"
@@ -90,7 +90,7 @@
       "step": 10,
       "note": "E4",
       "duration": 0.5,
-      "velocity": 127,
+      "velocity": 108,
       "harmony": [
         "C4",
         "A4"
@@ -100,7 +100,7 @@
       "step": 11,
       "note": "E4",
       "duration": 0.75,
-      "velocity": 127,
+      "velocity": 120,
       "harmony": [
         "C4",
         "A4"
