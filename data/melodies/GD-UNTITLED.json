@@ -1,0 +1,126 @@
+{
+  "songId": "GD-UNTITLED",
+  "title": "Gd-Untitled",
+  "artist": "",
+  "bpm": 125,
+  "range": [
+    "C4",
+    "C5"
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "note": "E4",
+      "duration": 1.5,
+      "velocity": 127,
+      "harmony": [
+        "C4",
+        "G4"
+      ]
+    },
+    {
+      "step": 2,
+      "note": "F4",
+      "duration": 1,
+      "velocity": 127,
+      "harmony": [
+        "C4",
+        "A4"
+      ]
+    },
+    {
+      "step": 3,
+      "note": "G4",
+      "duration": 1.5,
+      "velocity": 127,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 4,
+      "note": "A4",
+      "duration": 2,
+      "velocity": 127,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 5,
+      "note": "A4",
+      "duration": 0.5,
+      "velocity": 127,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 6,
+      "note": "G4",
+      "duration": 0.5,
+      "velocity": 127,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 7,
+      "note": "F4",
+      "duration": 0.5,
+      "velocity": 127,
+      "harmony": [
+        "C4",
+        "A4"
+      ]
+    },
+    {
+      "step": 8,
+      "note": "G4",
+      "duration": 2,
+      "velocity": 127,
+      "harmony": [
+        "D4",
+        "B4"
+      ]
+    },
+    {
+      "step": 9,
+      "note": "REST",
+      "duration": 1,
+      "velocity": 127
+    },
+    {
+      "step": 10,
+      "note": "REST",
+      "duration": 1,
+      "velocity": 127
+    },
+    {
+      "step": 11,
+      "note": "REST",
+      "duration": 1,
+      "velocity": 127
+    },
+    {
+      "step": 12,
+      "note": "REST",
+      "duration": 1,
+      "velocity": 127
+    }
+  ],
+  "game_rules": {
+    "dfesta_presses_required": 1
+  },
+  "dfesta": {
+    "weights": {
+      "melody": 70,
+      "harmony_a": 15,
+      "harmony_b": 15
+    }
+  }
+}

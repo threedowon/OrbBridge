@@ -1,0 +1,130 @@
+{
+  "songId": "aespa-NEXT_LEVEL",
+  "title": "Aespa-Next Level",
+  "artist": "",
+  "bpm": 120,
+  "range": [
+    "C4",
+    "C5"
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "note": "A4",
+      "duration": 1,
+      "velocity": 127,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 2,
+      "note": "A4",
+      "duration": 1,
+      "velocity": 127,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 3,
+      "note": "C5",
+      "duration": 0.5,
+      "velocity": 127,
+      "harmony": [
+        "E4",
+        "A4"
+      ]
+    },
+    {
+      "step": 4,
+      "note": "B4",
+      "duration": 0.5,
+      "velocity": 127,
+      "harmony": [
+        "E4",
+        "G4"
+      ]
+    },
+    {
+      "step": 5,
+      "note": "A4",
+      "duration": 0.5,
+      "velocity": 127,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 6,
+      "note": "A4",
+      "duration": 1,
+      "velocity": 127,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 7,
+      "note": "B4",
+      "duration": 0.5,
+      "velocity": 127,
+      "harmony": [
+        "E4",
+        "G4"
+      ]
+    },
+    {
+      "step": 8,
+      "note": "G4",
+      "duration": 0.5,
+      "velocity": 127,
+      "harmony": [
+        "E4",
+        "B4"
+      ]
+    },
+    {
+      "step": 9,
+      "note": "G4",
+      "duration": 1,
+      "velocity": 127,
+      "harmony": [
+        "E4",
+        "B4"
+      ]
+    },
+    {
+      "step": 10,
+      "note": "REST",
+      "duration": 1,
+      "velocity": 127
+    },
+    {
+      "step": 11,
+      "note": "REST",
+      "duration": 1,
+      "velocity": 127
+    },
+    {
+      "step": 12,
+      "note": "REST",
+      "duration": 1,
+      "velocity": 127
+    }
+  ],
+  "game_rules": {
+    "dfesta_presses_required": 1
+  },
+  "dfesta": {
+    "weights": {
+      "melody": 70,
+      "harmony_a": 15,
+      "harmony_b": 15
+    }
+  }
+}
