@@ -1,0 +1,87 @@
+{
+  "songId": "test_1",
+  "title": "Test 1",
+  "artist": "",
+  "bpm": 120,
+  "range": [
+    "C4",
+    "C5"
+  ],
+  "game_rules": {
+    "dfesta_presses_required": 1
+  },
+  "steps": [
+    {
+      "step": 1,
+      "note": "C4",
+      "duration": 1.0,
+      "velocity": 5
+    },
+    {
+      "step": 2,
+      "note": "D4",
+      "duration": 1.0,
+      "velocity": 33
+    },
+    {
+      "step": 3,
+      "note": "E4",
+      "duration": 1.0,
+      "velocity": 70
+    },
+    {
+      "step": 4,
+      "note": "F4",
+      "duration": 1.0,
+      "velocity": 110
+    },
+    {
+      "step": 5,
+      "note": "G4",
+      "duration": 1.0,
+      "velocity": 127
+    },
+    {
+      "step": 6,
+      "note": "A4",
+      "duration": 1.0,
+      "velocity": 127
+    },
+    {
+      "step": 7,
+      "note": "B4",
+      "duration": 1.0,
+      "velocity": 127
+    },
+    {
+      "step": 8,
+      "note": "C5",
+      "duration": 1.0,
+      "velocity": 127
+    },
+    {
+      "step": 9,
+      "note": "C4",
+      "duration": 1.0,
+      "velocity": 7
+    },
+    {
+      "step": 10,
+      "note": "D4",
+      "duration": 1.0,
+      "velocity": 60
+    },
+    {
+      "step": 11,
+      "note": "E4",
+      "duration": 1.0,
+      "velocity": 81
+    },
+    {
+      "step": 12,
+      "note": "F4",
+      "duration": 1.0,
+      "velocity": 127
+    }
+  ]
+}

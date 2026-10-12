@@ -1,8 +1,8 @@
 {
   "current_stage": 1,
   "game_rules": {
-    "time_over_s": 120,
-    "idle_s": 30
+    "time_over_s": 99999.0,
+    "idle_s": 99999.0
   },
   "melody": "dynamite",
   "melody_rotation": {
@@ -13,13 +13,13 @@
       "biplane"
     ]
   },
-  "input_mode": "serial",
+  "input_mode": "table",
   "web": {
     "host": "127.0.0.1",
     "port": 8080
   },
   "serial": {
-    "port": "COM38",
+    "port": "COM21",
     "baudrate": 115200
   },
   "matrix_display": {

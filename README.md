@@ -136,6 +136,12 @@ READY → RUNNING → RESETTING → READY
 - `data/portmapping.json`: voice 그룹 → MIDI 포트·채널
 - `data/voice_catalog.json`: 화면 표시색·멤버 이름
 
+DFesta는 곡의 `steps[].harmony`에 지정한 두 화음 성부와 멜로디를 함께
+재생한다. 기본 인원 비중은 멜로디/화음 A/화음 B = 70/15/15이며, 멤버의
+성부는 재생마다 무작위로 배정한다. 허용 음은 기존 C4~C5의 8개이고
+loopMIDI/Ableton 설정은 그대로 사용한다. 화음이 없는 기존 JSON은 유니즌으로
+재생한다. [합창 데이터·편곡·박자 검토](docs/dfesta-choir.md).
+
 서버는 게임 시작 직전에 설정과 다음 멜로디를 다시 읽고 `/game/melody`를
 `RUNNING` 상태보다 먼저 전송한다. `sequence`는 성공한 start에만 순번을
 진행하며 마지막 곡 뒤에는 첫 곡으로 돌아간다.
@@ -153,6 +159,10 @@ python -m tools.melody_register --list
 Orb Register는 `data/orb_mapping.json`을 관리한다. Melody Register는
 `data/melodies/*.json`의 BPM, 음표, duration, 가사, 게임 규칙과 게임별 재생
 순서를 함께 관리한다. Windows 실행 파일은 `tools\*.bat`에 있다.
+Melody Register는 12 step 피아노롤에서 클릭·드래그로 음정과 길이를 편집한다.
+Triplet, Snap to grid, velocity 막대와 기준음 미리듣기를 지원하며, step의
+velocity는 DFesta의 멜로디·화음 멤버 모두에 동일하게 적용된다.
+[피아노롤 사용법과 JSON 형식](docs/melody-piano-roll.md).
 
 ## 하드웨어 진단과 MIDI 준비
 
@@ -165,6 +175,10 @@ py -m tools.midi_debug --list
 loopMIDI 포트 복구 파일은
 `audioengine/loopmidi_portsetup.reg`이다. MIDI 단음·8음 순회·전체 voice 동시
 테스트는 `/admin/software`의 MIDI 진단에서도 실행할 수 있다.
+Play/DFesta의 지연 수치는 같은 패널에서 확인하고 **타이밍 기록 저장**으로
+마지막 재생의 JSON을 받을 수 있다. [MIDI 타이밍 조사·재검증](docs/midi-timing.md).
+장치 목록과 멤버 채널은 연결 시 읽는다. loopMIDI 장치나 voice 라벨을 변경한
+뒤에는 재생을 멈추고 **포트 재연결**을 누른다.
 
 ## 웹 동기화
 

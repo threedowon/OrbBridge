@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import re
 import time
@@ -10,6 +11,7 @@ from typing import Any, Callable
 
 from server.app_paths import melodies_dir
 from server.data_store import load_config, save_config
+from server.game.scheduler import parse_melody
 from server.game.melody_manager import (
     MODE_FIXED,
     MODE_SEQUENCE,
@@ -119,10 +121,13 @@ def normalize_melody(raw: dict[str, Any], file_id: str = "") -> dict[str, Any]:
             "step": int(step.get("step", i + 1)),
             "note": note,
             "duration": dur_f,
+            "velocity": step.get("velocity", 127),
         }
         lyric = str(step.get("lyric", "")).strip()
         if lyric:
             entry["lyric"] = lyric
+        if "harmony" in step:
+            entry["harmony"] = deepcopy(step["harmony"])
         steps.append(entry)
 
     for i, step in enumerate(steps):
@@ -142,6 +147,8 @@ def normalize_melody(raw: dict[str, Any], file_id: str = "") -> dict[str, Any]:
         "steps": steps,
         "_file_id": file_id or str(raw.get("songId") or "custom"),
     }
+    if "dfesta" in raw:
+        normalized["dfesta"] = deepcopy(raw["dfesta"])
     return normalized
 
 
@@ -158,6 +165,7 @@ def validate_melody(data: dict[str, Any]) -> list[str]:
 
     try:
         game_rules_from_melody(data)
+        parse_melody(data)
     except ValueError as exc:
         errors.append(str(exc))
 
@@ -211,13 +219,16 @@ def to_save_payload(data: dict[str, Any]) -> dict[str, Any]:
             "step": i,
             "note": step.get("note", "?"),
             "duration": float(step.get("duration") or 1),
+            "velocity": step.get("velocity", 127),
         }
         lyric = str(step.get("lyric", "")).strip()
         if lyric:
             entry["lyric"] = lyric
+        if "harmony" in step:
+            entry["harmony"] = deepcopy(step["harmony"])
         steps_out.append(entry)
 
-    return {
+    payload = {
         "songId": data["songId"].strip(),
         "title": data.get("title", "").strip() or data["songId"].strip(),
         "artist": data.get("artist", "").strip(),
@@ -226,6 +237,9 @@ def to_save_payload(data: dict[str, Any]) -> dict[str, Any]:
         "game_rules": game_rules_from_melody(data),
         "steps": steps_out,
     }
+    if "dfesta" in data:
+        payload["dfesta"] = deepcopy(data["dfesta"])
+    return payload
 
 
 def save_melody(
@@ -261,7 +275,10 @@ def new_melody_template(file_id: str) -> dict[str, Any]:
             "artist": "",
             "bpm": 120,
             "range": DEFAULT_RANGE,
-            "steps": [{"step": 1, "note": "C4", "duration": 1}],
+            "steps": [
+                {"step": i + 1, "note": NOTE_REST, "duration": 1, "velocity": 127}
+                for i in range(BEAT_COLS)
+            ],
         },
         file_id,
     )

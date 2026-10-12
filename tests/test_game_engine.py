@@ -487,3 +487,43 @@ def test_backwards_clock_is_rejected():
     with pytest.raises(RuntimeError, match="backwards"):
         engine.snapshot()
 
+
+
+
+@pytest.mark.parametrize("time_limit,idle_limit,reason", [(3, 20, EndReason.TIME_OVER), (20, 3, EndReason.IDLE)])
+def test_initial_listen_grace_holds_both_timers_even_with_activity(time_limit, idle_limit, reason):
+    clock = FakeClock()
+    engine = GameEngine({"1": "C"}, time_over_s=time_limit, idle_s=idle_limit,
+                        initial_timer_delay_s=8, clock=clock)
+    engine.start()
+    clock.advance(6)
+    engine.add_orb(orb_id="orb", slave=1, cell=2)
+    engine.record_activity()
+    assert engine.tick() is GameState.RUNNING
+    timers = engine.snapshot()["timers"]
+    assert timers["remaining_time_over_s"] == time_limit
+    assert timers["remaining_idle_s"] == idle_limit
+    clock.advance(2)
+    assert engine.snapshot()["timers"]["remaining_idle_s"] == idle_limit
+    clock.advance(2.9)
+    assert engine.tick() is GameState.RUNNING
+    clock.advance(0.1)
+    assert engine.tick() is GameState.RESETTING
+    assert engine.end_reason is reason
+
+
+def test_activity_after_intro_resets_idle_only_and_manual_reset_does_not_wait():
+    clock = FakeClock()
+    engine = GameEngine({"1": "C"}, time_over_s=20, idle_s=3, initial_timer_delay_s=8, clock=clock)
+    engine.start()
+    clock.advance(10)
+    engine.record_activity()
+    timers = engine.snapshot()["timers"]
+    assert timers["remaining_time_over_s"] == 18
+    assert timers["remaining_idle_s"] == 3
+    engine.reset()
+    engine.tick()
+    engine.start()
+    assert engine.snapshot()["timers"]["remaining_time_over_s"] == 20
+    engine.reset()
+    assert engine.state is GameState.RESETTING

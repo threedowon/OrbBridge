@@ -126,15 +126,25 @@
 
     html[data-mode="software"] .side-panel {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(360px, 0.8fr);
-      grid-template-rows: auto auto minmax(180px, 1fr);
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-rows: auto auto auto minmax(180px, 1fr);
       align-content: start;
     }
 
     html[data-mode="software"] .system-section { grid-column: 1; grid-row: 1; }
     html[data-mode="software"] .game-section { grid-column: 1; grid-row: 2; }
-    html[data-mode="software"] .midi-section { grid-column: 2; grid-row: 1 / span 2; }
-    html[data-mode="software"] .log-section { grid-column: 1 / -1; grid-row: 3; }
+    html[data-mode="software"] .settings-section { grid-column: 1; grid-row: 3; }
+    html[data-mode="software"] .midi-section { grid-column: 2; grid-row: 1 / span 3; }
+    html[data-mode="software"] .log-section { grid-column: 1 / -1; grid-row: 4; }
+    html[data-mode="software"] .side-panel > div:not(.hardware-only) {
+      min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 10px;
+    }
+    html[data-mode="software"] .side-panel .section-title { font-size: 12px; }
+    html[data-mode="software"] .side-panel p { font-size: 12px; line-height: 1.6; color: var(--muted); }
+    html[data-mode="software"] .side-panel select { width: 100%; min-width: 0; }
+    .debug-tools { padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+    .debug-tools label { display: block; margin-bottom: 10px; font-size: 12px; }
+    .debug-tools select { margin: 8px 0; }
     html[data-mode="software"] .stats-grid {
       grid-template-columns: repeat(4, minmax(0, 1fr));
     }
@@ -529,6 +539,7 @@
       }
       html[data-mode="software"] .system-section,
       html[data-mode="software"] .game-section,
+      html[data-mode="software"] .settings-section,
       html[data-mode="software"] .midi-section,
       html[data-mode="software"] .log-section {
         grid-column: 1;
@@ -555,6 +566,19 @@
     }
   </style>
   <link rel="stylesheet" href="/admin/operator.css">
+  <style>
+    .monitor-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; order: -2; }
+    .monitor-tabs button { padding: 8px 4px; background: transparent; border-color: transparent; color: var(--muted); }
+    .monitor-tabs button[aria-selected="true"] { background: var(--surface2); color: var(--ink); border-color: var(--border); }
+    html[data-mode="software"] .side-panel > .monitor-tabs { padding: 6px; }
+    html[data-mode="software"] .side-panel[data-view="midi"] > :is(.system-section, .settings-section, .log-section),
+    html[data-mode="software"] .side-panel[data-view="system"] > :is(.midi-section, .settings-section, .log-section),
+    html[data-mode="software"] .side-panel[data-view="settings"] > :is(.system-section, .midi-section, .log-section),
+    html[data-mode="software"] .side-panel[data-view="log"] > :is(.system-section, .midi-section, .settings-section) { display: none; }
+    html[data-mode="software"] .software-monitor .side-panel { display: flex !important; }
+    html[data-mode="software"] .stat-box .num { font-size: 19px; overflow-wrap: anywhere; }
+    html[data-mode="software"] .midi-summary { overflow-wrap: anywhere; }
+  </style>
 </head>
 <body>
   <header>
@@ -616,7 +640,13 @@
       </div>
     </section>
 
-    <section class="panel side-panel">
+    <section class="panel side-panel" data-view="midi">
+      <div class="monitor-tabs software-only" role="tablist" aria-label="관리 패널">
+        <button type="button" role="tab" data-view="system" aria-selected="false">게임 상태</button>
+        <button type="button" role="tab" data-view="midi" aria-selected="true">MIDI 진단</button>
+        <button type="button" role="tab" data-view="settings" aria-selected="false">시간 설정</button>
+        <button type="button" role="tab" data-view="log" aria-selected="false">로그</button>
+      </div>
       <div class="system-section">
         <div class="section-title">시스템</div>
         <div class="stats-grid">
@@ -653,10 +683,8 @@
         </div>
       </div>
 
-      <div class="game-section software-only">
-        <div class="section-title">디버그 · 시간 설정</div>
-        <label><input type="checkbox" id="debug-mode"> Debug mode — 오브가 남아 있어도 게임 시작</label>
-        <p>디버그 모드는 즉시 적용되며 서버 재시작 시 꺼집니다.</p>
+      <div class="settings-section software-only">
+        <div class="section-title">시간 설정</div>
         <form id="timer-settings" class="midi-fields">
           <label>게임 제한 시간(초)<input id="game-time" type="number" min="0.001" step="any" required></label>
           <label>Idle 시간(초)<input id="idle-time" type="number" min="0.001" step="any" required></label>
@@ -669,6 +697,18 @@
 
       <div class="midi-section software-only">
         <div class="section-title">MIDI 진단</div>
+        <div class="debug-tools">
+          <label><input type="checkbox" id="debug-mode"> 디버그 모드 · DFesta 완료 99회</label>
+          <p>오브를 유지한 채 게임을 시작할 수 있습니다. 끄면 곡의 원래 완료 횟수로 돌아갑니다.</p>
+          <label for="debug-melody">테스트할 멜로디</label>
+          <select id="debug-melody" disabled aria-label="테스트할 멜로디"></select>
+          <div class="toolbar">
+            <button id="btn-debug-melody" class="primary" disabled>선택한 곡으로 다시 시작</button>
+            <button id="btn-melody-refresh">목록 새로고침</button>
+          </div>
+          <p>현재 게임과 버튼 누적 횟수가 초기화됩니다. JSON과 일반 순회 순서는 바뀌지 않습니다. 디버그 모드는 서버 재시작 시 꺼집니다.</p>
+          <p id="debug-message" role="status" aria-live="polite"></p>
+        </div>
         <div class="midi-card">
           <div class="midi-summary" id="midi-summary">상태 확인 중</div>
           <div class="midi-fields">
@@ -692,6 +732,8 @@
             <button id="btn-midi-reconnect">포트 재연결</button>
           </div>
           <div class="midi-job" id="midi-job">대기</div>
+          <div class="midi-job" id="playback-timing">재생 타이밍: 기록 없음</div>
+          <button id="btn-timing-save" disabled>타이밍 기록 저장</button>
         </div>
       </div>
 
@@ -721,6 +763,7 @@
     let currentGameState = 'READY';
     let currentCellCount = 0;
     let adminActionRunning = false;
+    let debugActionRunning = false;
     let debugMode = false;
 
     const gridEl = document.getElementById('grid');
@@ -924,6 +967,8 @@
     function renderStatus(s) {
       debugMode = Boolean(s.debug_mode);
       document.getElementById('debug-mode').checked = debugMode;
+      document.getElementById('debug-melody').disabled = debugActionRunning || !debugMode;
+      document.getElementById('btn-debug-melody').disabled = debugActionRunning || adminActionRunning || !debugMode || !document.getElementById('debug-melody').value;
       if (!s) return;
       const serialOk = s.serial?.connected;
       const tableMode = s.input_mode === 'table';
@@ -956,6 +1001,16 @@
         button.disabled = adminActionRunning || currentGameState !== 'RUNNING';
       });
       renderSlaves(s.slaves);
+      const timing = s.playback?.timing;
+      const samples = timing?.samples || [];
+      const sentCount = samples.reduce((total, sample) => total + (sample.sent_count || 0), 0);
+      const errorCount = samples.reduce((total, sample) => total + (sample.error_count || 0), 0);
+      document.getElementById('playback-timing').textContent = samples.length
+        ? `재생 #${timing.run_id} · 전송 ${sentCount}음 · 오류 ${errorCount} · ` +
+          `최대 시작 지연 ${Number(timing.max_note_on_late_ms || 0).toFixed(2)}ms · ` +
+          `최대 묶음 처리 ${Number(timing.max_send_ms || 0).toFixed(2)}ms`
+        : '재생 타이밍: 기록 없음';
+      document.getElementById('btn-timing-save').disabled = !samples.length;
       updateGameButtons();
     }
 
@@ -972,6 +1027,7 @@
       const job = payload?.job || {};
       const ready = Boolean(midi.ready);
       setDot('dot-midi', ready ? 'ok' : 'err');
+      document.getElementById('lbl-midi').title = '장치 목록은 연결 시 확인합니다. 장치나 멤버 라벨 변경 후 포트 재연결을 누르세요.';
       document.getElementById('lbl-midi').textContent = ready
         ? `MIDI ${midi.opened_ports?.length || 0} ports`
         : 'MIDI 연결 안 됨';
@@ -1148,9 +1204,22 @@
       };
     }
 
+    document.querySelectorAll('.monitor-tabs button').forEach(button => {
+      button.addEventListener('click', () => {
+        document.querySelector('.side-panel').dataset.view = button.dataset.view;
+        document.querySelectorAll('.monitor-tabs button').forEach(tab => tab.setAttribute('aria-selected', String(tab === button)));
+      });
+    });
+
     function renderSoftwareSettings(settings, fillInputs = false) {
       debugMode = settings.debug_mode;
       document.getElementById('debug-mode').checked = debugMode;
+      const melodySelect = document.getElementById('debug-melody');
+      const chosen = melodySelect.value || settings.current_melody;
+      melodySelect.replaceChildren(...(settings.available_melodies || []).map(id => new Option(id, id)));
+      if ([...melodySelect.options].some(option => option.value === chosen)) melodySelect.value = chosen;
+      melodySelect.disabled = !debugMode;
+      document.getElementById('btn-debug-melody').disabled = !debugMode || !melodySelect.value;
       if (fillInputs) {
         document.getElementById('game-time').value = settings.saved_timers.time_over_s;
         document.getElementById('idle-time').value = settings.saved_timers.idle_s;
@@ -1177,11 +1246,33 @@
       try {
         const settings = await postGame('/api/admin/software/settings', {debug_mode: checkbox.checked});
         renderSoftwareSettings(settings);
-        document.getElementById('settings-message').textContent = settings.debug_mode ? '디버그 모드 켜짐' : '디버그 모드 꺼짐';
+        document.getElementById('debug-message').textContent = settings.debug_mode ? '디버그 모드 켜짐 · DFesta 완료 횟수 99회 적용' : '디버그 모드 꺼짐 · 곡의 기본 완료 횟수 복원';
       } catch (error) {
         checkbox.checked = debugMode;
-        document.getElementById('settings-message').textContent = error.message;
+        document.getElementById('debug-message').textContent = error.message;
       } finally { checkbox.disabled = false; }
+    });
+
+    document.getElementById('btn-melody-refresh').addEventListener('click', () => loadSoftwareSettings());
+    document.getElementById('btn-debug-melody').addEventListener('click', async event => {
+      const button = event.currentTarget;
+      debugActionRunning = true;
+      button.disabled = true;
+      document.getElementById('debug-mode').disabled = true;
+      try {
+        const settings = await postGame('/api/admin/software/settings', {
+          debug_melody: document.getElementById('debug-melody').value,
+        });
+        renderSoftwareSettings(settings);
+        document.getElementById('debug-message').textContent = `${settings.current_melody} 시작 · DFesta 완료 99회`;
+        await fetchStatus();
+      } catch (error) {
+        document.getElementById('debug-message').textContent = error.message;
+      } finally {
+        debugActionRunning = false;
+        button.disabled = !debugMode;
+        document.getElementById('debug-mode').disabled = false;
+      }
     });
 
     document.getElementById('timer-settings').addEventListener('submit', async event => {
@@ -1306,6 +1397,29 @@
       try {
         renderMidiStatus(await postMidi('/api/admin/midi/reconnect'));
         addLog('midi', '포트 재연결 완료', 'log-info');
+      } catch (error) {
+        addLog('midi', error.message, 'log-warn');
+      }
+    });
+
+    document.getElementById('btn-timing-save').addEventListener('click', async () => {
+      try {
+        const response = await fetch('/api/status');
+        if (!response.ok) throw new Error('타이밍 조회 실패');
+        const status = await response.json();
+        if (!status.playback?.timing?.samples?.length) throw new Error('저장할 재생 기록이 없습니다.');
+        const report = {
+          captured_at: new Date().toISOString(), melody: status.melody,
+          input_mode: status.input_mode, playback: status.playback,
+        };
+        const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `orbbridge-timing-${status.playback.run_id}.json`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
       } catch (error) {
         addLog('midi', error.message, 'log-warn');
       }

@@ -25,7 +25,12 @@ _ports: dict[str, object] = {}
 _port_locks: dict[str, threading.Lock] = {}
 _map: dict = {}
 _ready = False
+_init_attempted = False
 _init_error: str | None = None
+_available_ports: list[str] = []
+_catalog_voices: dict = {}
+_route_cache: dict[str, tuple[str, int] | None] = {}
+_port_executor: ThreadPoolExecutor | None = None
 
 # note_off는 음표마다 Timer를 만들지 않고 작업 스레드 하나가 처리한다.
 _note_condition = threading.Condition()
@@ -58,11 +63,28 @@ def _load_portmapping(path: Path | None = None) -> dict:
 
 
 def output_names() -> list[str]:
-    """운영 상태와 진단 UI에서 사용할 MIDI 출력 장치 목록을 반환한다."""
+    """명시적인 장치 검색. 상태 polling에서는 호출하지 않는다."""
 
     import mido
 
-    return list(mido.get_output_names())
+    with _init_lock:
+        return list(mido.get_output_names())
+
+
+def _start_port_workers() -> None:
+    """여러 포트의 전송 worker를 첫 beat 전에 모두 생성한다."""
+
+    global _port_executor
+    if len(_ports) < 2 or _port_executor is not None:
+        return
+    _port_executor = ThreadPoolExecutor(
+        max_workers=len(_ports), thread_name_prefix="orbbridge-midi-port",
+    )
+    ready = threading.Barrier(len(_ports) + 1, timeout=5)
+    futures = [_port_executor.submit(ready.wait) for _ in _ports]
+    ready.wait()
+    for future in futures:
+        future.result()
 
 
 def _matching_output_name(configured_name: str, available: list[str]) -> str:
@@ -95,10 +117,11 @@ def _start_note_worker() -> None:
 def ensure_init(path: Path | None = None) -> tuple[bool, str]:
     """portmapping의 loopMIDI 포트를 열며 중복 호출도 안전하게 처리한다."""
 
-    global _ready, _init_error, _map
+    global _ready, _init_attempted, _init_error, _map, _available_ports, _catalog_voices
     with _init_lock:
-        if _ready:
-            return True, _init_error or ""
+        if _init_attempted:
+            return _ready, _init_error or ""
+        _init_attempted = True
         try:
             import mido
         except ImportError:
@@ -107,6 +130,14 @@ def ensure_init(path: Path | None = None) -> tuple[bool, str]:
 
         try:
             _map = _load_portmapping(path)
+            # MIDI channel에 쓰는 label은 연결 시 고정한다. 파일 I/O는 beat 밖에서.
+            from server.voice_catalog import load_voice_catalog
+
+            try:
+                _catalog_voices = load_voice_catalog().get("voices", {})
+            except (OSError, ValueError, TypeError):
+                _catalog_voices = {}
+            _route_cache.clear()
             needed = sorted(
                 {
                     str(entry["port"])
@@ -115,6 +146,7 @@ def ensure_init(path: Path | None = None) -> tuple[bool, str]:
                 }
             )
             available = output_names()
+            _available_ports = available
             missing: list[str] = []
             for configured_name in needed:
                 try:
@@ -132,7 +164,6 @@ def ensure_init(path: Path | None = None) -> tuple[bool, str]:
                 )
                 return False, _init_error
 
-            _ready = True
             _init_error = (
                 f"Some ports missing: {missing} (available={available})"
                 if missing
@@ -141,8 +172,12 @@ def ensure_init(path: Path | None = None) -> tuple[bool, str]:
             if _init_error:
                 print(f"[midi] WARN: {_init_error}")
             _start_note_worker()
+            _start_port_workers()
+            _ready = True
             return True, _init_error or ""
         except Exception as exc:
+            shutdown()
+            _init_attempted = True
             _init_error = str(exc)
             print(f"[midi] init failed: {exc}")
             return False, _init_error
@@ -150,13 +185,6 @@ def ensure_init(path: Path | None = None) -> tuple[bool, str]:
 
 def runtime_status() -> dict:
     """Admin이 표시할 포트 초기화 상태를 부작용 없이 반환한다."""
-
-    try:
-        available = output_names()
-        output_error = ""
-    except Exception as exc:
-        available = []
-        output_error = str(exc)
 
     with _init_lock:
         required = sorted(
@@ -168,9 +196,10 @@ def runtime_status() -> dict:
         )
         return {
             "ready": _ready,
-            "error": _init_error or output_error,
+            "error": _init_error or "",
             "required_ports": required,
-            "available_ports": available,
+            # 마지막 연결/재연결 때의 목록. 매초 WinMM 장치를 다시 열거하지 않는다.
+            "available_ports": list(_available_ports),
             "opened_ports": sorted(_ports),
         }
 
@@ -178,8 +207,9 @@ def runtime_status() -> dict:
 def reinitialize() -> tuple[bool, str]:
     """Admin 재연결 요청에서 모든 포트를 닫고 다시 연다."""
 
-    shutdown()
-    return ensure_init()
+    with _init_lock:
+        shutdown()
+        return ensure_init()
 
 
 def _stop_note_worker() -> None:
@@ -197,9 +227,13 @@ def _stop_note_worker() -> None:
 def shutdown() -> None:
     """예약 음표를 끄고 MIDI 포트를 닫는다."""
 
-    global _ready, _init_error, _map
+    global _ready, _init_attempted, _init_error, _map, _port_executor, _catalog_voices
     with _init_lock:
         _ready = False
+        _init_attempted = False
+        if _port_executor is not None:
+            _port_executor.shutdown(wait=True)
+            _port_executor = None
         _stop_note_worker()
         with _note_condition:
             active_keys = list(_active_notes)
@@ -235,6 +269,9 @@ def shutdown() -> None:
         _ports.clear()
         _port_locks.clear()
         _map = {}
+        _catalog_voices = {}
+        _route_cache.clear()
+        _available_ports.clear()
         _init_error = None
 
 
@@ -249,10 +286,17 @@ def resolve_route(voice: str) -> tuple[str, int] | None:
     """voice 키를 설정된 포트 이름과 0 기준 채널로 변환한다."""
 
     voice = str(voice or "").strip()
+    with _init_lock:
+        if not _map:
+            ensure_init()
+        if voice not in _route_cache:
+            _route_cache[voice] = _resolve_route(voice)
+        return _route_cache[voice]
+
+
+def _resolve_route(voice: str) -> tuple[str, int] | None:
     if not voice:
         return None
-    if not _map:
-        ensure_init()
 
     entry = _map.get(voice)
     if isinstance(entry, dict) and entry.get("port") and "members" not in entry:
@@ -274,10 +318,10 @@ def resolve_route(voice: str) -> tuple[str, int] | None:
 
     # voice_catalog의 실제 이름이 portmapping의 멤버 키와 같으면 그 채널을 우선한다.
     try:
-        from server.voice_catalog import load_voice_catalog, normalize_profile
+        from server.voice_catalog import normalize_profile
 
         profile = normalize_profile(
-            load_voice_catalog().get("voices", {}).get(voice) or {}
+            _catalog_voices.get(voice) or {}
         )
         labels = profile.get("labels") or {}
         for label in (labels.get("kr"), labels.get("en")):
@@ -320,7 +364,7 @@ def _activate_note(
         _active_notes[key] = generation
         heapq.heappush(
             _off_heap,
-            (time.monotonic() + duration_ms / 1000.0, generation, key),
+            (time.perf_counter() + duration_ms / 1000.0, generation, key),
         )
         _note_condition.notify()
         return generation, was_active
@@ -338,7 +382,7 @@ def _note_off_worker() -> None:
                     _note_condition.wait()
                     continue
                 deadline, generation, key = _off_heap[0]
-                remaining = deadline - time.monotonic()
+                remaining = deadline - time.perf_counter()
                 if remaining > 0:
                     _note_condition.wait(remaining)
                     continue
@@ -389,14 +433,13 @@ def _send_port_group(group: list[_PreparedNote]) -> None:
                             channel=item.channel,
                         )
                     )
-                item.port.send(
-                    mido.Message(
-                        "note_on",
-                        note=item.note,
-                        velocity=item.velocity,
-                        channel=item.channel,
-                    )
+                message = mido.Message(
+                    "note_on", note=item.note, velocity=item.velocity,
+                    channel=item.channel,
                 )
+                item.meta["note_on_started_s"] = time.perf_counter()
+                item.port.send(message)
+                item.meta["note_on_completed_s"] = time.perf_counter()
             except Exception as exc:
                 _invalidate_generation(key, generation)
                 item.meta["ok"] = False
@@ -430,6 +473,12 @@ def trigger_many(notes: list[dict]) -> list[dict]:
 
     if not notes:
         return []
+    # 재연결/종료가 전송 중인 포트나 worker를 없애지 못하게 한다.
+    with _init_lock:
+        return _trigger_many(notes)
+
+
+def _trigger_many(notes: list[dict]) -> list[dict]:
     ok, error = ensure_init()
     if not ok and not _ports:
         return [{"ok": False, "error": error or "midi not ready"} for _ in notes]
@@ -499,11 +548,10 @@ def trigger_many(notes: list[dict]) -> list[dict]:
     if len(groups) == 1:
         _send_port_group(next(iter(groups.values())))
     elif groups:
-        with ThreadPoolExecutor(
-            max_workers=len(groups),
-            thread_name_prefix="orbbridge-midi-port",
-        ) as executor:
-            futures = [executor.submit(_send_port_group, group) for group in groups.values()]
-            for future in futures:
-                future.result()
+        futures = [
+            _port_executor.submit(_send_port_group, group)
+            for group in groups.values()
+        ]
+        for future in futures:
+            future.result()
     return results

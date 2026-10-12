@@ -1,5 +1,6 @@
 import pytest
 import importlib
+from copy import deepcopy
 import re
 from pathlib import Path
 import sys
@@ -78,6 +79,51 @@ def _load_main_module():
     module._playback_scheduler = FakeScheduler()
     module._websocket_service = FakeWebSocketService()
     return module
+
+
+@pytest.mark.parametrize("melody_id", ["dynamite", "Iam", "biplane"])
+def test_completed_game_starts_harmony_plan_and_keeps_final_dfesta(monkeypatch, melody_id):
+    from server.game.scheduler import build_plan
+
+    main = _load_main_module()
+    config = deepcopy(main.config)
+    config["melody"] = melody_id
+    config["melody_rotation"] = {"mode": "fixed", "playlist": [melody_id]}
+    monkeypatch.setattr(main, "load_config", lambda: deepcopy(config))
+    monkeypatch.setattr(main, "load_mapping", lambda: {
+        f"ORB-{i}": {"voice": f"voice_{i}"} for i in range(12)
+    })
+    plans = []
+    scheduler = main._playback_scheduler
+    original_start = scheduler.start
+
+    def start(mode, melody, cells=None):
+        plans.append(build_plan(mode, melody, cells))
+        return original_start(mode, melody, cells)
+
+    scheduler.start = start
+    try:
+        main.start_game()
+        main.auto_complete_game()
+        previous_cancels = scheduler.cancel_count
+        result = main.request_dfesta()
+        assert result["counted"] is True
+        assert result["game"]["end_reason"] == "complete"
+        assert scheduler.cancel_count == previous_cancels
+        assert plans[-1].mode.value == "dfesta"
+        for cue in plans[-1].cues:
+            if cue.notes:
+                assert len({note["pitch"] for note in cue.notes}) == 3
+                assert len(cue.notes) == result["game"]["cell_count"]
+        main.collect_all_orbs()
+        assert main.get_game_state()["state"] == "READY"
+        assert scheduler.cancel_count == previous_cancels
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("server.main", "server.inout.serial_io", "serial"):
+            sys.modules.pop(name, None)
 
 
 def test_main_routes_web_event_through_runtime_snapshot_and_midi():
@@ -430,12 +476,18 @@ def test_state_log_uses_authoritative_state_names_only():
             sys.modules.pop(name, None)
 
 
-def test_idle_transition_log_matches_runtime_until_reset_is_complete():
+def test_idle_transition_log_matches_runtime_until_reset_is_complete(monkeypatch):
     main = _load_main_module()
     main.reload_melody_data = lambda: None
     main.answer_sequence = {"1": "C"}
     main.time_over_s = None
     main.idle_s = 0.02
+    original_factory = main._new_game_engine
+    def without_intro_delay():
+        engine = original_factory()
+        engine.initial_timer_delay_s = 0
+        return engine
+    monkeypatch.setattr(main, "_new_game_engine", without_intro_delay)
 
     try:
         main.start_game()
@@ -479,7 +531,17 @@ def test_idle_transition_log_matches_runtime_until_reset_is_complete():
             sys.modules.pop(name, None)
 
 
-def test_config_rules_expose_120_second_time_over_and_30_second_idle_timers():
+def _use_test_timers(monkeypatch):
+    """운영 config의 진단용 시간 값과 무관하게 테스트 시작 설정을 고정한다."""
+    from server import data_store
+
+    config = data_store.load_config()
+    config["game_rules"] = {"time_over_s": 120, "idle_s": 30}
+    monkeypatch.setattr(data_store, "load_config", lambda: deepcopy(config))
+
+
+def test_config_rules_expose_120_second_time_over_and_30_second_idle_timers(monkeypatch):
+    _use_test_timers(monkeypatch)
     main = _load_main_module()
 
     try:
@@ -657,6 +719,7 @@ def test_successive_games_follow_the_configured_melody_sequence():
 
 def test_software_settings_persist_timers_without_hot_reload(tmp_path, monkeypatch):
     from server.data_store import load_config, save_config
+    _use_test_timers(monkeypatch)
     main = _load_main_module()
     path = tmp_path / "config.json"
     original = main.config.copy()
@@ -703,6 +766,86 @@ def test_debug_start_preserves_orbs_and_allows_restart_from_resetting():
         main.update_software_settings({"debug_mode": False})
         with pytest.raises(main.InvalidTransition):
             main.start_game()
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        for name in ("server.main", "server.inout.serial_io", "serial"):
+            sys.modules.pop(name, None)
+
+
+def test_debug_melody_restart_and_99_requirement_are_temporary(monkeypatch, tmp_path):
+    import json
+    from server.game.melody_manager import MelodyManager
+    main = _load_main_module()
+    song = deepcopy(main.melody_document)
+    song["game_rules"] = {"dfesta_presses_required": 3}
+    for name in ["original", "added"]:
+        (tmp_path / f"{name}.json").write_text(json.dumps(song), encoding="utf-8")
+    config = deepcopy(main.config)
+    config["melody"] = "original"
+    config["melody_rotation"] = {"mode": "sequence", "playlist": ["original"]}
+    monkeypatch.setattr(main, "load_config", lambda: deepcopy(config))
+    monkeypatch.setattr(main, "_melody_manager", MelodyManager(tmp_path))
+    try:
+        main.start_game()
+        runtime = main.get_game_runtime()
+        runtime.add_orb(orb_id="kept", slave=1, cell=1, voice="aespa_1", known=True)
+        with pytest.raises(ValueError):
+            main.update_software_settings({"debug_melody": "added"})
+        assert main.melody_id == "original"
+        main.update_software_settings({"debug_mode": True})
+        assert runtime.snapshot()["completion"]["dfesta_presses_required"] == 99
+        before = main._melody_manager.snapshot()
+        for bad in ["../config", "missing", None]:
+            with pytest.raises(ValueError):
+                main.update_software_settings({"debug_melody": bad})
+        assert runtime.snapshot()["state"] == "RUNNING"
+        settings = main.update_software_settings({"debug_melody": "added"})
+        assert settings["current_melody"] == "added"
+        assert settings["available_melodies"] == ["added", "original"]
+        assert runtime.snapshot()["cell_count"] == 1
+        assert runtime.snapshot()["state"] == "RUNNING"
+        assert runtime.snapshot()["completion"]["dfesta_presses_required"] == 99
+        assert main._melody_manager.snapshot() == before
+        main.update_software_settings({"debug_mode": False})
+        assert runtime.snapshot()["completion"]["dfesta_presses_required"] == 3
+        assert json.loads((tmp_path / "added.json").read_text())["game_rules"]["dfesta_presses_required"] == 3
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        for name in ("server.main", "server.inout.serial_io", "serial"):
+            sys.modules.pop(name, None)
+
+
+@pytest.mark.parametrize("song_id", ["dynamite", "Iam", "biplane"])
+def test_initial_listen_duration_plus_one_precedes_both_countdowns(monkeypatch, song_id):
+    from server.game.game_engine import GameEngine
+    main = _load_main_module()
+    now = [100.0]
+    def engine_with_clock(*args, **kwargs):
+        return GameEngine(*args, **kwargs, clock=lambda: now[0])
+    monkeypatch.setattr(main, "GameEngine", engine_with_clock)
+    config = deepcopy(main.config)
+    config["melody"] = song_id
+    config["melody_rotation"] = {"mode": "fixed", "playlist": [song_id]}
+    monkeypatch.setattr(main, "load_config", lambda: deepcopy(config))
+    try:
+        main.start_game()
+        runtime = main.get_game_runtime()
+        delay = sum(step.duration_beats for step in main.playback_melody.steps) * 60 / main.playback_melody.bpm + 1
+        now[0] += delay - 0.1
+        runtime.record_activity()
+        timers = runtime.snapshot()["timers"]
+        assert timers["remaining_time_over_s"] == main.time_over_s
+        assert timers["remaining_idle_s"] == main.idle_s
+        now[0] += 0.6
+        runtime.record_activity()
+        assert runtime.snapshot()["timers"]["remaining_time_over_s"] == pytest.approx(main.time_over_s - 0.5)
+        assert runtime.snapshot()["timers"]["remaining_idle_s"] == main.idle_s
+        main.request_listen()
+        now[0] += 1
+        runtime.record_activity()
+        assert runtime.snapshot()["timers"]["remaining_time_over_s"] == pytest.approx(main.time_over_s - 1.5)
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
