@@ -42,3 +42,22 @@ dist/
 # Ableton 자동 생성 파일 (샘플 분석 캐시·프로젝트 자동 백업)
 *.asd
 audioengine/ableton_main/Backup/
+
+# KiCad 개인 설정, 잠금 파일 및 자동 백업
+*.kicad_prl
+*.kicad_pro.lck
+*.kicad_pcb.lck
+*.kicad_sch.lck
+~*.lck
+_autosave-*
+*.kicad_pcb-bak
+*.kicad_sch-bak
+*-backups/
+
+# 로컬 PDF 출력 및 검토용 미리보기
+/output/pdf/Sketch1.pdf
+/tmp/pdfs/Sketch1-preview.png
+/tmp/pdfs/table-review/page-*.png
+
+# 로컬 버튼 PCB 설계 작업
+/hardware/button80/
