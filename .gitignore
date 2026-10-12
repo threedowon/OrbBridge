@@ -61,3 +61,4 @@ _autosave-*
 
 # 로컬 버튼 PCB 설계 작업
 /hardware/button80/
+/data/log_settings.json

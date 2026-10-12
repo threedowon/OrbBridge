@@ -138,6 +138,10 @@ def start_http_server(
             self.end_headers()
 
         def do_GET(self):
+            if self.path.split("?", 1)[0] == "/api/admin/log-settings":
+                from server.text_log import get_log_settings
+                self._run_callback(get_log_settings)
+                return
             path = self.path.split("?", 1)[0]
 
             if path in ("/", ""):
@@ -264,6 +268,11 @@ def start_http_server(
 
             if not isinstance(data, dict):
                 self._json(400, {"error": "JSON object 필요"})
+                return
+
+            if self.path == "/api/admin/log-settings":
+                from server.text_log import update_log_settings
+                self._run_callback(update_log_settings, data)
                 return
 
             if self.path == "/api/admin/hardware/connect":

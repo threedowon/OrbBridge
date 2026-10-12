@@ -192,8 +192,11 @@ def test_invalid_connection_preserves_current_route(debug, mode, ports, baud):
     assert d._generation == generation
 
 
-def test_http_mode_switch_validation_and_state(debug, monkeypatch):
+def test_http_mode_switch_validation_and_state(debug, monkeypatch, tmp_path):
     from server.web import web_server
+    from server import text_log
+    monkeypatch.setattr(text_log, "SETTINGS_PATH", tmp_path / "log_settings.json")
+    monkeypatch.setattr(text_log, "_sink", text_log.LineLog(tmp_path / "old"))
     d, _ = debug
     servers = []
     original = web_server._ThreadingHTTPServer
@@ -219,6 +222,13 @@ def test_http_mode_switch_validation_and_state(debug, monkeypatch):
         with urllib.request.urlopen(req) as response:
             return json.load(response)
     try:
+        with urllib.request.urlopen(base + "/api/admin/log-settings") as response:
+            assert json.load(response)["directory"] == str(tmp_path / "old")
+        updated = post("/api/admin/log-settings", {"directory": str(tmp_path / "new")})
+        assert updated["ok"] and updated["directory"] == str((tmp_path / "new").resolve())
+        with pytest.raises(urllib.error.HTTPError) as error:
+            post("/api/admin/log-settings", {"directory": "relative"})
+        assert error.value.code == 409
         assert post("/api/admin/hardware/connect", {"mode":"direct", "ports":[]})["ok"]
         with urllib.request.urlopen(base + "/api/status") as response:
             assert json.load(response)["hardware"]["mode"] == "direct"

@@ -23,6 +23,7 @@ class MatrixDisplay:
     RESEND_S = 1.0
     RETRY_S = 1.0
     BOOT_S = 1.6
+    CONNECTION_FAILURE_LOG_LIMIT = 5
 
     def __init__(self, config: Mapping, *, serial_module=None, catalog=None,
                  clock=time.monotonic) -> None:
@@ -46,6 +47,7 @@ class MatrixDisplay:
         self._last_payload = None
         self._last_sent_at = float("-inf")
         self._retry_at = 0.0
+        self._connection_failure_logs = 0
         self._ready_at = 0.0
         self._closed = False
         self._lock = threading.Lock()
@@ -74,7 +76,9 @@ class MatrixDisplay:
             self._ready_at = self._clock() + self.BOOT_S
             self._last_payload = None
         except Exception as exc:
-            print(f"[dotmatrix] connection failed ({self.port}): {exc}")
+            if self._connection_failure_logs < self.CONNECTION_FAILURE_LOG_LIMIT:
+                print(f"[dotmatrix] connection failed ({self.port}): {exc}")
+                self._connection_failure_logs += 1
             return False
         return now >= self._ready_at
 

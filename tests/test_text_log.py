@@ -1,10 +1,43 @@
 import io
+import json
+import pytest
 from concurrent.futures import ThreadPoolExecutor
 import subprocess
 import sys
 from collections import deque
 
 from server import text_log
+
+
+@pytest.mark.parametrize("source,line,category,level", [
+    ("SYSTEM", "logging started", "SERVER", ""),
+    ("STDERR", "INFO:websockets.server:connection open", "ADMIN", ""),
+    ("STDOUT", "[dotmatrix] connection failed (COM6)", "LED", "ERROR"),
+    ("STDOUT", "[midi] WARN: Some ports missing", "MIDI", "WARN"),
+    ("STDOUT", "[midi] skip 'listen': not found", "MIDI", "WARN"),
+    ("STDOUT", "[led] [master] [송신] effect=1", "LED", ""),
+    ("STDOUT", "[stage 1] 정답 시퀀스", "GAME", ""),
+    ("STDOUT", "[WARN] 동기화 실패", "SERVER", "WARN"),
+    ("SERIAL/json", '{"type":"heartbeat"}', "HARDWARE", ""),
+    ("SLAVE", "통신 끊김", "HARDWARE", "ERROR"),
+    ("EVENT", '{"type":"added"}', "GAME", ""),
+])
+def test_readable_log_categories_and_severity(source, line, category, level):
+    row = text_log.describe_log(line, source)
+    assert row["category"] == category
+    assert row["level"] == level
+
+
+def test_file_and_admin_share_readable_labels(monkeypatch, tmp_path):
+    monkeypatch.setattr(text_log, "_sink", text_log.LineLog(tmp_path))
+    monkeypatch.setattr(text_log, "_recent_console", deque(maxlen=500))
+    message = "[dotmatrix] connection failed (COM6): missing port"
+    text_log.write_log(message, "STDOUT")
+    row = text_log.recent_console()[-1]
+    assert row["line"] == message
+    assert row["display"] == "[LED] [ERROR] connection failed (COM6): missing port"
+    saved = next(tmp_path.glob("*.txt")).read_text(encoding="utf-8")
+    assert row["display"] in saved and "STDOUT" not in saved
 
 
 def test_web_console_keeps_bounded_output_without_serial_duplicates(monkeypatch):
@@ -70,6 +103,7 @@ import sys, logging
 from pathlib import Path
 from server import text_log
 text_log.LOG_DIR = Path(sys.argv[1])
+text_log.SETTINGS_PATH = Path(sys.argv[1]) / "settings.json"
 text_log.install_logging()
 text_log.install_logging()
 print("console output")
@@ -83,3 +117,51 @@ raise RuntimeError("fatal error")
         assert value in text
     assert text.count("logging started") == 1
     assert "console output" in result.stdout and "fatal error" in result.stderr
+
+
+def test_log_directory_switch_and_restart(monkeypatch, tmp_path):
+    old = tmp_path / "old"
+    new = tmp_path / "새 로그"
+    settings = tmp_path / "data" / "log_settings.json"
+    monkeypatch.setattr(text_log, "SETTINGS_PATH", settings)
+    monkeypatch.setattr(text_log, "_sink", text_log.LineLog(old))
+    text_log.write_log("before switch")
+    result = text_log.update_log_settings({"directory": str(new)})
+    assert result["directory"] == str(new.resolve())
+    text_log.write_log("after switch", "EVENT")
+    old_text = next(old.glob("*.txt")).read_text(encoding="utf-8")
+    assert "before switch" in old_text and "after switch" not in old_text
+    assert "after switch" in next(new.glob("*.txt")).read_text(encoding="utf-8")
+    code = '''
+import sys
+from pathlib import Path
+from server import text_log
+text_log.SETTINGS_PATH = Path(sys.argv[1])
+text_log.install_logging()
+print("persisted after restart")
+'''
+    subprocess.run([sys.executable, "-c", code, str(settings)], check=True, capture_output=True)
+    assert any("persisted after restart" in p.read_text(encoding="utf-8") for p in new.glob("*.txt"))
+
+
+def test_invalid_or_unwritable_directory_preserves_settings(monkeypatch, tmp_path):
+    settings = tmp_path / "settings.json"
+    monkeypatch.setattr(text_log, "SETTINGS_PATH", settings)
+    sink = text_log.LineLog(tmp_path / "old")
+    monkeypatch.setattr(text_log, "_sink", sink)
+    settings.write_text(json.dumps({"directory": str(sink.directory)}))
+    original = settings.read_bytes()
+    blocked = tmp_path / "file"
+    blocked.write_text("not a directory")
+    for value in ("", "relative/path", None, str(blocked)):
+        with pytest.raises(ValueError):
+            text_log.update_log_settings({"directory": value})
+        assert settings.read_bytes() == original
+        assert sink.directory == tmp_path / "old"
+    def denied(directory):
+        raise PermissionError("access denied")
+    monkeypatch.setattr(text_log, "_check_directory", denied)
+    with pytest.raises(ValueError):
+        text_log.update_log_settings({"directory": str(tmp_path / "denied")})
+    assert settings.read_bytes() == original
+    assert sink.directory == tmp_path / "old"

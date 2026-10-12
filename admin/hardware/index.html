@@ -574,6 +574,16 @@
         <div class="info-row"><span class="label">결과</span><span class="value" id="d-result">—</span></div>
       </div>
       <div class="logs-dashboard">
+        <form id="log-settings-form" class="hardware-only" style="margin-bottom:18px">
+          <label for="log-directory"><strong>로그 저장 폴더</strong></label>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
+            <input id="log-directory" type="text" required placeholder="예: D:\OrbBridgeLogs" style="flex:1;min-width:200px;margin:0" aria-describedby="log-directory-help">
+            <button id="log-directory-save" type="submit" disabled>저장</button>
+            <button id="log-directory-default" type="button" disabled>기본 경로</button>
+          </div>
+          <p id="log-directory-help" style="font-size:12px;color:var(--muted)">서버 PC의 폴더 경로를 입력하세요. 저장 즉시 새 로그부터 적용되며, 기존 파일은 원래 폴더에 남습니다.</p>
+          <div id="log-directory-status" role="status" style="font-size:12px;overflow-wrap:anywhere"></div>
+        </form>
         <div class="logs-toolbar"><strong>실시간 로그</strong><span class="log-send">파랑 · 송신</span><span class="log-receive">초록 · 수신</span><span class="log-error">빨강 · 오류</span><span class="log-warning">노랑 · 경고</span><span id="console-log-status" role="status"></span></div>
         <div class="logs-grid">
           <section class="log-pane"><header><h3>하트비트</h3><button type="button" data-copy-log="heartbeat-log">복사</button></header><div id="heartbeat-log" class="event-log" aria-label="하트비트 로그"></div></section>
@@ -955,9 +965,11 @@
       const fragment = document.createDocumentFragment();
       for (const row of [...rows].reverse()) {
         const div = document.createElement('div');
-        div.className = 'log-entry ' + logColor(row.line, ['error','badjson'].includes(row.kind) ? 'error' : fallback);
+        const display = row.display || row.line;
+        const severityColor = row.level === 'ERROR' ? 'log-error' : row.level === 'WARN' ? 'log-warning' : '';
+        div.className = 'log-entry ' + (severityColor || logColor(display, ['error','badjson'].includes(row.kind) ? 'error' : fallback));
         const d = new Date(row.ts);
-        div.textContent = `${fmtTime(row.ts)}.${String(d.getMilliseconds()).padStart(3,'0')} ${row.line}`;
+        div.textContent = `${fmtTime(row.ts)}.${String(d.getMilliseconds()).padStart(3,'0')} ${display}`;
         fragment.appendChild(div);
       }
       el.replaceChildren(fragment); el.scrollTop = scroll;
@@ -1439,6 +1451,42 @@
 
     document.getElementById('control-mode-label').textContent =
       CONTROL_MODE === 'software' ? 'Software Admin' : 'Hardware Admin';
+    async function loadLogSettings() {
+      const status = document.getElementById('log-directory-status');
+      try {
+        const response = await fetch('/api/admin/log-settings', {cache:'no-store'});
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '로그 설정을 불러오지 못했습니다.');
+        document.getElementById('log-directory').value = data.directory;
+        document.getElementById('log-directory-default').dataset.path = data.default_directory;
+        document.getElementById('log-directory-default').disabled = false;
+        document.getElementById('log-directory-save').disabled = false;
+        status.textContent = '현재 저장 위치: ' + data.directory;
+      } catch (error) { status.textContent = error.message; }
+    }
+    document.getElementById('log-directory-default').addEventListener('click', event => {
+      document.getElementById('log-directory').value = event.currentTarget.dataset.path;
+      document.getElementById('log-directory-status').textContent = '저장을 누르면 기본 경로로 적용됩니다.';
+    });
+    document.getElementById('log-settings-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const button = document.getElementById('log-directory-save');
+      const status = document.getElementById('log-directory-status');
+      button.disabled = true;
+      status.textContent = '저장 중…';
+      try {
+        const response = await fetch('/api/admin/log-settings', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({directory:document.getElementById('log-directory').value}),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || '저장하지 못했습니다.');
+        document.getElementById('log-directory').value = data.directory;
+        status.textContent = '저장 완료 · 현재 저장 위치: ' + data.directory;
+      } catch (error) { status.textContent = error.message; }
+      finally { button.disabled = false; }
+    });
+    if (CONTROL_MODE === 'hardware') loadLogSettings();
     loadHardwarePorts();
     buildGrid();
     loadSnapshot();
