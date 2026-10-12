@@ -671,7 +671,7 @@
       <div class="game-section software-only">
         <div class="section-title">게임 제어 · Enter로 시작</div>
         <div class="toolbar">
-          <button class="primary" id="btn-game-start" data-game-action="start" aria-keyshortcuts="Enter" title="Enter 키로 게임 시작">start</button>
+          <button id="btn-game-tray" aria-pressed="false" aria-keyshortcuts="Enter" title="Tray 올리기 / 제거하기">TRAY OFF</button>
           <button id="btn-game-reset" data-game-action="reset">reset</button>
           <button id="btn-auto-complete">자동완성</button>
           <span id="usb-game-controls" hidden>
@@ -698,7 +698,7 @@
       <div class="midi-section software-only">
         <div class="section-title">MIDI 진단</div>
         <div class="debug-tools">
-          <label><input type="checkbox" id="debug-mode"> 디버그 모드 · DFesta 완료 99회</label>
+          <label><input type="checkbox" id="debug-mode"> 디버그 모드 · DFesta 완료 999회</label>
           <p>오브를 유지한 채 게임을 시작할 수 있습니다. 끄면 곡의 원래 완료 횟수로 돌아갑니다.</p>
           <label for="debug-melody">테스트할 멜로디</label>
           <select id="debug-melody" disabled aria-label="테스트할 멜로디"></select>
@@ -761,6 +761,8 @@
     let wsRetry = null;
     let lastMidiJobId = 0;
     let currentGameState = 'READY';
+    let currentTray = null;
+    let traySimulation = false;
     let currentCellCount = 0;
     let adminActionRunning = false;
     let debugActionRunning = false;
@@ -907,8 +909,14 @@
     }
 
     function updateGameButtons() {
-      document.getElementById('btn-game-start').disabled =
-        adminActionRunning || !(debugMode ? ['READY', 'RESETTING'].includes(currentGameState) : currentGameState === 'READY' && currentCellCount === 0);
+      const trayButton = document.getElementById('btn-game-tray');
+      trayButton.disabled = adminActionRunning || !traySimulation;
+      const present = currentTray?.present;
+      trayButton.setAttribute('aria-pressed', present == null ? 'mixed' : String(present));
+      trayButton.classList.toggle('primary', present === true);
+      trayButton.textContent = present == null ? 'TRAY 미확인' :
+        (present ? (currentTray.seated ? 'TRAY ON' : 'TRAY PARTIAL') : 'TRAY OFF');
+      trayButton.title = traySimulation ? 'Tray 올리기 / 제거하기' : '실제 tray 상태 — Master 센서 사용 중';
       document.getElementById('btn-game-reset').disabled =
         adminActionRunning || currentGameState === 'READY';
       document.getElementById('btn-auto-complete').disabled =
@@ -980,6 +988,8 @@
 
       const gameState = s.game?.state || 'READY';
       currentGameState = gameState;
+      currentTray = s.game?.tray || null;
+      traySimulation = s.tray_simulation === true;
       currentCellCount = Number(s.game?.cell_count ?? s.cell_count ?? cells.size);
       setDot('dot-game', gameState === 'RUNNING' ? 'ok' : (gameState === 'RESETTING' ? 'warn' : ''));
       document.getElementById('lbl-game').textContent =
@@ -1170,6 +1180,9 @@
         const [slave, cell, note] = args;
         applyCellState(slave, cell, { id: '', voice: '미상', note, result: 'unknown', synthetic: true });
         addLog('복구', `S${slave} C${cell} ${note} → 유실 추정(미상, 화면 미표시)`, 'log-warn');
+      } else if (address === '/game/tray') {
+        currentTray = args[0] || null;
+        updateGameButtons();
       } else if (address === '/game/state') {
         const [state, reason, , , , previousState] = args;
         const transition = previousState
@@ -1246,7 +1259,7 @@
       try {
         const settings = await postGame('/api/admin/software/settings', {debug_mode: checkbox.checked});
         renderSoftwareSettings(settings);
-        document.getElementById('debug-message').textContent = settings.debug_mode ? '디버그 모드 켜짐 · DFesta 완료 횟수 99회 적용' : '디버그 모드 꺼짐 · 곡의 기본 완료 횟수 복원';
+        document.getElementById('debug-message').textContent = settings.debug_mode ? '디버그 모드 켜짐 · DFesta 완료 횟수 999회 적용' : '디버그 모드 꺼짐 · 곡의 기본 완료 횟수 복원';
       } catch (error) {
         checkbox.checked = debugMode;
         document.getElementById('debug-message').textContent = error.message;
@@ -1264,7 +1277,7 @@
           debug_melody: document.getElementById('debug-melody').value,
         });
         renderSoftwareSettings(settings);
-        document.getElementById('debug-message').textContent = `${settings.current_melody} 시작 · DFesta 완료 99회`;
+        document.getElementById('debug-message').textContent = `${settings.current_melody} 시작 · DFesta 완료 999회`;
         await fetchStatus();
       } catch (error) {
         document.getElementById('debug-message').textContent = error.message;
@@ -1305,6 +1318,27 @@
     }
 
     // 관객 화면에는 제어 버튼을 두지 않고 Admin만 게임 상태를 변경한다.
+    document.getElementById('btn-game-tray').addEventListener('click', async () => {
+      if (adminActionRunning || !traySimulation) return;
+      adminActionRunning = true;
+      updateGameButtons();
+      try {
+        const payload = await postGame('/api/game/tray', { present: currentTray?.present !== true });
+        if (payload.game) {
+          currentGameState = payload.game.state;
+          currentCellCount = Number(payload.game.cell_count);
+          currentTray = payload.game.tray;
+        }
+        addLog('admin', currentTray?.present ? 'Tray 올림' : 'Tray 제거', 'log-info');
+      } catch (error) {
+        addLog('error', error.message, 'log-warn');
+      } finally {
+        adminActionRunning = false;
+        updateGameButtons();
+        void fetchStatus();
+      }
+    });
+
     document.querySelectorAll('[data-game-action]').forEach(button => {
       button.addEventListener('click', async () => {
         const action = button.dataset.gameAction;
@@ -1332,15 +1366,15 @@
           event.keyCode === 229 || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
       const target = event.target instanceof Element ? event.target : null;
       if (event.repeat) {
-        if (target?.closest('#btn-game-start')) event.preventDefault();
+        if (target?.closest('#btn-game-tray')) event.preventDefault();
         return;
       }
       // Preserve text entry and native keyboard actions on other controls.
       if (target?.closest('input, textarea, select, button, a, [role="button"], [role="textbox"], [role="combobox"]') || target?.isContentEditable) return;
-      const startButton = document.getElementById('btn-game-start');
-      if (event.defaultPrevented || startButton.disabled) return;
+      const trayButton = document.getElementById('btn-game-tray');
+      if (event.defaultPrevented || trayButton.disabled) return;
       event.preventDefault();
-      startButton.click();
+      trayButton.click();
     });
 
     async function runAdminAction(path, successText) {

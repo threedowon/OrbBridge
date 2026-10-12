@@ -7,89 +7,86 @@
     "C4",
     "C5"
   ],
-  "game_rules": {
-    "dfesta_presses_required": 1
-  },
   "steps": [
     {
       "step": 1,
       "note": "C4",
       "duration": 0.5,
+      "velocity": 92,
       "harmony": [
         "E4",
         "G4"
-      ],
-      "velocity": 127
+      ]
     },
     {
       "step": 2,
       "note": "A4",
       "duration": 1,
+      "velocity": 116,
       "harmony": [
         "C4",
         "E4"
-      ],
-      "velocity": 127
+      ]
     },
     {
       "step": 3,
       "note": "G4",
       "duration": 1,
+      "velocity": 109,
       "harmony": [
         "C4",
         "E4"
-      ],
-      "velocity": 127
+      ]
     },
     {
       "step": 4,
       "note": "F4",
       "duration": 1,
+      "velocity": 103,
       "harmony": [
         "D4",
         "A4"
-      ],
-      "velocity": 127
+      ]
     },
     {
       "step": 5,
       "note": "E4",
       "duration": 1.5,
+      "velocity": 108,
       "harmony": [
         "C4",
         "G4"
-      ],
-      "velocity": 127
+      ]
     },
     {
       "step": 6,
       "note": "D4",
       "duration": 0.5,
+      "velocity": 94,
       "harmony": [
-        "B4",
-        "G4"
-      ],
-      "velocity": 127
+        "G4",
+        "B4"
+      ]
     },
     {
       "step": 7,
       "note": "C4",
       "duration": 0.25,
+      "velocity": 84,
       "harmony": [
         "E4",
         "G4"
-      ],
-      "velocity": 127
+      ]
     },
     {
       "step": 8,
       "note": "C4",
       "duration": 1,
+      "velocity": 101,
       "harmony": [
         "E4",
         "G4"
-      ],
-      "velocity": 127
+      ]
     },
     {
       "step": 9,
@@ -116,6 +113,9 @@
       "velocity": 127
     }
   ],
+  "game_rules": {
+    "dfesta_presses_required": 1
+  },
   "dfesta": {
     "weights": {
       "melody": 70,

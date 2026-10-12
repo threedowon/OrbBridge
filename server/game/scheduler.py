@@ -383,6 +383,18 @@ class PlaybackScheduler:
                 "timing": self._timing_snapshot(),
             }
 
+    def display_snapshot(self) -> dict:
+        """Small live view, excluding cancelled runs and timing history."""
+        with self._lock:
+            return {
+                "active": bool(
+                    self._thread and self._thread.is_alive()
+                    and self._cancel is not None and not self._cancel.is_set()
+                ),
+                "run_id": self._run_id,
+                "mode": self._mode.value if self._mode is not None else None,
+            }
+
     def _timing_snapshot(self) -> dict:
         with self._timing_lock:
             samples = [dict(sample) for sample in self._timing_samples]

@@ -1,0 +1,142 @@
+{
+  "songId": "TXT-0X1_LOVESONG",
+  "title": "Txt-0X1=Lovesong",
+  "artist": "",
+  "bpm": 100,
+  "range": [
+    "C4",
+    "C5"
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "note": "G4",
+      "duration": 0.5,
+      "velocity": 103,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 2,
+      "note": "C5",
+      "duration": 0.5,
+      "velocity": 121,
+      "harmony": [
+        "E4",
+        "G4"
+      ]
+    },
+    {
+      "step": 3,
+      "note": "C5",
+      "duration": 0.25,
+      "velocity": 108,
+      "harmony": [
+        "E4",
+        "G4"
+      ]
+    },
+    {
+      "step": 4,
+      "note": "B4",
+      "duration": 0.75,
+      "velocity": 115,
+      "harmony": [
+        "D4",
+        "G4"
+      ]
+    },
+    {
+      "step": 5,
+      "note": "G4",
+      "duration": 0.5,
+      "velocity": 100,
+      "harmony": [
+        "D4",
+        "B4"
+      ]
+    },
+    {
+      "step": 6,
+      "note": "G4",
+      "duration": 0.75,
+      "velocity": 107,
+      "harmony": [
+        "D4",
+        "B4"
+      ]
+    },
+    {
+      "step": 7,
+      "note": "A4",
+      "duration": 1.5,
+      "velocity": 123,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 8,
+      "note": "G4",
+      "duration": 0.5,
+      "velocity": 102,
+      "harmony": [
+        "D4",
+        "B4"
+      ]
+    },
+    {
+      "step": 9,
+      "note": "A4",
+      "duration": 0.25,
+      "velocity": 94,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 10,
+      "note": "A4",
+      "duration": 0.75,
+      "velocity": 114,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 11,
+      "note": "G4",
+      "duration": 0.25,
+      "velocity": 98,
+      "harmony": [
+        "D4",
+        "B4"
+      ]
+    },
+    {
+      "step": 12,
+      "note": "A4",
+      "duration": 1.5,
+      "velocity": 119,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    }
+  ],
+  "game_rules": {
+    "dfesta_presses_required": 1
+  },
+  "dfesta": {
+    "weights": {
+      "melody": 70,
+      "harmony_a": 15,
+      "harmony_b": 15
+    }
+  }
+}

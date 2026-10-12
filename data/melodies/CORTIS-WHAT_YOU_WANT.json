@@ -1,0 +1,142 @@
+{
+  "songId": "CORTIS-WHAT_YOU_WANT",
+  "title": "Cortis-What You Want",
+  "artist": "",
+  "bpm": 100,
+  "range": [
+    "C4",
+    "C5"
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "note": "E4",
+      "duration": 0.5,
+      "velocity": 107,
+      "harmony": [
+        "C4",
+        "A4"
+      ]
+    },
+    {
+      "step": 2,
+      "note": "E4",
+      "duration": 0.5,
+      "velocity": 99,
+      "harmony": [
+        "C4",
+        "A4"
+      ]
+    },
+    {
+      "step": 3,
+      "note": "E4",
+      "duration": 0.5,
+      "velocity": 113,
+      "harmony": [
+        "C4",
+        "A4"
+      ]
+    },
+    {
+      "step": 4,
+      "note": "E4",
+      "duration": 0.25,
+      "velocity": 91,
+      "harmony": [
+        "C4",
+        "A4"
+      ]
+    },
+    {
+      "step": 5,
+      "note": "E4",
+      "duration": 0.25,
+      "velocity": 86,
+      "harmony": [
+        "C4",
+        "A4"
+      ]
+    },
+    {
+      "step": 6,
+      "note": "D4",
+      "duration": 0.5,
+      "velocity": 103,
+      "harmony": [
+        "G4",
+        "B4"
+      ]
+    },
+    {
+      "step": 7,
+      "note": "D4",
+      "duration": 0.5,
+      "velocity": 96,
+      "harmony": [
+        "G4",
+        "B4"
+      ]
+    },
+    {
+      "step": 8,
+      "note": "E4",
+      "duration": 0.5,
+      "velocity": 111,
+      "harmony": [
+        "C4",
+        "A4"
+      ]
+    },
+    {
+      "step": 9,
+      "note": "C4",
+      "duration": 2.5,
+      "velocity": 117,
+      "harmony": [
+        "E4",
+        "A4"
+      ]
+    },
+    {
+      "step": 10,
+      "note": "G4",
+      "duration": 0.25,
+      "velocity": 89,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 11,
+      "note": "A4",
+      "duration": 0.25,
+      "velocity": 100,
+      "harmony": [
+        "C4",
+        "F4"
+      ]
+    },
+    {
+      "step": 12,
+      "note": "G4",
+      "duration": 0.25,
+      "velocity": 94,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    }
+  ],
+  "game_rules": {
+    "dfesta_presses_required": 1
+  },
+  "dfesta": {
+    "weights": {
+      "melody": 70,
+      "harmony_a": 15,
+      "harmony_b": 15
+    }
+  }
+}

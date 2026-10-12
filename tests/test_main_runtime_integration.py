@@ -44,6 +44,9 @@ class FakeScheduler:
     def cancel(self):
         self.cancel_count += 1
 
+    def display_snapshot(self):
+        return self.snapshot()
+
     def close(self, timeout=2.0):
         self.closed = True
 
@@ -65,6 +68,89 @@ class FakeWebSocketService:
         self.closed = True
 
 
+def test_matrix_follows_accepted_requests_and_ignores_delayed_web_events(monkeypatch):
+    import json
+    from server.inout.matrix_display import MatrixDisplay
+
+    main = _load_main_module()
+    writes = []
+
+    def write(data):
+        writes.append(json.loads(data))
+        return len(data)
+
+    device = types.SimpleNamespace(write=write, close=lambda: None)
+    matrix = MatrixDisplay(
+        {"enabled": True},
+        serial_module=types.SimpleNamespace(Serial=lambda *args, **kwargs: device),
+        catalog={"voices": {}},
+    )
+    matrix.BOOT_S = 0
+    main._matrix_display = matrix
+    try:
+        main._update_matrix_display()
+        assert writes[-1]["text"] == "PLACE TRAY"
+        assert main.request_play()["ignored"]
+        main._update_matrix_display()
+        assert writes[-1]["text"] == "PLACE TRAY"
+        main.start_game()
+        main._update_matrix_display()
+        assert writes[-1]["text"] == "HINT"
+        main.request_play()
+        main._update_matrix_display()
+        assert writes[-1]["text"] == "PLAYING"
+        main._scheduler_publish_event({
+            "type": "end", "run_id": 1, "mode": "listen", "cancelled": True,
+        })
+        main._update_matrix_display()
+        assert writes[-1]["text"] == "PLAYING"
+        assert main.request_dfesta()["ignored"]
+        main._update_matrix_display()
+        assert writes[-1]["text"] == "PLAYING"
+        main.auto_complete_game()
+        main.request_dfesta()
+        main._update_matrix_display()
+        assert writes[-1]["text"] == "COMPLETE"
+        assert main.get_game_state()["state"] == "RESETTING"
+        main.reset_game()
+        main._update_matrix_display()
+        # The runtime keeps the completion reason when resetting a completed game.
+        assert writes[-1]["text"] == "COMPLETE"
+    finally:
+        matrix.close()
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("server.main", "server.inout.serial_io", "serial"):
+            sys.modules.pop(name, None)
+
+
+@pytest.mark.parametrize("mode", ["sequence", "random", "fixed"])
+def test_server_starts_without_legacy_melody_files(tmp_path, monkeypatch, mode):
+    import json
+    from server import app_paths, data_store
+    config = data_store.load_config()
+    config["melody"] = "biplane"
+    config["melody_rotation"] = {"mode": mode, "playlist": ["dynamite", "Iam", "biplane"]}
+    document = {"songId": "new_only", "bpm": 120,
+                "steps": [{"step": 1, "note": "C4", "duration": 1, "velocity": 90}]}
+    (tmp_path / "new_only.json").write_text(json.dumps(document), encoding="utf-8")
+    monkeypatch.setattr(app_paths, "ensure_data_files", lambda: None)
+    monkeypatch.setattr(app_paths, "melodies_dir", lambda: tmp_path)
+    monkeypatch.setattr(data_store, "load_config", lambda: deepcopy(config))
+    main = _load_main_module()
+    try:
+        assert main.get_active_melody()["songId"] == "new_only"
+        assert main.start_game()["game"]["state"] == "RUNNING"
+        assert main.get_active_melody()["songId"] == "new_only"
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("server.main", "server.inout.serial_io", "serial"):
+            sys.modules.pop(name, None)
+
+
 def _load_main_module():
     serial_module = types.ModuleType("serial")
     serial_module.SerialException = type("SerialException", (Exception,), {})
@@ -79,6 +165,123 @@ def _load_main_module():
     module._playback_scheduler = FakeScheduler()
     module._websocket_service = FakeWebSocketService()
     return module
+
+
+@pytest.fixture
+def tray_main(monkeypatch):
+    from server.game.game_engine import GameEngine
+    from server.inout.matrix_display import MatrixDisplay
+    import json
+
+    main = _load_main_module()
+    clock = [0.0]
+    writes = []
+    def write(data):
+        writes.append(json.loads(data))
+        return len(data)
+    device = types.SimpleNamespace(write=write, close=lambda: None)
+    matrix = MatrixDisplay(
+        {"enabled": True}, clock=lambda: clock[0], catalog={"voices": {}},
+        serial_module=types.SimpleNamespace(Serial=lambda *a, **k: device),
+    )
+    matrix.BOOT_S = 0
+    main._matrix_display = matrix
+    monkeypatch.setattr(main, "_tray_hardware", False)
+    monkeypatch.setattr(main, "reload_melody_data", lambda: None)
+    monkeypatch.setattr(main, "_new_game_engine", lambda: GameEngine(
+        {"1": "C"}, time_over_s=60, idle_s=30, clock=lambda: clock[0]))
+    try:
+        yield main, clock, writes
+    finally:
+        matrix.close()
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("server.main", "server.inout.serial_io", "serial"):
+            sys.modules.pop(name, None)
+
+
+@pytest.mark.parametrize("return_at", [0.5, 4.5, None])
+def test_admin_tray_end_to_end_cleanup_and_next_player(tray_main, return_at):
+    main, clock, writes = tray_main
+    main._update_matrix_display()
+    assert writes[-1]["text"] == "PLACE TRAY"
+    main.set_tray({"present": True})
+    assert main.get_game_state()["state"] == "RUNNING"
+    starts = len(main._playback_scheduler.starts)
+    main.set_tray({"present": True})
+    assert len(main._playback_scheduler.starts) == starts
+    runtime = main.get_game_runtime()
+    runtime.add_orb(orb_id="a", slave=1, cell=1)
+    main.end_game()
+    runtime.remove_orb(slave=1, cell=1)
+    main._update_matrix_display()
+    assert main.get_game_state()["state"] == "RESETTING"
+    assert writes[-1]["text"] == "PLEASE CLEAR TABLE"
+    main.set_tray({"present": False})
+    main._update_matrix_display()
+    assert writes[-1]["text"] == "GOODBYE"
+    goodbye_index = len(writes)
+    clock[0] = return_at if return_at is not None else 4
+    runtime.barrier()
+    main._update_matrix_display()
+    if clock[0] >= 4:
+        assert writes[-1] == {"type": "clear"}
+    if return_at is not None:
+        main.set_tray({"present": True})
+        main._update_matrix_display()
+        assert main.get_game_state()["state"] == "RUNNING"
+        assert writes[-1]["text"] == "HINT"
+        assert not any(p.get("text") == "PLACE TRAY" for p in writes[goodbye_index:])
+    else:
+        clock[0] = 8
+        runtime.barrier()
+        main._update_matrix_display()
+        assert writes[-1]["text"] == "PLACE TRAY"
+
+
+def test_serial_tray_boot_heartbeat_partial_removal_and_input_source(tray_main):
+    main, clock, writes = tray_main
+    main._set_tray_source(True)
+    main.handle_serial_message({"type": "tray", "present": True, "seated": True})
+    assert main.get_game_state()["state"] == "READY"  # no start on boot already seated
+    with pytest.raises(main.InvalidTransition):
+        main.set_tray({"present": False})  # admin cannot overwrite live hardware
+    for seated in [False, True]:
+        main.handle_serial_message({"type": "tray", "present": seated, "seated": seated})
+    assert main.get_game_state()["state"] == "RUNNING"
+    starts = len(main._playback_scheduler.starts)
+    clock[0] = 1
+    main.handle_serial_message({"type": "tray", "present": True, "seated": True})
+    assert len(main._playback_scheduler.starts) == starts
+    main.end_game()
+    main.handle_serial_message({"type": "tray", "present": True, "seated": False})
+    assert main.get_game_state()["state"] == "RESETTING"
+    clock[0] = 5
+    main.get_game_runtime().barrier()
+    assert main.get_game_state()["tray"]["present"] is None
+    assert main.get_game_state()["state"] == "RESETTING"
+    main.handle_serial_message({"type": "tray", "present": False, "seated": False})
+    main._update_matrix_display()
+    assert writes[-1]["text"] == "GOODBYE"
+
+
+def test_placing_tray_during_cleanup_does_not_queue_a_later_start(tray_main):
+    main, clock, _ = tray_main
+    main.set_tray({"present": True})
+    runtime = main.get_game_runtime()
+    runtime.add_orb(orb_id="a", slave=1, cell=1)
+    main.end_game()
+    main.set_tray({"present": False})
+    main.set_tray({"present": True})
+    runtime.remove_orb(slave=1, cell=1)
+    starts = len(main._playback_scheduler.starts)
+    main.set_tray({"present": True})
+    assert main.get_game_state()["state"] == "RESETTING"
+    assert len(main._playback_scheduler.starts) == starts
+    main.set_tray({"present": False})
+    main.set_tray({"present": True})
+    assert main.get_game_state()["state"] == "RUNNING"
 
 
 @pytest.mark.parametrize("melody_id", ["dynamite", "Iam", "biplane"])
@@ -126,11 +329,15 @@ def test_completed_game_starts_harmony_plan_and_keeps_final_dfesta(monkeypatch, 
             sys.modules.pop(name, None)
 
 
-def test_main_routes_web_event_through_runtime_snapshot_and_midi():
+def test_main_routes_web_event_through_runtime_snapshot_and_midi(monkeypatch):
     main = _load_main_module()
+    config = deepcopy(main.config)
+    config["melody_rotation"] = {"mode": "sequence", "playlist": ["dynamite", "Iam", "biplane"]}
+    monkeypatch.setattr(main, "load_config", lambda: deepcopy(config))
     midi_calls = []
     matrix_calls = []
     main._matrix_display = types.SimpleNamespace(
+        clear_voice=lambda: None,
         show_voice=lambda voice, snapshot: matrix_calls.append(
             (voice, snapshot["state"])
         )
@@ -272,8 +479,11 @@ def test_manual_end_enters_resetting_directly():
             sys.modules.pop(name, None)
 
 
-def test_admin_auto_complete_and_collect_use_runtime_state():
+def test_admin_auto_complete_and_collect_use_runtime_state(monkeypatch):
     main = _load_main_module()
+    config = deepcopy(main.config)
+    config["melody_rotation"] = {"mode": "sequence", "playlist": ["dynamite", "Iam", "biplane"]}
+    monkeypatch.setattr(main, "load_config", lambda: deepcopy(config))
     mapping = {
         f"ORB-{index:02d}": {"voice": f"aespa_{index}"}
         for index in range(1, 13)
@@ -443,13 +653,16 @@ def test_heartbeat_uses_occupancy_mask_instead_of_game_state_field():
             sys.modules.pop(name, None)
 
 
-def test_admin_keeps_start_and_reset_but_hides_manual_end():
-    html = (ROOT / "admin" / "software" / "index.html").read_text(
+@pytest.mark.parametrize("page", ["software", "hardware"])
+def test_admin_has_tray_toggle_and_reset_but_no_momentary_start(page):
+    html = (ROOT / "admin" / page / "index.html").read_text(
         encoding="utf-8"
     )
 
-    for action in ("start", "reset"):
-        assert re.search(rf'data-game-action="{action}"[^>]*>{action}</button>', html)
+    assert 'id="btn-game-tray" aria-pressed="false"' in html
+    assert 'data-game-action="start"' not in html
+    assert 'btn-game-start' not in html
+    assert 'data-game-action="reset"' in html
     assert 'data-game-action="end"' not in html
 
 
@@ -622,7 +835,7 @@ def test_main_fans_out_events_and_builds_complete_web_snapshot():
         snapshot = main.get_web_snapshot()
         assert snapshot["schema_version"] == 3
         assert snapshot["game"]["state"] == "READY"
-        assert snapshot["melody"]["songId"] == "dynamite"
+        assert snapshot["melody"]["songId"] == main.get_active_melody()["songId"]
         assert snapshot["melody"]["steps"]
         assert snapshot["status"]["game"] == snapshot["game"]
         assert snapshot["status"]["cell_count"] == snapshot["game"]["cell_count"]
@@ -679,7 +892,7 @@ def test_start_publishes_the_active_melody_before_running_state():
         )
 
         assert melody_index < running_index
-        assert messages[melody_index][1][0]["songId"] == "dynamite"
+        assert messages[melody_index][1][0]["songId"] == main.get_active_melody()["songId"]
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()
@@ -688,8 +901,13 @@ def test_start_publishes_the_active_melody_before_running_state():
             sys.modules.pop(name, None)
 
 
-def test_successive_games_follow_the_configured_melody_sequence():
+def test_successive_games_follow_the_configured_melody_sequence(monkeypatch):
     main = _load_main_module()
+    config = deepcopy(main.config)
+    config["melody_rotation"] = {"mode": "sequence", "playlist": ["dynamite", "Iam", "biplane"]}
+    monkeypatch.setattr(main, "load_config", lambda: deepcopy(config))
+    # Keep this rotation fixture independent of songs added for venue testing.
+    monkeypatch.setattr(main._melody_manager, "available_ids", lambda: ["dynamite", "Iam", "biplane"])
 
     def wait_until_ready():
         deadline = time.monotonic() + 1
@@ -773,7 +991,7 @@ def test_debug_start_preserves_orbs_and_allows_restart_from_resetting():
             sys.modules.pop(name, None)
 
 
-def test_debug_melody_restart_and_99_requirement_are_temporary(monkeypatch, tmp_path):
+def test_debug_melody_restart_and_999_requirement_are_temporary(monkeypatch, tmp_path):
     import json
     from server.game.melody_manager import MelodyManager
     main = _load_main_module()
@@ -794,7 +1012,7 @@ def test_debug_melody_restart_and_99_requirement_are_temporary(monkeypatch, tmp_
             main.update_software_settings({"debug_melody": "added"})
         assert main.melody_id == "original"
         main.update_software_settings({"debug_mode": True})
-        assert runtime.snapshot()["completion"]["dfesta_presses_required"] == 99
+        assert runtime.snapshot()["completion"]["dfesta_presses_required"] == 999
         before = main._melody_manager.snapshot()
         for bad in ["../config", "missing", None]:
             with pytest.raises(ValueError):
@@ -805,7 +1023,7 @@ def test_debug_melody_restart_and_99_requirement_are_temporary(monkeypatch, tmp_
         assert settings["available_melodies"] == ["added", "original"]
         assert runtime.snapshot()["cell_count"] == 1
         assert runtime.snapshot()["state"] == "RUNNING"
-        assert runtime.snapshot()["completion"]["dfesta_presses_required"] == 99
+        assert runtime.snapshot()["completion"]["dfesta_presses_required"] == 999
         assert main._melody_manager.snapshot() == before
         main.update_software_settings({"debug_mode": False})
         assert runtime.snapshot()["completion"]["dfesta_presses_required"] == 3

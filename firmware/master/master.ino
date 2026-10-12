@@ -35,13 +35,14 @@
 #define PIN_DFESTA_OUT   17   // 디페스타 출력(LED) — PC 명령(D1/D0)으로 HIGH/LOW (39 에서 이동)
 #define BTN_COOLDOWN     350
 
-// 시작용 홀 센서 2개. 둘 다 자석을 감지해야 start 가 나간다.
+// Tray: either sensor means present; both sensors mean seated.
 #define PIN_HALL_START_A 5
 #define PIN_HALL_START_B 6
 // 디지털 홀 IC(A3144·US1881 등)는 오픈컬렉터라 자석을 감지하면 LOW 를 낸다.
 // 감지 시 HIGH 를 내는 센서를 쓰면 0 으로 바꾼다.
 #define HALL_ACTIVE_LOW  1
 #define HALL_DEBOUNCE_MS 50   // 감지 경계에서 값이 떨리는 것을 걸러낸다
+#define TRAY_REPORT_MS 1000
 
 #define FRAME_LEN 13
 #define STX       0x02
@@ -60,8 +61,12 @@ unsigned long lastListenMs = 0;
 bool playWasDown = false;
 bool dfestaWasDown = false;
 bool listenWasDown = false;
-bool hallBothOn = false;             // 확정된 상태 — 두 센서 모두 감지 중인가
-bool hallRawBoth = false;            // 직전 raw 판독
+bool hallPresent = false;
+bool hallSeated = false;
+bool hallRawA = false;
+bool hallRawB = false;
+bool hallStateKnown = false;
+unsigned long lastTrayReportMs = 0;
 unsigned long hallRawChangedMs = 0;  // raw 가 바뀐 시각
 unsigned long ledOffAt = 0;
 
@@ -134,21 +139,34 @@ bool hallDetected(int pin) {
   return HALL_ACTIVE_LOW ? !high : high;
 }
 
-// 두 홀 센서가 모두 자석을 감지하는 순간에만 start 를 한 번 보낸다.
-// 붙어 있는 동안에는 반복 전송하지 않고, 하나라도 떨어지면 다시 무장된다.
+void sendTrayState() {
+  pcSendLine(String("{\"type\":\"tray\",\"present\":") +
+             (hallPresent ? "true" : "false") + ",\"seated\":" +
+             (hallSeated ? "true" : "false") + "}");
+  lastTrayReportMs = millis();
+}
+
+// Report the initial stable state, changes immediately, and a 1 s heartbeat.
+// The server owns start decisions; do not also emit a legacy game/start event.
 void pollHallStart() {
-  const bool raw =
-      hallDetected(PIN_HALL_START_A) && hallDetected(PIN_HALL_START_B);
+  const bool a = hallDetected(PIN_HALL_START_A);
+  const bool b = hallDetected(PIN_HALL_START_B);
   const unsigned long now = millis();
-  if (raw != hallRawBoth) {   // 막 바뀐 값 — 안정될 때까지 확정하지 않는다
-    hallRawBoth = raw;
+  if (a != hallRawA || b != hallRawB) {
+    hallRawA = a;
+    hallRawB = b;
     hallRawChangedMs = now;
-    return;
   }
-  if (now - hallRawChangedMs < HALL_DEBOUNCE_MS) return;
-  if (raw == hallBothOn) return;
-  hallBothOn = raw;
-  if (raw) sendGameAction("start");
+  if (now - hallRawChangedMs >= HALL_DEBOUNCE_MS &&
+      (!hallStateKnown || hallPresent != (a || b) || hallSeated != (a && b))) {
+    hallPresent = a || b;
+    hallSeated = a && b;
+    hallStateKnown = true;
+    sendTrayState();
+  } else if (hallStateKnown && now - hallRawChangedMs >= HALL_DEBOUNCE_MS &&
+             now - lastTrayReportMs >= TRAY_REPORT_MS) {
+    sendTrayState();
+  }
 }
 
 // 유효 프레임 → JSON 변환해 PC 로 relay
@@ -288,10 +306,8 @@ void setup() {
 
   pinMode(PIN_HALL_START_A, INPUT_PULLUP);
   pinMode(PIN_HALL_START_B, INPUT_PULLUP);
-  // 부팅 시 이미 자석이 놓여 있어도 start 가 나가지 않도록 현재 상태를 기준으로 잡는다.
-  hallBothOn =
-      hallDetected(PIN_HALL_START_A) && hallDetected(PIN_HALL_START_B);
-  hallRawBoth = hallBothOn;
+  hallRawA = hallDetected(PIN_HALL_START_A);
+  hallRawB = hallDetected(PIN_HALL_START_B);
   hallRawChangedMs = millis();
 
   pinMode(PIN_DFESTA_OUT, OUTPUT);

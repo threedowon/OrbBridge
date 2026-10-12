@@ -16,10 +16,17 @@ HUB75_I2S_CFG::i2s_pins pins = {
 HUB75_I2S_CFG mxconfig(PANEL_WIDTH, PANEL_HEIGHT, PANEL_CHAIN, pins);
 MatrixPanel_I2S_DMA *display = nullptr;
 String serialLine;
-const uint32_t SERVER_TIMEOUT_MS = 5000;
-uint32_t lastServerTick = 0;
-bool serverWatchdogArmed = false;
-String lastText;
+String lastCommand;
+bool droppingLine = false;
+uint32_t lastSerialByteAt = 0;
+uint32_t lastValidCommandAt = 0;
+bool linkTimedOut = false;
+const int VIEW_MODE_COUNT = 7;
+int viewMode = 0;
+bool viewDirty = false;
+bool buttonRaw = false;
+bool buttonStable = false;
+uint32_t buttonChangedAt = 0;
 
 // ===== 사용자 설정 변수 =====
 const int PADDING_TOP    = 12;  // 상단 여백(px) — 텍스트 시작 y좌표
@@ -32,12 +39,6 @@ const int FONT_SIZE      = 1;   // 폰트 크기 배율 (1 = 6x8px 기본 폰트
 
 const int CHAR_W = 6;  // 기본 폰트 1글자 폭(배율 1 기준)
 const int DISPLAY_WIDTH = PANEL_WIDTH * PANEL_CHAIN;
-const int VIEW_MODE_COUNT = 7;  // 0:runtime 1:panel info 2~5:색상 6:test text
-int lastSeconds = -1;
-int viewMode = 0;
-bool buttonPressed = false;
-bool hasContent = false;
-uint32_t lastButtonTick = 0;
 
 
 // 카운트다운 최대 폭 기준 경계 (3자리 숫자 + " = 4글자)
@@ -75,8 +76,9 @@ void drawName(const char *text) {
   // 경계를 넘지 않도록 최대 글자 수로 잘라서 출력
   int maxChars = (NAME_REGION_END - PADDING_LEFT) / (CHAR_W * FONT_SIZE);
   char buf[40];
+  maxChars = min(maxChars, (int)sizeof(buf) - 1);
   strncpy(buf, text, maxChars);
-  buf[maxChars < 40 ? maxChars : 39] = '\0';
+  buf[maxChars] = '\0';
   display->print(buf);
 }
 
@@ -86,49 +88,62 @@ void drawCountdown(int seconds) {
   display->setTextColor(display->color565(255, 255, 255));
   display->setTextSize(FONT_SIZE);
 
-  char text[8];
+  char text[16];
   snprintf(text, sizeof(text), "%d\"", seconds);
   int x = DISPLAY_WIDTH - strlen(text) * CHAR_W * FONT_SIZE - PADDING_RIGHT;
   display->setCursor(x, PADDING_TOP);
   display->print(text);
 }
 
-void drawPanelInfo() {
+void drawStatus(const char *raw) {
+  String text(raw);
+  text.toUpperCase();
+  const int size = FONT_SIZE;
+  text = text.substring(0, DISPLAY_WIDTH / (CHAR_W * size));
+  int width = text.length() ? (text.length() * CHAR_W - 1) * size : 0;
   display->clearScreen();
+  display->setTextWrap(false);
+  display->setTextSize(size);
   display->setTextColor(display->color565(255, 255, 255));
-  display->setTextSize(1);
-  display->setTextWrap(false);
-
-  for (int panel = 0; panel < PANEL_CHAIN; panel++) {
-    int x = panel * PANEL_WIDTH + 2;
-    display->setCursor(x, 2);
-    display->printf("PANEL %d", panel + 1);
-    display->setCursor(x, 12);
-    display->printf("BIT %d", mxconfig.getPixelColorDepthBits());
-    display->setCursor(x, 22);
-    display->printf("%d Hz", display->calculated_refresh_rate);
-  }
-}
-
-// 순환 마지막의 테스트 문구 화면: Testgroup - testname ...... 123"
-void drawTestText() {
-  display->clearScreen();
-  display->setTextWrap(false);
-  drawName("Testgroup - testnameabcdefg");
-  drawCountdown(123);
+  display->setCursor((DISPLAY_WIDTH - width) / 2, (PANEL_HEIGHT - 7 * size) / 2);
+  display->print(text);
 }
 
 void drawRuntime() {
   display->clearScreen();
-  if (!hasContent) return;
-  drawName(lastText.c_str());
-  drawCountdown(lastSeconds);
+  if (linkTimedOut) {
+    drawStatus("OFFLINE");
+    return;
+  }
+  StaticJsonDocument<256> message;
+  if (deserializeJson(message, lastCommand)) return;
+  const char *type = message["type"] | "";
+  if (!strcmp(type, "status")) {
+    drawStatus(message["text"].as<const char *>());
+  } else if (!strcmp(type, "display")) {
+    String text = formatName(message["text"].as<const char *>());
+    drawName(text.c_str());
+    drawCountdown(message["seconds"].as<int>());
+  }
 }
 
-void changeView() {
-  viewMode = (viewMode + 1) % VIEW_MODE_COUNT;
-  if (viewMode == 1) {
-    drawPanelInfo();
+void drawView() {
+  display->clearScreen();
+  display->setTextWrap(false);
+  display->setTextSize(1);
+  display->setTextColor(display->color565(255, 255, 255));
+  if (viewMode == 0) {
+    drawRuntime();
+  } else if (viewMode == 1) {
+    for (int panel = 0; panel < PANEL_CHAIN; panel++) {
+      int x = panel * PANEL_WIDTH + 2;
+      display->setCursor(x, 2);
+      display->printf("PANEL %d", panel + 1);
+      display->setCursor(x, 12);
+      display->printf("BIT %d", mxconfig.getPixelColorDepthBits());
+      display->setCursor(x, 22);
+      display->printf("%d Hz", display->calculated_refresh_rate);
+    }
   } else if (viewMode == 2) {
     display->fillScreen(display->color565(255, 255, 255));
   } else if (viewMode == 3) {
@@ -137,58 +152,30 @@ void changeView() {
     display->fillScreen(display->color565(0, 255, 0));
   } else if (viewMode == 5) {
     display->fillScreen(display->color565(0, 0, 255));
-  } else if (viewMode == 6) {
-    drawTestText();
   } else {
-    drawRuntime();
+    drawName("Testgroup - testnameabcdefg");
+    drawCountdown(123);
   }
-}
-
-// A lost server must not leave the last frame (or a diagnostic view) lit.
-void blankPanel() {
-  display->clearScreen();
-  hasContent = false;
-  lastText = "";
-  lastSeconds = -1;
-  viewMode = 0;
-}
-
-void serverAlive() {
-  lastServerTick = millis();
-  serverWatchdogArmed = true;
+  // Render once after processing input, without showing an intermediate frame.
+  display->flipDMABuffer();
+  viewDirty = false;
 }
 
 void handleCommand(const String &line) {
-  StaticJsonDocument<128> message;
+  StaticJsonDocument<256> message;
   if (deserializeJson(message, line)) return;
-
   const char *type = message["type"] | "";
-  if (!strcmp(type, "shutdown")) {
-    blankPanel();
-    serverWatchdogArmed = false;
-    return;
-  }
-  if (!strcmp(type, "heartbeat")) {
-    serverAlive();
-    return;
-  }
-  if (!strcmp(type, "clear")) {
-    serverAlive();
-    hasContent = false;
-    if (viewMode == 0) display->clearScreen();
-    return;
-  }
-  if (strcmp(type, "display")) return;
-
-  const char *text = message["text"] | "";
-  int seconds = message["seconds"] | -1;
-  if (seconds < 0) return;
-  serverAlive();
-
-  lastText = formatName(text);  // "그룹 - 멤버" 형식으로 정규화
-  lastSeconds = seconds;
-  hasContent = true;
-  if (viewMode == 0) drawRuntime();
+  if (strcmp(type, "clear") && strcmp(type, "status") && strcmp(type, "display")) return;
+  if (strcmp(type, "clear") && !message["text"].is<const char *>()) return;
+  if (!strcmp(type, "display") &&
+      (!message["seconds"].is<int>() || message["seconds"].as<int>() < 0)) return;
+  // Host heartbeat recovers a reboot without repeatedly clearing a healthy panel.
+  lastValidCommandAt = millis();
+  linkTimedOut = false;
+  if (line == lastCommand) return;
+  lastCommand = line;
+  // Keep receiving the latest game screen while a diagnostic view is selected.
+  if (viewMode == 0) viewDirty = true;
 }
 
 void setup() {
@@ -196,7 +183,10 @@ void setup() {
   delay(1500);
 
   mxconfig.setPixelColorDepthBits(2);
-  mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_20M;
+  mxconfig.double_buff = true;
+  mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_10M;
+  mxconfig.latch_blanking = 4;
+  mxconfig.clkphase = false;
   display = new MatrixPanel_I2S_DMA(mxconfig);
   if (!display->begin()) {
     Serial.println("Display begin() FAILED");
@@ -205,34 +195,55 @@ void setup() {
 
   display->setBrightness8(255);
   display->clearScreen();
-  serialLine.reserve(128);
-  lastText.reserve(48);
+  display->setTextWrap(false);
+  serialLine.reserve(160);
+  lastCommand.reserve(160);
+  lastValidCommandAt = millis();
   pinMode(UP_BUTTON_PIN, INPUT_PULLUP);
+  buttonRaw = buttonStable = digitalRead(UP_BUTTON_PIN) == LOW;
+  buttonChangedAt = millis();
 }
 
 void loop() {
   bool pressed = digitalRead(UP_BUTTON_PIN) == LOW;
   uint32_t now = millis();
-  if (pressed && !buttonPressed && now - lastButtonTick >= 200) {
-    lastButtonTick = now;
-    changeView();
+  if (pressed != buttonRaw) {
+    buttonRaw = pressed;
+    buttonChangedAt = now;
   }
-  buttonPressed = pressed;
-
-  while (Serial.available()) {
-    char value = Serial.read();
-    if (value == '\n') {
-      handleCommand(serialLine);
-      serialLine = "";
-    } else if (value != '\r') {
-      serialLine += value;
-      if (serialLine.length() > 160) serialLine = "";
+  if (buttonRaw != buttonStable && now - buttonChangedAt >= 30) {
+    buttonStable = buttonRaw;
+    if (buttonStable) {
+      viewMode = (viewMode + 1) % VIEW_MODE_COUNT;
+      viewDirty = true;
     }
   }
-  if (serverWatchdogArmed && uint32_t(millis() - lastServerTick) >= SERVER_TIMEOUT_MS) {
-    blankPanel();
+  // A partial/oversized frame must never be interpreted as a new command tail.
+  if ((serialLine.length() || droppingLine) && millis() - lastSerialByteAt > 250) {
     serialLine = "";
-    serverWatchdogArmed = false;
+    droppingLine = false;
   }
-
+  int budget = 256;
+  while (Serial.available() && budget-- > 0) {
+    char value = Serial.read();
+    lastSerialByteAt = millis();
+    if (value == '\n') {
+      if (!droppingLine) handleCommand(serialLine);
+      serialLine = "";
+      droppingLine = false;
+    } else if (value != '\r' && !droppingLine) {
+      if (serialLine.length() >= 160) {
+        serialLine = "";
+        droppingLine = true;
+      } else {
+        serialLine += value;
+      }
+    }
+  }
+  if (!linkTimedOut && millis() - lastValidCommandAt >= 5000) {
+    linkTimedOut = true;
+    lastCommand = "";
+    if (viewMode == 0) viewDirty = true;
+  }
+  if (viewDirty) drawView();
 }

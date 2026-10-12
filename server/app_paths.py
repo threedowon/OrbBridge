@@ -15,9 +15,8 @@ _SEED_FILES = (
 
 _DEFAULT_DOCUMENTS = {
     "config.json": (
-        '{"current_stage":1,"melody":"dynamite","input_mode":"table",'
-        '"melody_rotation":{"mode":"sequence","playlist":'
-        '["dynamite","Iam","biplane"]},'
+        '{"current_stage":1,"input_mode":"table",'
+        '"melody_rotation":{"mode":"random","playlist":[]},'
         '"web":{"host":"127.0.0.1","port":8080},'
         '"serial":{"port":"COM5","baudrate":115200},'
         '"matrix_display":{"enabled":true,"port":"COM6",'
@@ -78,9 +77,10 @@ def ensure_data_files() -> None:
             target.write_text(_DEFAULT_DOCUMENTS[name], encoding="utf-8")
 
     mdir = melodies_dir()
+    first_library = not mdir.exists()
     mdir.mkdir(parents=True, exist_ok=True)
     bundled_melodies = bundled_melodies_dir()
-    if bundled_melodies.is_dir():
+    if first_library and bundled_melodies.is_dir():
         for src in bundled_melodies.glob("*.json"):
             dest = mdir / src.name
             if not dest.exists():

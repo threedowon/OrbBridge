@@ -1,0 +1,138 @@
+{
+  "songId": "BTS-BOY_WITH_LUV",
+  "title": "Bts-Boy With Luv",
+  "artist": "",
+  "bpm": 115,
+  "range": [
+    "C4",
+    "C5"
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "note": "E4",
+      "duration": 0.25,
+      "velocity": 88,
+      "harmony": [
+        "C4",
+        "G4"
+      ]
+    },
+    {
+      "step": 2,
+      "note": "E4",
+      "duration": 0.5,
+      "velocity": 103,
+      "harmony": [
+        "C4",
+        "G4"
+      ]
+    },
+    {
+      "step": 3,
+      "note": "G4",
+      "duration": 0.25,
+      "velocity": 91,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 4,
+      "note": "G4",
+      "duration": 0.5,
+      "velocity": 106,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 5,
+      "note": "A4",
+      "duration": 0.25,
+      "velocity": 94,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 6,
+      "note": "A4",
+      "duration": 0.5,
+      "velocity": 110,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 7,
+      "note": "B4",
+      "duration": 0.25,
+      "velocity": 97,
+      "harmony": [
+        "D4",
+        "G4"
+      ]
+    },
+    {
+      "step": 8,
+      "note": "B4",
+      "duration": 0.5,
+      "velocity": 114,
+      "harmony": [
+        "D4",
+        "G4"
+      ]
+    },
+    {
+      "step": 9,
+      "note": "B4",
+      "duration": 0.25,
+      "velocity": 99,
+      "harmony": [
+        "D4",
+        "G4"
+      ]
+    },
+    {
+      "step": 10,
+      "note": "C5",
+      "duration": 0.25,
+      "velocity": 118,
+      "harmony": [
+        "E4",
+        "G4"
+      ]
+    },
+    {
+      "step": 11,
+      "note": "B4",
+      "duration": 1,
+      "velocity": 104,
+      "harmony": [
+        "D4",
+        "G4"
+      ]
+    },
+    {
+      "step": 12,
+      "note": "REST",
+      "duration": 1,
+      "velocity": 127
+    }
+  ],
+  "game_rules": {
+    "dfesta_presses_required": 1
+  },
+  "dfesta": {
+    "weights": {
+      "melody": 70,
+      "harmony_a": 15,
+      "harmony_b": 15
+    }
+  }
+}

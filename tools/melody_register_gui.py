@@ -460,7 +460,7 @@ class MelodyRegisterApp:
             return
         win = self._dialog("게임 재생 순서")
         mode = tk.StringVar(win, settings["mode"])
-        self._combo(win, mode, ("sequence", "fixed"), 20).pack(padx=16, pady=12)
+        self._combo(win, mode, ("sequence", "random", "fixed"), 20).pack(padx=16, pady=12)
         box = tk.Listbox(win, bg=C["bg"], fg=C["text"], width=30, height=10, exportselection=False)
         box.pack(padx=16)
         for item in settings["playlist"]:

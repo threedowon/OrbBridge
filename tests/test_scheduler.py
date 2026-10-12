@@ -25,6 +25,28 @@ def melody_raw():
     }
 
 
+def test_display_snapshot_excludes_cancelled_run_before_worker_exits():
+    entered, release = threading.Event(), threading.Event()
+
+    def send(notes):
+        entered.set()
+        release.wait(2)
+        return []
+
+    scheduler = PlaybackScheduler(send_notes=send, publish_event=lambda event: None)
+    try:
+        scheduler.start("listen", parse_melody(melody_raw()))
+        assert entered.wait(1)
+        assert scheduler.display_snapshot()["active"]
+        assert scheduler.display_snapshot()["mode"] == "listen"
+        scheduler.cancel()
+        assert not scheduler.display_snapshot()["active"]
+        assert "timing" not in scheduler.display_snapshot()
+    finally:
+        release.set()
+        scheduler.close()
+
+
 def cells():
     return {
         "1:1": {

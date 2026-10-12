@@ -1,0 +1,138 @@
+{
+  "songId": "ENHYPEN-BITE_ME",
+  "title": "Enhypen-Bite Me",
+  "artist": "",
+  "bpm": 110,
+  "range": [
+    "C4",
+    "C5"
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "note": "E4",
+      "duration": 0.5,
+      "velocity": 90,
+      "harmony": [
+        "G4",
+        "B4"
+      ]
+    },
+    {
+      "step": 2,
+      "note": "B4",
+      "duration": 0.75,
+      "velocity": 111,
+      "harmony": [
+        "E4",
+        "G4"
+      ]
+    },
+    {
+      "step": 3,
+      "note": "B4",
+      "duration": 0.5,
+      "velocity": 102,
+      "harmony": [
+        "E4",
+        "G4"
+      ]
+    },
+    {
+      "step": 4,
+      "note": "A4",
+      "duration": 0.25,
+      "velocity": 86,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 5,
+      "note": "G4",
+      "duration": 0.5,
+      "velocity": 96,
+      "harmony": [
+        "E4",
+        "B4"
+      ]
+    },
+    {
+      "step": 6,
+      "note": "C5",
+      "duration": 1.5,
+      "velocity": 116,
+      "harmony": [
+        "E4",
+        "A4"
+      ]
+    },
+    {
+      "step": 7,
+      "note": "E4",
+      "duration": 0.5,
+      "velocity": 92,
+      "harmony": [
+        "G4",
+        "B4"
+      ]
+    },
+    {
+      "step": 8,
+      "note": "B4",
+      "duration": 0.75,
+      "velocity": 112,
+      "harmony": [
+        "E4",
+        "G4"
+      ]
+    },
+    {
+      "step": 9,
+      "note": "B4",
+      "duration": 0.5,
+      "velocity": 103,
+      "harmony": [
+        "E4",
+        "G4"
+      ]
+    },
+    {
+      "step": 10,
+      "note": "A4",
+      "duration": 0.25,
+      "velocity": 87,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 11,
+      "note": "G4",
+      "duration": 0.5,
+      "velocity": 98,
+      "harmony": [
+        "E4",
+        "B4"
+      ]
+    },
+    {
+      "step": 12,
+      "note": "REST",
+      "duration": 1,
+      "velocity": 127
+    }
+  ],
+  "game_rules": {
+    "dfesta_presses_required": 1
+  },
+  "dfesta": {
+    "weights": {
+      "melody": 70,
+      "harmony_a": 15,
+      "harmony_b": 15
+    }
+  }
+}

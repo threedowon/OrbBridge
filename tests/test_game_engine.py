@@ -346,6 +346,7 @@ def test_timers_continue_while_waiting_for_dfesta():
     assert snapshot["state"] == "RUNNING"
     assert snapshot["is_correct"] is True
     assert snapshot["timers"] == {
+        "since_table_cleared_s": None,
         "elapsed_s": 5,
         "time_over_limit_s": 120.0,
         "idle_limit_s": 30.0,
