@@ -1310,9 +1310,9 @@ def run_main() -> None:
     except KeyboardInterrupt:
         print("종료")
     finally:
+        _matrix_display.close()
         blackout_leds()   # 시리얼 스레드가 포트를 닫기 전에 보내야 한다
         stop_serial_input()
-        _matrix_display.close()
         stop_websocket_service()
         runtime.close()
         with _scheduler_lock:

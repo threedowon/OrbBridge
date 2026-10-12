@@ -16,6 +16,9 @@ HUB75_I2S_CFG::i2s_pins pins = {
 HUB75_I2S_CFG mxconfig(PANEL_WIDTH, PANEL_HEIGHT, PANEL_CHAIN, pins);
 MatrixPanel_I2S_DMA *display = nullptr;
 String serialLine;
+const uint32_t SERVER_TIMEOUT_MS = 5000;
+uint32_t lastServerTick = 0;
+bool serverWatchdogArmed = false;
 String lastText;
 
 // ===== 사용자 설정 변수 =====
@@ -141,12 +144,36 @@ void changeView() {
   }
 }
 
+// A lost server must not leave the last frame (or a diagnostic view) lit.
+void blankPanel() {
+  display->clearScreen();
+  hasContent = false;
+  lastText = "";
+  lastSeconds = -1;
+  viewMode = 0;
+}
+
+void serverAlive() {
+  lastServerTick = millis();
+  serverWatchdogArmed = true;
+}
+
 void handleCommand(const String &line) {
   StaticJsonDocument<128> message;
   if (deserializeJson(message, line)) return;
 
   const char *type = message["type"] | "";
+  if (!strcmp(type, "shutdown")) {
+    blankPanel();
+    serverWatchdogArmed = false;
+    return;
+  }
+  if (!strcmp(type, "heartbeat")) {
+    serverAlive();
+    return;
+  }
   if (!strcmp(type, "clear")) {
+    serverAlive();
     hasContent = false;
     if (viewMode == 0) display->clearScreen();
     return;
@@ -156,6 +183,7 @@ void handleCommand(const String &line) {
   const char *text = message["text"] | "";
   int seconds = message["seconds"] | -1;
   if (seconds < 0) return;
+  serverAlive();
 
   lastText = formatName(text);  // "그룹 - 멤버" 형식으로 정규화
   lastSeconds = seconds;
@@ -201,4 +229,10 @@ void loop() {
       if (serialLine.length() > 160) serialLine = "";
     }
   }
+  if (serverWatchdogArmed && uint32_t(millis() - lastServerTick) >= SERVER_TIMEOUT_MS) {
+    blankPanel();
+    serialLine = "";
+    serverWatchdogArmed = false;
+  }
+
 }
