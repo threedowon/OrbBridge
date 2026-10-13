@@ -350,6 +350,7 @@ def get_status() -> dict:
     now = time.time() * 1000
     hardware = hardware_io._snapshot()
     connections = hardware["connections"]
+    matrix = _matrix_display.connection_status() if _matrix_display is not None else None
     with _state_lock:
         serial = {"connected": any(c["open"] for c in connections),
                   "port": ", ".join(c["port"] for c in connections),
@@ -371,6 +372,7 @@ def get_status() -> dict:
             "orb_count": len(orb_mapping),
             "serial": serial,
             "hardware": hardware,
+            "matrix": matrix,
             "cell_count": game["cell_count"],
             "slaves": slaves,
             "slave_online_timeout_s": SLAVE_ONLINE_TIMEOUT_S,

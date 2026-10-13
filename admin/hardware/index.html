@@ -538,6 +538,10 @@
         <span class="dot" id="dot-ws"></span>
         <span id="lbl-ws">WS —</span>
       </div>
+      <div class="status-item hardware-only" id="matrix-status" title="매트릭스 상태 확인 중">
+        <span class="dot warn" id="dot-matrix"></span>
+        <span id="lbl-matrix">Matrix</span>
+      </div>
       <div class="status-item" title="게임 상태">
         <span class="dot" id="dot-game"></span>
         <span id="lbl-game">Game —</span>
@@ -918,8 +922,21 @@
       }
     }
 
+    function renderMatrixStatus(matrix) {
+      const states = { connected: '연결', disconnected: '연결 끊김',
+        connecting: '연결 대기', waiting: '연결 대기', disabled: '비활성' };
+      const state = matrix?.state;
+      const label = states[state] || '상태 확인 불가';
+      setDot('dot-matrix', matrix?.connected ? 'ok' : (state === 'disconnected' ? 'err' : 'warn'));
+      const badge = document.getElementById('matrix-status');
+      badge.title = `Matrix · ${label}${matrix?.port ? ` · ${matrix.port}` : ''}` +
+        (matrix?.error ? ` · ${matrix.error}` : '') + ' · USB 시리얼 전송 기준';
+      badge.setAttribute('aria-label', badge.title);
+    }
+
     function renderStatus(s) {
       if (!s) return;
+      renderMatrixStatus(s.matrix);
       const serialOk = s.serial?.connected;
       const tableMode = s.input_mode === 'table';
       setDot('dot-serial', serialOk ? 'ok' : (tableMode ? 'warn' : 'err'));
@@ -1130,9 +1147,9 @@
     async function fetchStatus() {
       try {
         const res = await fetch('/api/status');
-        if (!res.ok) return;
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         renderStatus(await res.json());
-      } catch { /* 서버가 시작 중일 수 있다. */ }
+      } catch { renderMatrixStatus(null); }
     }
 
     function renderMidiStatus(payload) {

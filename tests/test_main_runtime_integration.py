@@ -201,6 +201,18 @@ def tray_main(monkeypatch):
             sys.modules.pop(name, None)
 
 
+def test_admin_status_exposes_matrix_connection(tray_main, monkeypatch):
+    main, _, writes = tray_main
+    assert main.get_status()["matrix"]["state"] == "waiting"
+    assert writes == []
+    main._update_matrix_display()
+    assert main.get_status()["matrix"]["connected"] is True
+    main._matrix_display.close()
+    assert main.get_status()["matrix"]["state"] == "disconnected"
+    monkeypatch.setattr(main, "_matrix_display", None)
+    assert main.get_status()["matrix"] is None
+
+
 @pytest.mark.parametrize("return_at", [0.5, 4.5, None])
 def test_admin_tray_end_to_end_cleanup_and_next_player(tray_main, return_at):
     main, clock, writes = tray_main
@@ -337,6 +349,7 @@ def test_main_routes_web_event_through_runtime_snapshot_and_midi(monkeypatch):
     midi_calls = []
     matrix_calls = []
     main._matrix_display = types.SimpleNamespace(
+        connection_status=lambda: {"enabled": True, "connected": True},
         clear_voice=lambda: None,
         show_voice=lambda voice, snapshot: matrix_calls.append(
             (voice, snapshot["state"])

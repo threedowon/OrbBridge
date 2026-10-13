@@ -52,8 +52,24 @@ class MatrixDisplay:
         self._closed = False
         self._lock = threading.Lock()
         self._io_lock = threading.Lock()
+        self._connection_state = "waiting" if self.enabled else "disabled"
+        self._connection_error = ""
 
-    def _disconnect(self) -> None:
+    def connection_status(self) -> dict:
+        """Return cached serial status without opening or probing the device."""
+        with self._lock:
+            return {"enabled": self.enabled, "port": self.port,
+                    "state": self._connection_state,
+                    "connected": self._connection_state == "connected",
+                    "error": self._connection_error}
+
+    def _set_connection_status(self, state: str, error: str = "") -> None:
+        with self._lock:
+            self._connection_state = state
+            self._connection_error = error
+
+    def _disconnect(self, error: str = "") -> None:
+        self._set_connection_status("disconnected" if self.enabled else "disabled", error)
         device, self._device = self._device, None
         self._last_payload = None
         if device is not None:
@@ -65,7 +81,10 @@ class MatrixDisplay:
     def _connect(self, now: float) -> bool:
         if self._device is not None:
             return now >= self._ready_at
-        if self._serial is None or now < self._retry_at:
+        if self._serial is None:
+            self._set_connection_status("disconnected", "pyserial not installed")
+            return False
+        if now < self._retry_at:
             return False
         self._retry_at = now + self.RETRY_S
         try:
@@ -75,7 +94,9 @@ class MatrixDisplay:
             # Opening the USB port can reboot the ESP32. Never sleep on a game thread.
             self._ready_at = self._clock() + self.BOOT_S
             self._last_payload = None
+            self._set_connection_status("connecting")
         except Exception as exc:
+            self._set_connection_status("disconnected", str(exc))
             if self._connection_failure_logs < self.CONNECTION_FAILURE_LOG_LIMIT:
                 print(f"[dotmatrix] connection failed ({self.port}): {exc}")
                 self._connection_failure_logs += 1
@@ -199,11 +220,12 @@ class MatrixDisplay:
                     raise OSError("incomplete matrix command")
             except Exception as exc:
                 print(f"[dotmatrix] disconnected ({self.port}): {exc}")
-                self._disconnect()
+                self._disconnect(str(exc))
                 self._retry_at = self._clock() + self.RETRY_S
                 return
             self._last_payload = payload
             self._last_sent_at = now
+            self._set_connection_status("connected")
 
     def close(self) -> None:
         with self._io_lock:

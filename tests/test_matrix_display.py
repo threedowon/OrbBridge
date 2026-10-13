@@ -190,6 +190,57 @@ def test_boot_wait_and_heartbeat_recover_silent_reboot(rig):
     assert serial.opens == 1
 
 
+def test_connection_status_tracks_boot_failure_recovery_and_close(rig):
+    matrix, device, serial, now = rig
+    matrix.BOOT_S = 1.6
+    assert matrix.connection_status()["state"] == "waiting"
+    assert serial.opens == 0  # Reading status must not perform serial I/O.
+    serial.fail = True
+    matrix.update({"state": "READY"})
+    status = matrix.connection_status()
+    assert status["state"] == "disconnected"
+    assert status["connected"] is False
+    assert status["error"] == "missing port"
+
+    serial.fail = False
+    now[0] = 1
+    matrix.update({"state": "READY"})
+    assert matrix.connection_status()["state"] == "connecting"
+    assert matrix.connection_status()["connected"] is False
+    now[0] = 2.6
+    matrix.update({"state": "READY"})
+    assert matrix.connection_status() == {
+        "enabled": True, "port": "COM6", "state": "connected",
+        "connected": True, "error": "",
+    }
+
+    device.short = True
+    now[0] = 4
+    matrix.update({"state": "READY"})
+    assert matrix.connection_status()["connected"] is False
+    assert matrix.connection_status()["error"] == "incomplete matrix command"
+    device.short = False
+    matrix.BOOT_S = 0
+    now[0] = 5
+    matrix.update({"state": "READY"})
+    assert matrix.connection_status()["connected"] is True
+    assert matrix.connection_status()["error"] == ""
+    matrix.close()
+    assert matrix.connection_status()["state"] == "disconnected"
+
+
+def test_connection_status_distinguishes_disabled_and_missing_serial(rig):
+    matrix, _, _, _ = rig
+    disabled = MatrixDisplay({"enabled": False}, catalog={"voices": {}})
+    disabled.update({"state": "READY"})
+    assert disabled.connection_status()["state"] == "disabled"
+    assert disabled.connection_status()["connected"] is False
+    matrix._serial = None
+    matrix.update({"state": "READY"})
+    assert matrix.connection_status()["state"] == "disconnected"
+    assert matrix.connection_status()["error"] == "pyserial not installed"
+
+
 def test_missing_port_and_short_writes_are_retried_without_busy_loop(rig):
     matrix, device, serial, now = rig
     serial.fail = True
@@ -222,6 +273,7 @@ def test_slow_serial_cannot_block_orb_placement(rig):
     worker.start()
     try:
         assert entered.wait(1)
+        assert matrix.connection_status()["connected"] is False
         placed = threading.Event()
         placing = threading.Thread(target=lambda: (
             matrix.show_voice("ive_5", running()), placed.set()
