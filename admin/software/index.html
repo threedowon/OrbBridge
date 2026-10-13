@@ -567,14 +567,14 @@
   </style>
   <link rel="stylesheet" href="/admin/operator.css">
   <style>
-    .monitor-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; order: -2; }
+    .monitor-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; order: -2; }
     .monitor-tabs button { padding: 8px 4px; background: transparent; border-color: transparent; color: var(--muted); }
     .monitor-tabs button[aria-selected="true"] { background: var(--surface2); color: var(--ink); border-color: var(--border); }
     html[data-mode="software"] .side-panel > .monitor-tabs { padding: 6px; }
-    html[data-mode="software"] .side-panel[data-view="midi"] > :is(.system-section, .settings-section, .log-section),
-    html[data-mode="software"] .side-panel[data-view="system"] > :is(.midi-section, .settings-section, .log-section),
-    html[data-mode="software"] .side-panel[data-view="settings"] > :is(.system-section, .midi-section, .log-section),
-    html[data-mode="software"] .side-panel[data-view="log"] > :is(.system-section, .midi-section, .settings-section) { display: none; }
+    html[data-mode="software"] .side-panel[data-view="midi"] > :is(.system-section, .log-section),
+    html[data-mode="software"] .side-panel[data-view="system"] > :is(.midi-section, .log-section),
+    html[data-mode="software"] .side-panel[data-view="log"] > :is(.system-section, .midi-section) { display: none; }
+    .system-section .settings-section { padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
     html[data-mode="software"] .software-monitor .side-panel { display: flex !important; }
     html[data-mode="software"] .stat-box .num { font-size: 19px; overflow-wrap: anywhere; }
     html[data-mode="software"] .midi-summary { overflow-wrap: anywhere; }
@@ -644,11 +644,21 @@
       <div class="monitor-tabs software-only" role="tablist" aria-label="관리 패널">
         <button type="button" role="tab" data-view="system" aria-selected="false">게임 상태</button>
         <button type="button" role="tab" data-view="midi" aria-selected="true">MIDI 진단</button>
-        <button type="button" role="tab" data-view="settings" aria-selected="false">시간 설정</button>
         <button type="button" role="tab" data-view="log" aria-selected="false">로그</button>
       </div>
       <div class="system-section">
-        <div class="section-title">시스템</div>
+        <div class="settings-section software-only">
+          <div class="section-title">시간 설정</div>
+          <form id="timer-settings" class="midi-fields">
+            <label>게임 제한 시간(초)<input id="game-time" type="number" min="0.001" step="any" required></label>
+            <label>Idle 시간(초)<input id="idle-time" type="number" min="0.001" step="any" required></label>
+            <button type="submit" id="save-timers">설정 저장</button>
+          </form>
+          <p>저장한 시간은 서버 재시작 후 적용된다.</p>
+          <p id="active-timers"></p>
+          <p id="settings-message" role="status" aria-live="polite"></p>
+        </div>
+        <div class="section-title">게임 상태</div>
         <div class="stats-grid">
           <div class="stat-box"><div class="num" id="stat-filled">0</div><div class="lbl">점유 셀</div></div>
           <div class="stat-box"><div class="num" id="stat-orbs">0</div><div class="lbl">등록 Orb</div></div>
@@ -683,18 +693,6 @@
         </div>
       </div>
 
-      <div class="settings-section software-only">
-        <div class="section-title">시간 설정</div>
-        <form id="timer-settings" class="midi-fields">
-          <label>게임 제한 시간(초)<input id="game-time" type="number" min="0.001" step="any" required></label>
-          <label>Idle 시간(초)<input id="idle-time" type="number" min="0.001" step="any" required></label>
-          <button type="submit" id="save-timers">시간 설정 저장</button>
-        </form>
-        <p>시간 설정은 디버그 모드와 관계없이 config.json에 저장되며 서버 재시작 후 적용됩니다.</p>
-        <p id="active-timers"></p>
-        <p id="settings-message" role="status" aria-live="polite"></p>
-      </div>
-
       <div class="midi-section software-only">
         <div class="section-title">MIDI 진단</div>
         <div class="debug-tools">
@@ -712,8 +710,8 @@
         <div class="midi-card">
           <div class="midi-summary" id="midi-summary">상태 확인 중</div>
           <div class="midi-fields">
-            <label>Voice<select id="midi-voice"></select></label>
-            <label>Pitch
+            <label>보이스<select id="midi-voice"></select></label>
+            <label>음
               <select id="midi-pitch">
                 <option value="0">C</option><option value="1">D</option>
                 <option value="2">E</option><option value="3">F</option>
@@ -725,12 +723,14 @@
             <label>순회 간격(ms)<input id="midi-delay" type="number" min="30" max="5000" value="220"></label>
           </div>
           <div class="toolbar">
-            <button class="primary" data-midi-mode="note">단음</button>
-            <button data-midi-mode="voice">선택 Voice 8음</button>
-            <button data-midi-mode="all_voices">전체 Voice 동시</button>
+            <button class="primary" data-midi-mode="note">단음 재생</button>
+            <button data-midi-mode="voice">선택 8음</button>
+            <button data-midi-mode="all_voices">전체 순회</button>
             <button id="btn-midi-stop">중지</button>
             <button id="btn-midi-reconnect">포트 재연결</button>
           </div>
+          <p>선택 8음: 선택한 보이스의 C~C high. 전체 순회: 모든 그룹·멤버의 8음을 차례로 재생한다.</p>
+          <p>전체 순회 간격은 음 길이보다 짧게 적용되지 않는다.</p>
           <div class="midi-job" id="midi-job">대기</div>
           <div class="midi-job" id="playback-timing">재생 타이밍: 기록 없음</div>
           <button id="btn-timing-save" disabled>타이밍 기록 저장</button>
@@ -1050,32 +1050,49 @@
       const voices = payload?.voices || [];
       if (voices.join('\n') !== Array.from(voiceSelect.options).map(o => o.value).join('\n')) {
         voiceSelect.innerHTML = '';
+        const groups = new Map();
         for (const voice of voices) {
+          const groupName = voice.replace(/_\d+$/, '');
+          if (!groups.has(groupName)) {
+            const group = document.createElement('optgroup');
+            group.label = groupName;
+            groups.set(groupName, group);
+            voiceSelect.appendChild(group);
+          }
           const option = document.createElement('option');
           option.value = voice;
           option.textContent = voice;
-          voiceSelect.appendChild(option);
+          groups.get(groupName).appendChild(option);
         }
         if (voices.includes(selected)) voiceSelect.value = selected;
       }
 
       const running = Boolean(job.running);
       document.querySelectorAll('[data-midi-mode]').forEach(button => {
-        button.disabled = running || !ready;
+        button.disabled = running || !ready || !voices.length;
       });
+      voiceSelect.disabled = running || !voices.length;
+      document.getElementById('midi-pitch').disabled = running;
+      document.getElementById('midi-duration').disabled = running;
+      document.getElementById('midi-delay').disabled = running;
       document.getElementById('btn-midi-stop').disabled = !running;
       document.getElementById('btn-midi-reconnect').disabled = running;
+      const modeLabel = { note: '단음 재생', voice: '선택 8음', all_voices: '전체 순회' }[job.mode] || '';
+      const failures = job.failed ?? (job.results || []).filter(result => !result.ok).length;
+      const outcome = job.error ? '오류' : job.stopped ? '중지' : '완료';
+      const progress = `${job.completed}/${job.total}${failures ? ` · 실패 ${failures}` : ''}`;
+      const pitchLabel = ['C', 'D', 'E', 'F', 'G', 'A', 'B', 'C high'][job.current_pitch];
+      const current = job.current_voice && pitchLabel ? ` · ${job.current_voice} / ${pitchLabel}` : '';
       document.getElementById('midi-job').textContent = running
-        ? `${job.mode} · ${job.completed}/${job.total}`
-        : (job.error || (job.id ? `완료 · ${job.completed}/${job.total}` : '대기'));
+        ? `${modeLabel} · ${progress}${current}`
+        : (job.id ? `${outcome} · ${progress}${job.error ? ` · ${job.error}` : ''}` : '대기');
 
       if (!running && job.id && job.id !== lastMidiJobId) {
         lastMidiJobId = job.id;
-        const failures = (job.results || []).filter(result => !result.ok).length;
         addLog(
           'midi',
-          `${job.mode} 완료 · ${job.completed}/${job.total}${failures ? ` · 실패 ${failures}` : ''}`,
-          failures ? 'log-warn' : 'log-info',
+          `${modeLabel} ${outcome} · ${progress}${job.error ? ` · ${job.error}` : ''}`,
+          failures || job.error ? 'log-warn' : 'log-info',
         );
       }
     }

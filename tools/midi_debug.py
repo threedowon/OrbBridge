@@ -8,7 +8,7 @@ import time
 from copy import deepcopy
 
 from server.inout import midi_out
-from server.voice_catalog import list_catalog_voices
+from server.voice_catalog import list_catalog_voices, load_voice_catalog
 
 
 _job_lock = threading.Lock()
@@ -20,6 +20,10 @@ _job = {
     "mode": None,
     "completed": 0,
     "total": 0,
+    "failed": 0,
+    "stopped": False,
+    "current_voice": "",
+    "current_pitch": None,
     "results": [],
     "error": "",
 }
@@ -28,6 +32,19 @@ _job = {
 def _job_snapshot() -> dict:
     with _job_lock:
         return deepcopy(_job)
+
+
+def _test_voices() -> list[str]:
+    """오브 등록 여부와 관계없이 전체 멤버를 그룹·번호 순서로 반환한다."""
+
+    names = set(list_catalog_voices())
+    names.update(name.strip() for name in load_voice_catalog()["voices"] if name.strip())
+
+    def sort_key(name: str) -> tuple:
+        group, _, member = name.rpartition("_")
+        return (group.lower(), int(member), name) if member.isdigit() else (name.lower(), 0, name)
+
+    return sorted(names, key=sort_key)
 
 
 def status_payload(*, initialize: bool = False) -> dict:
@@ -42,7 +59,7 @@ def status_payload(*, initialize: bool = False) -> dict:
     return {
         "ok": bool(status.get("ready")),
         "midi": status,
-        "voices": list_catalog_voices(),
+        "voices": _test_voices(),
         "job": _job_snapshot(),
     }
 
@@ -67,6 +84,7 @@ def _append_results(job_id: int, results: list[dict]) -> None:
         if _job["id"] != job_id:
             return
         _job["completed"] += len(results)
+        _job["failed"] += sum(not result.get("ok") for result in results)
         _job["results"] = (_job["results"] + deepcopy(results))[-64:]
 
 
@@ -80,56 +98,40 @@ def _run_test(
     voices: list[str],
 ) -> None:
     try:
-        if mode == "note":
+        notes = (
+            [(voice, pitch)] if mode == "note" else
+            [(current_voice, current_pitch)
+             for current_voice in (voices if mode == "all_voices" else [voice])
+             for current_pitch in range(8)]
+        )
+        # 전체 진단에서는 음 길이가 순회 간격보다 길어도 음을 겹치지 않는다.
+        interval_ms = max(duration_ms, delay_ms) if mode == "all_voices" else delay_ms
+        for index, (current_voice, current_pitch) in enumerate(notes):
+            if _job_stop.is_set():
+                break
+            _update_job(job_id, current_voice=current_voice, current_pitch=current_pitch)
             _append_results(
                 job_id,
-                [midi_out.trigger(voice, pitch, duration_ms=duration_ms)],
+                [midi_out.trigger(current_voice, current_pitch, duration_ms=duration_ms)],
             )
-        elif mode == "voice":
-            for current_pitch in range(8):
-                if _job_stop.is_set():
-                    break
-                _append_results(
-                    job_id,
-                    [
-                        midi_out.trigger(
-                            voice,
-                            current_pitch,
-                            duration_ms=duration_ms,
-                        )
-                    ],
-                )
-                if current_pitch < 7 and _job_stop.wait(delay_ms / 1000.0):
-                    break
-        elif mode == "all_voices":
-            _append_results(
-                job_id,
-                midi_out.trigger_many(
-                    [
-                        {
-                            "voice": current_voice,
-                            "pitch": pitch,
-                            "duration_ms": duration_ms,
-                        }
-                        for current_voice in voices
-                    ]
-                ),
-            )
+            wait_ms = interval_ms if index < len(notes) - 1 else duration_ms
+            if _job_stop.wait(wait_ms / 1000.0):
+                break
     except Exception as exc:
         _update_job(job_id, error=str(exc))
     finally:
-        _update_job(job_id, running=False)
+        _update_job(job_id, running=False, stopped=_job_stop.is_set())
 
 
 def start_test(payload: dict) -> dict:
-    """단음·선택 voice 8음·전체 voice 동시 테스트를 시작한다."""
+    """단음·선택 voice 8음·전체 voice 8음 순회를 시작한다."""
 
     global _job_serial, _job
     mode = str(payload.get("mode") or "note").strip().lower()
     if mode not in {"note", "voice", "all_voices"}:
         raise ValueError("mode must be note, voice, or all_voices")
 
-    voices = list_catalog_voices()
+    voices = _test_voices()
     voice = str(payload.get("voice") or (voices[0] if voices else "")).strip()
     if mode in {"note", "voice"} and voice not in voices:
         raise ValueError(f"unknown voice: {voice}")
@@ -158,13 +160,17 @@ def start_test(payload: dict) -> dict:
             raise RuntimeError("MIDI 테스트가 이미 실행 중입니다.")
         _job_serial += 1
         job_id = _job_serial
-        total = 1 if mode == "note" else 8 if mode == "voice" else len(voices)
+        total = 1 if mode == "note" else 8 if mode == "voice" else len(voices) * 8
         _job = {
             "id": job_id,
             "running": True,
             "mode": mode,
             "completed": 0,
             "total": total,
+            "failed": 0,
+            "stopped": False,
+            "current_voice": "",
+            "current_pitch": None,
             "results": [],
             "error": "",
         }
@@ -198,7 +204,7 @@ def main() -> int:
     parser.add_argument("--voice", default="", help="테스트할 voice")
     parser.add_argument("--pitch", type=int, default=0, help="0..7")
     parser.add_argument("--all-notes", action="store_true", help="선택 voice의 8음 순회")
-    parser.add_argument("--all-voices", action="store_true", help="모든 voice를 같은 pitch로 동시 출력")
+    parser.add_argument("--all-voices", action="store_true", help="전체 voice의 C~C high 8음을 멤버별로 순회")
     parser.add_argument("--duration-ms", type=float, default=180)
     parser.add_argument("--delay-ms", type=float, default=220)
     args = parser.parse_args()
@@ -225,7 +231,7 @@ def main() -> int:
         finished = _wait_for_job()
         for result in finished["results"]:
             print(result)
-        return 1 if finished["error"] or any(not r.get("ok") for r in finished["results"]) else 0
+        return 1 if finished["error"] or finished["failed"] else 0
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"[midi debug] {exc}")
         return 1
