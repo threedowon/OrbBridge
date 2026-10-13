@@ -182,11 +182,14 @@ void setup() {
   Serial.begin(115200);
   delay(1500);
 
-  mxconfig.setPixelColorDepthBits(2);
+  mxconfig.setPixelColorDepthBits(2); //빗뎁스
   mxconfig.double_buff = true;
+
+  // 블리딩 생기면 이부분 바꿔보기
   mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_10M;
   mxconfig.latch_blanking = 4;
   mxconfig.clkphase = false;
+  
   display = new MatrixPanel_I2S_DMA(mxconfig);
   if (!display->begin()) {
     Serial.println("Display begin() FAILED");
