@@ -379,7 +379,7 @@ void applyHintCommand(const HintCommandParser& command) {
   hintDuration = command.duration;
   fillAll(0);
   if (command.slave == slaveId)
-    setRing(command.cell - 1, Adafruit_NeoPixel::Color(255, 255, 255));
+    setRing(command.cell - 1, Adafruit_NeoPixel::Color(255, 147, 41));  // 오브 인식과 같은 따뜻한 색
 }
 
 void updateHint() {
