@@ -20,12 +20,13 @@ class FakeScheduler:
         self.cancel_count = 0
         self.closed = False
 
-    def start(self, mode, melody, cells=None):
+    def start(self, mode, melody, cells=None, *, hint_led=False):
         mode_value = getattr(mode, "value", str(mode))
         call = {
             "mode": mode_value,
             "bpm": melody.bpm,
             "cells": dict(cells or {}),
+            "hint_led": hint_led,
         }
         self.starts.append(call)
         return {
@@ -312,9 +313,9 @@ def test_completed_game_starts_harmony_plan_and_keeps_final_dfesta(monkeypatch, 
     scheduler = main._playback_scheduler
     original_start = scheduler.start
 
-    def start(mode, melody, cells=None):
+    def start(mode, melody, cells=None, *, hint_led=False):
         plans.append(build_plan(mode, melody, cells))
-        return original_start(mode, melody, cells)
+        return original_start(mode, melody, cells, hint_led=hint_led)
 
     scheduler.start = start
     try:
@@ -585,6 +586,7 @@ def test_listen_play_and_dfesta_use_python_scheduler():
         assert [
             call["mode"] for call in main._playback_scheduler.starts
         ] == ["listen", "play", "listen"]
+        assert [call["hint_led"] for call in main._playback_scheduler.starts] == [True, False, False]
         assert activity_calls == [True, True]
 
         # 명령 전용 전송은 제거했다. 브라우저는 Scheduler 재생 이벤트와

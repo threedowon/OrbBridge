@@ -8,8 +8,9 @@
  * USB Serial → PC (main.py), 115200
  * 버튼: 다시듣기(15) / 재생(7) / 디페스타(16) (INPUT_PULLUP — 핀↔GND, 외부저항 불필요)
  * 홀 센서: 시작(5, 6) — 두 개 모두 자석을 감지하는 순간에만 start 를 한 번 보낸다.
- * 출력: 디페스타 LED(17) — PC(main.py)가 '정답 완성' 상태를 D1/D0 명령으로 지시.
- *        정답 유지 중 HIGH, 오답/게임종료 시 LOW.
+ * 출력: 디페스타 LED 데이터 핀(18) — PC(main.py)가 '정답 완성' 상태를 D1/D0 명령으로 지시.
+ *        활성화 시 WS2812B 8개 흰색, 누르거나 비활성화되면 꺼짐.
+ * Play/다시듣기 LED: 누르는 동안 흰색, 떼면 꺼짐. 요청은 누름당 한 번.
  *
  * 프레임(13B): [STX=0x02][TYPE][SLAVE][CELL][UID 8B][CRC8]  (heartbeat 는 UID 첫 2B=state)
  * RS485 핀·속도: TX=39, RX=40, DE=42(하드웨어 RTS), 115200 8N1 — slave 와 맞춘다.
@@ -18,6 +19,8 @@
 #include <Adafruit_NeoPixel.h>
 #include <HardwareSerial.h>
 #include "LedBroadcast.h"
+#include "DebouncedButton.h"
+#include "HintCommandParser.h"
 
 #define TX_PIN       39
 #define RX_PIN       40
@@ -26,13 +29,16 @@
 #define LED_BRIGHTNESS 32
 #define RS485_BAUD   115200
 
-// RS485 가 39/40/42 로 가면서 겹친 3개를 옮겼다(다시듣기 40→15, 디페스타 42→16,
-// 디페스타 LED 39→17). 38 은 DevKit v1.1 온보드 RGB 라 피했고, 43/44(USB 콘솔)·
+// Master PCB: 다시듣기 GPIO15, 디페스타 버튼 GPIO16, 디페스타 LED 데이터 GPIO18.
+// GPIO17은 다시듣기 LED 데이터 핀이다. 43/44(USB 콘솔)·
 // 35~37(옥탈 PSRAM)·strapping 핀(0/3/45/46)도 뺐다.
 #define PIN_BTN_LISTEN   15   // 다시듣기 (40 에서 이동)
 #define PIN_BTN_PLAY     7    // 재생
 #define PIN_BTN_DFESTA   16   // 디페스타 (42 에서 이동)
-#define PIN_DFESTA_OUT   17   // 디페스타 출력(LED) — PC 명령(D1/D0)으로 HIGH/LOW (39 에서 이동)
+#define PIN_PLAY_LED     4   // Btn1_LED
+#define PIN_LISTEN_LED  17   // Btn2_LED
+#define PIN_DFESTA_OUT  18   // Btn3_LED (WS2812B 데이터)
+#define BUTTON_LED_COUNT 8
 #define BTN_COOLDOWN     350
 
 // Tray: either sensor means present; both sensors mean seated.
@@ -53,14 +59,18 @@
 #define T_LED_ACK_TIMING 6
 
 Adafruit_NeoPixel led(1, RGB_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel playLed(BUTTON_LED_COUNT, PIN_PLAY_LED, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel listenLed(BUTTON_LED_COUNT, PIN_LISTEN_LED, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel dfestaLed(BUTTON_LED_COUNT, PIN_DFESTA_OUT, NEO_GRB + NEO_KHZ800);
+bool dfestaLedOn = false;
 HardwareSerial RS485(1);
 
 unsigned long lastPlayMs = 0;
 unsigned long lastDfestaMs = 0;
 unsigned long lastListenMs = 0;
-bool playWasDown = false;
-bool dfestaWasDown = false;
-bool listenWasDown = false;
+DebouncedButton playButton;
+DebouncedButton dfestaButton;
+DebouncedButton listenButton;
 bool hallPresent = false;
 bool hallSeated = false;
 bool hallRawA = false;
@@ -76,6 +86,9 @@ unsigned long relayCount = 0;   // 유효 프레임 relay 수
 unsigned long badCount = 0;     // CRC 불일치(깨진 프레임) 수
 unsigned long lastBusRxMs = 0;
 LedBroadcast ledBroadcast;
+HintCommandParser hintCommand;
+bool hintPending = false;
+uint32_t hintQueuedAt = 0;
 
 // 바이너리 프레임 조립 버퍼
 uint8_t frame[FRAME_LEN];
@@ -122,16 +135,23 @@ void fireGameButton(const char* action, unsigned long& lastFire) {
   lastFire = now;
 }
 
-void pollButton(int pin, bool& wasDown, unsigned long& lastFire, const char* action) {
-  const bool down = digitalRead(pin) == LOW;
-  if (down && !wasDown) fireGameButton(action, lastFire);
-  wasDown = down;
+void pollButton(int pin, DebouncedButton& button, unsigned long& lastFire,
+                const char* action, Adafruit_NeoPixel& strip, bool isDfesta) {
+  if (!button.update(digitalRead(pin) == LOW, millis())) return;
+  if (isDfesta) {
+    // Release does not relight it; only the next PC D1 can activate it.
+    if (button.down) setDfestaLed(false);
+  } else {
+    strip.fill(button.down ? strip.Color(255, 255, 255) : 0);
+    strip.show();
+  }
+  if (button.down) fireGameButton(action, lastFire);
 }
 
 void pollButtons() {
-  pollButton(PIN_BTN_PLAY, playWasDown, lastPlayMs, "play");
-  pollButton(PIN_BTN_DFESTA, dfestaWasDown, lastDfestaMs, "dfesta");
-  pollButton(PIN_BTN_LISTEN, listenWasDown, lastListenMs, "listen");
+  pollButton(PIN_BTN_PLAY, playButton, lastPlayMs, "play", playLed, false);
+  pollButton(PIN_BTN_DFESTA, dfestaButton, lastDfestaMs, "dfesta", dfestaLed, true);
+  pollButton(PIN_BTN_LISTEN, listenButton, lastListenMs, "listen", listenLed, false);
 }
 
 bool hallDetected(int pin) {
@@ -248,9 +268,18 @@ void pollRs485() {
   }
 }
 
+void setDfestaLed(bool on) {
+  // A repeated activation command must not relight a held button.
+  on = on && !dfestaButton.down;
+  if (dfestaLedOn == on) return;
+  dfestaLedOn = on;
+  dfestaLed.fill(on ? dfestaLed.Color(255, 255, 255) : 0);
+  dfestaLed.show();
+}
+
 // PC 가 USB 로 보낸 명령 처리:
 //   "C<n>" — LED 테스트: RS485 로 브로드캐스트(멱등하게 여러 번 반복 전송)
-//   "D1"/"D0" — 디페스타 LED(GPIO39) HIGH/LOW (정답 완성 표시등)
+//   "D1"/"D0" — 디페스타 WS2812B 8개 흰색 / 꺼짐 (GPIO18)
 String usbLine;
 void pollUsbCommand() {
   while (Serial.available()) {
@@ -259,8 +288,13 @@ void pollUsbCommand() {
       if (usbLine.length() == 2 && usbLine[0] == 'C' &&
           usbLine[1] >= '0' && usbLine[1] <= '9') {
         ledBroadcast.queue(usbLine[1] - '0', millis());
+        hintPending = false;
+      } else if (hintCommand.parse(usbLine.c_str())) {
+        ledBroadcast.stop();  // Old effect retries must not overwrite this cue.
+        hintPending = true;
+        hintQueuedAt = millis();
       } else if (usbLine.length() >= 2 && usbLine[0] == 'D') {
-        digitalWrite(PIN_DFESTA_OUT, usbLine[1] == '1' ? HIGH : LOW);
+        setDfestaLed(usbLine[1] == '1');
       }
       usbLine = "";
     } else if (c != '\r') {
@@ -291,6 +325,23 @@ void pollLedBroadcast() {
   }
 }
 
+void pollHintCommand() {
+  if (!hintPending) return;
+  const uint32_t now = millis();
+  const uint32_t age = now - hintQueuedAt;
+  // A busy bus must not delay an obsolete note into the following note.
+  if (age > 1000) { hintPending = false; return; }
+  if (now - lastBusRxMs < 2) return;
+  uint16_t remaining = hintCommand.duration > age ? hintCommand.duration - age : 0;
+  char line[24];
+  if (!remaining) snprintf(line, sizeof(line), "\nH0,0,0\n");
+  else snprintf(line, sizeof(line), "\nH%u,%u,%u\n", hintCommand.slave,
+                hintCommand.cell, remaining);
+  RS485.print(line);
+  RS485.flush(true);
+  hintPending = false;
+}
+
 void setup() {
   Serial.begin(115200);
   delay(1500);
@@ -310,8 +361,15 @@ void setup() {
   hallRawB = hallDetected(PIN_HALL_START_B);
   hallRawChangedMs = millis();
 
-  pinMode(PIN_DFESTA_OUT, OUTPUT);
-  digitalWrite(PIN_DFESTA_OUT, LOW);   // 시작 시 LED 꺼짐
+  // 버튼 PCB의 LED는 GPIO HIGH/LOW 대신 NeoPixel 데이터로 제어한다.
+  Adafruit_NeoPixel* buttonLeds[] = {&playLed, &listenLed, &dfestaLed};
+  for (Adafruit_NeoPixel* strip : buttonLeds) {
+    strip->begin();
+    strip->setBrightness(LED_BRIGHTNESS);
+    strip->clear();
+    strip->show();
+  }
+  dfestaLedOn = false;
 
   RS485.begin(RS485_BAUD, SERIAL_8N1, RX_PIN, TX_PIN);
   // DE 를 하드웨어 RTS 에 맡긴다. 송신 시작·종료에 맞춰 UART 가 직접 토글하므로
@@ -334,6 +392,7 @@ void setup() {
 void loop() {
   pollRs485();
   pollUsbCommand();   // PC → RS485 LED 명령 전달
+  pollHintCommand();
   pollLedBroadcast();
   pollButtons();
   pollHallStart();

@@ -424,6 +424,7 @@ class PlaybackScheduler:
         mode: PlaybackMode | str,
         melody: Melody,
         cells: Mapping[str, Mapping] | None = None,
+        *, hint_led: bool = False,
     ) -> dict:
         """이전 재생을 취소하고 새 snapshot으로 만든 plan을 시작한다."""
 
@@ -454,6 +455,7 @@ class PlaybackScheduler:
             self._safe_publish({
                 "type": "start", "run_id": run_id, "mode": plan.mode.value,
                 "step_count": len(plan.cues),
+                "hint_led": bool(hint_led and plan.mode is PlaybackMode.LISTEN),
             })
             thread.start()
         return {
@@ -575,6 +577,7 @@ class PlaybackScheduler:
                 "step": cue.step,
                 "duration_ms": cue.duration_ms,
                 "notes": [dict(note) for note in cue.notes],
+                "emitted_at": self._clock(),
             }
             self._safe_publish(event)
 

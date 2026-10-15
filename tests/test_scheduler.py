@@ -136,7 +136,8 @@ def test_plan_uses_absolute_offsets_from_all_prior_durations():
     assert plan.duration_s == pytest.approx(1.75)
 
 
-def test_scheduler_publishes_start_beats_midi_and_end():
+@pytest.mark.parametrize("hint_led", [False, True])
+def test_scheduler_publishes_start_beats_midi_and_end(hint_led):
     events = []
     batches = []
     ended = threading.Event()
@@ -149,7 +150,7 @@ def test_scheduler_publishes_start_beats_midi_and_end():
     scheduler = PlaybackScheduler(send_notes=batches.append, publish_event=publish)
     fast = Melody(bpm=6000, steps=parse_melody(melody_raw()).steps)
     try:
-        result = scheduler.start("listen", fast)
+        result = scheduler.start("listen", fast, hint_led=hint_led)
         assert ended.wait(1)
     finally:
         scheduler.close()
@@ -163,6 +164,8 @@ def test_scheduler_publishes_start_beats_midi_and_end():
         "end",
     ]
     assert [batch[0]["pitch"] for batch in batches] == [0, 4]
+    assert events[0]["hint_led"] is hint_led
+    assert all("emitted_at" in event for event in events if event["type"] == "beat")
 
 
 def test_new_start_cancels_the_previous_run():

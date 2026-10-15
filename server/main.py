@@ -28,6 +28,9 @@ from server.game.melody_manager import (
 )
 from server.game.scheduler import PlaybackMode, PlaybackScheduler, parse_melody, build_plan
 from server.inout import hardware_io
+from server.inout.hint_led import HintLedBridge
+
+_hint_led = HintLedBridge(lambda command: hardware_io.send_line(command))
 
 ensure_data_files()
 
@@ -196,6 +199,7 @@ def _scheduler_send_notes(notes: list[dict]) -> list[dict]:
 
 def _scheduler_publish_event(event: dict) -> None:
     """Scheduler callback을 브라우저 WebSocket 이벤트로 변환한다."""
+    _hint_led.handle(event)
     event_type = event["type"]
     run_id = int(event["run_id"])
     mode = str(event["mode"])
@@ -242,10 +246,10 @@ def _cancel_playback() -> None:
         scheduler.cancel()
 
 
-def _start_playback(mode: PlaybackMode) -> dict:
+def _start_playback(mode: PlaybackMode, *, hint_led: bool = False) -> dict:
     """게임 시작 때 고정한 멜로디와 현재 셀로 재생 plan을 만든다."""
     cells = get_game_state().get("cells") or {}
-    return get_playback_scheduler().start(mode, playback_melody, cells)
+    return get_playback_scheduler().start(mode, playback_melody, cells, hint_led=hint_led)
 
 
 def _publish_web_event(address: str, args) -> None:
@@ -651,7 +655,7 @@ def start_game(melody_override: str | None = None) -> dict:
     _publish_transition(started)
 
     print(f"[game] 시작 — stage {current_stage}, melody={melody_id}")
-    request_listen()
+    request_listen(initial_hint=True)
     return {"ok": True, "game": get_game_state()}
 
 
@@ -805,7 +809,7 @@ def auto_complete_game() -> dict:
     }
 
 
-def request_listen() -> dict:
+def request_listen(*, initial_hint: bool = False) -> dict:
     """RUNNING에서 Python 기준 목표 멜로디 미리듣기를 시작한다."""
     runtime = get_game_runtime()
     snapshot = runtime.snapshot()
@@ -822,7 +826,7 @@ def request_listen() -> dict:
         return {"ok": False, "ignored": True, "game": snapshot}
 
     print("[game] 다시 듣기")
-    playback = _start_playback(PlaybackMode.LISTEN)
+    playback = _start_playback(PlaybackMode.LISTEN, hint_led=initial_hint)
     return {"ok": True, "playback": playback, "game": snapshot}
 
 

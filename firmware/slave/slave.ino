@@ -21,6 +21,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <HardwareSerial.h>
 #include "LedCommandParser.h"
+#include "HintCommandParser.h"
 
 #define TX_PIN       39
 #define RX_PIN       40
@@ -125,6 +126,11 @@ int ledEffect = 0;
 unsigned long effectStart = 0;
 unsigned long lastAnimMs = 0;
 LedCommandParser ledCommandParser;
+HintCommandParser hintParser;
+HintCommandParser usbHintParser;
+bool hintActive = false;
+uint32_t hintStarted = 0;
+uint16_t hintDuration = 0;
 String usbCmdLine;
 bool ledAckPending = false;
 uint8_t ledAckEffect = 0;
@@ -142,6 +148,7 @@ void applyEffectOnce();   // 전방 선언
 void runEffectAnim();
 
 void applyLedCommand(int effect) {
+  hintActive = false;
   ledReceivedMs = millis();
   ledEffect = effect;
   effectStart = ledReceivedMs;
@@ -169,6 +176,8 @@ void pollUsb() {
         if (entering) sendHeartbeat();
       } else if (usbCmdLine == "U0") {
         usbDirect = false;
+      } else if (usbDirect && usbHintParser.parse(usbCmdLine.c_str())) {
+        applyHintCommand(usbHintParser);
       } else if (usbDirect && usbCmdLine.length() == 2 &&
                  usbCmdLine[0] == 'C' && usbCmdLine[1] >= '0' && usbCmdLine[1] <= '9') {
         usbLedCommandCount++;
@@ -231,6 +240,8 @@ void drainBus() {
     unsigned char c = (unsigned char)RS485.read();
     lastBusRxMs = millis();
     int effect = ledCommandParser.feed(c, lastBusRxMs);
+    bool hintReady = hintParser.feed(c, lastBusRxMs);
+    if (!usbDirect && hintReady) applyHintCommand(hintParser);
     if (!usbDirect && effect >= 0) {
       applyLedCommand(effect);
     }
@@ -339,7 +350,7 @@ void setRing(int busIndex, uint32_t color) {
 // 밝기는 계속 추적해, 이펙트를 끄면 실제 배치와 다시 맞는다.
 void setSlotLevel(int i, uint8_t level) {
   ringLevel[i] = level;
-  if (ledEffect != 0) return;
+  if (ledEffect != 0 || hintActive) return;
   setRing(i, Adafruit_NeoPixel::Color(
     (uint8_t)((uint16_t)255 * level / 255),
     (uint8_t)((uint16_t)147 * level / 255),
@@ -352,6 +363,27 @@ void fillAll(uint32_t color) {
   for (uint16_t i = 0; i < LED_COUNT_HIGH; i++) ringHigh.setPixelColor(i, color);
   ringLow.show();
   ringHigh.show();
+}
+
+void stopHint() {
+  if (!hintActive) return;
+  hintActive = false;
+  fillAll(0);
+  applyEffectOnce();
+}
+
+void applyHintCommand(const HintCommandParser& command) {
+  if (!command.duration) { stopHint(); return; }
+  hintActive = true;
+  hintStarted = millis();
+  hintDuration = command.duration;
+  fillAll(0);
+  if (command.slave == slaveId)
+    setRing(command.cell - 1, Adafruit_NeoPixel::Color(255, 255, 255));
+}
+
+void updateHint() {
+  if (hintActive && uint32_t(millis() - hintStarted) >= hintDuration) stopHint();
 }
 
 void rainbowStatic() {
@@ -383,6 +415,7 @@ void applyEffectOnce() {
 
 // 애니메이션 이펙트 (loop 에서 ~30ms 마다 호출)
 void runEffectAnim() {
+  if (hintActive) return;
   if (ledEffect < 7) return;
   if (millis() - lastAnimMs < 30) return;
   lastAnimMs = millis();
@@ -580,6 +613,7 @@ void loop() {
     scanBus(i);
     drainBus();
     updateLed();
+    updateHint();
   }
 
   if (millis() - lastHeartbeatMs >= HEARTBEAT_MS) {
@@ -588,6 +622,7 @@ void loop() {
   }
 
   runEffectAnim();   // 애니메이션 이펙트(7~9) 갱신
+  updateHint();
   sendLedAck();
   updateLed();
   delay(1);
