@@ -839,7 +839,8 @@ def request_listen(*, initial_hint: bool = False) -> dict:
         return {"ok": False, "ignored": True, "game": snapshot}
 
     print("[game] 다시 듣기")
-    playback = _start_playback(PlaybackMode.LISTEN, hint_led=initial_hint)
+    # Both the automatic first hint and manual replay illuminate answer rings.
+    playback = _start_playback(PlaybackMode.LISTEN, hint_led=True)
     return {"ok": True, "playback": playback, "game": snapshot}
 
 

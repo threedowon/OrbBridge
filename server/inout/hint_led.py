@@ -1,4 +1,4 @@
-"""Initial hint only: map melody cues to slave/cell and timed white rings."""
+"""Map enabled hint playback cues to slave/cell and timed slot rings."""
 import time
 
 

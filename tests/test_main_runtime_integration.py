@@ -586,7 +586,7 @@ def test_listen_play_and_dfesta_use_python_scheduler():
         assert [
             call["mode"] for call in main._playback_scheduler.starts
         ] == ["listen", "play", "listen"]
-        assert [call["hint_led"] for call in main._playback_scheduler.starts] == [True, False, False]
+        assert [call["hint_led"] for call in main._playback_scheduler.starts] == [True, False, True]
         assert activity_calls == [True, True]
 
         # 명령 전용 전송은 제거했다. 브라우저는 Scheduler 재생 이벤트와

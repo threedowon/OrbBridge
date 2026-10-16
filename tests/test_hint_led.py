@@ -11,7 +11,7 @@ def beat(step=0, pitch=0, run=1, emitted=10, duration=460):
                 duration_ms=duration, emitted_at=emitted)
 
 
-def test_only_initial_hint_lights_rings():
+def test_only_enabled_hint_lights_rings():
     sent = []
     bridge = HintLedBridge(sent.append, lambda: 10)
     bridge.handle(start(hint=False))
@@ -49,7 +49,7 @@ def test_rest_delay_and_cancel_restore():
     assert bridge.run_id is None
 
 
-def test_new_manual_listen_cancels_hint_and_ignores_old_events():
+def test_disabled_playback_cancels_hint_and_ignores_old_events():
     sent = []
     bridge = HintLedBridge(sent.append, lambda: 10)
     bridge.handle(start())
