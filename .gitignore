@@ -29,7 +29,9 @@ dist/
 .vscode/
 *.swp
 *.log
-/log/*.txt
+# 실행 로그 (빈 폴더 유지용 파일만 포함)
+/log/**
+!/log/.gitkeep
 *.tmp
 .env
 .env.*
