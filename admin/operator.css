@@ -9,7 +9,7 @@ header h1 {font-size:20px;letter-spacing:-.6px;} header h1 span {font-size:12px;
 .status-item span:last-child {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .links {gap:4px;padding:4px;background:#080e18;border:1px solid var(--border);border-radius:10px;}
 .links a {padding:6px 12px;border-radius:6px;color:var(--muted);}
-html[data-mode=hardware] [data-control-mode=hardware],html[data-mode=software] [data-control-mode=software] {background:var(--surface2);color:var(--ink);}
+html[data-mode=hardware] [data-control-mode=hardware],html[data-mode=software] [data-control-mode=software],html[data-mode=orb] [data-control-mode=orb] {background:var(--surface2);color:var(--ink);}
 .page-intro {padding:25px 28px 18px;max-width:1600px;width:100%;margin:auto;display:flex;justify-content:space-between;align-items:end;gap:12px;}
 .page-intro h2 {font-size:25px;letter-spacing:-.8px;} .page-intro p {color:var(--muted);font-size:13px;margin-top:5px;}
 .intro-tag {font-size:11px;letter-spacing:1.8px;color:var(--accent);font-weight:700;}

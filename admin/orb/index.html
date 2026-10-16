@@ -1,20 +1,55 @@
-<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OrbBridge · ORB</title>
+<!doctype html><html lang="ko" data-mode="orb"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OrbBridge · ORB</title>
 <style>
-:root{color-scheme:dark;font-family:system-ui,sans-serif;color:#e9edf5;background:#0d111b}*{box-sizing:border-box}body{margin:0;padding:28px;max-width:1700px;margin:auto}nav{display:flex;gap:12px;align-items:center;border-bottom:1px solid #30384a;padding-bottom:20px}nav strong{margin-right:auto}a{color:#acb8ca;text-decoration:none;padding:10px}a.active{color:#ffbc73;border-bottom:2px solid}h1{font-size:32px;margin-bottom:8px}p{color:#9eaac0;line-height:1.6}button,select,input{font:inherit;border:1px solid #3b465c;border-radius:8px;background:#202a3a;color:inherit;padding:10px}button{cursor:pointer}button:disabled{opacity:.4;cursor:default}.primary{background:#f4b46d;color:#20160c;border:0}.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:24px 0}.pill{padding:8px 14px;border-radius:20px;background:#26364b}.layout{display:grid;grid-template-columns:1.5fr 1fr;gap:20px}.panel{background:#151d2b;border:1px solid #2d374b;border-radius:16px;padding:22px;margin-bottom:20px}h2{font-size:18px;margin-top:0}.stats{display:flex;gap:32px;margin:20px 0}.stats b{font-size:30px;display:block}.stats span{color:#a4b1c6;font-size:13px}.board{display:grid;grid-template-columns:repeat(6,minmax(70px,1fr));gap:12px}.module{display:grid;grid-template-columns:1fr 1fr;gap:7px}.module header{grid-column:span 2;font-size:12px;text-align:center;margin-bottom:8px;color:#98a7bd}.slot{padding:0;aspect-ratio:1;border-radius:50%;font-size:11px;background:#111724;color:#6e7b91}.slot.lit{background:#ffb46b;color:#24180e;box-shadow:0 0 12px #ff932944;border-color:#ffd7aa}.slot.unknown{background:#d7a83f;color:#1a1507}.slot.offline{border:1px dashed #dc7180;background:#301d28;color:#e099a4}.slot.selected{outline:3px solid white;outline-offset:2px}.artists{max-height:530px;overflow:auto}.artist{display:flex;justify-content:space-between;gap:10px;padding:13px 0;border-bottom:1px solid #2b3545}.dots{color:#ffb46b;white-space:nowrap}.small{font-size:12px;color:#a5b1c4}label{display:block;margin:14px 0 6px}input,select{width:100%}.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.list{max-height:230px;overflow:auto}.row{padding:9px 0;border-bottom:1px solid #2a3546;word-break:break-all}.error{color:#ff8b98;min-height:24px}#detail{word-break:break-all;margin-top:20px}progress{width:100%;accent-color:#ffb46b} @media(max-width:1000px){.layout,.formgrid{grid-template-columns:1fr}body{padding:16px}.board{gap:7px}}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--ok:#4ade80;--warn:#facc15;--err:#f87171;color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:"Segoe UI",system-ui,sans-serif;min-height:100vh}
+header{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
+header h1{font-weight:600}header h1 span{color:var(--muted);font-weight:400}
+.status-bar,.links{display:flex;align-items:center}.links a{text-decoration:none}
+button{font:inherit;background:var(--surface2);color:var(--ink);border:1px solid var(--border)}
+.toolbar{display:flex;align-items:center}.pill{padding:6px 10px;border-radius:20px;background:var(--surface2);border:1px solid var(--border);color:var(--muted);font-size:12px}
 </style>
-<nav><strong>OrbBridge</strong><a href="/admin">Hardware</a><a href="/admin/software">Software</a><a class="active" href="/admin/orb">ORB</a></nav>
-<h1>오브 점검 & 등록</h1><p>96개씩 올리고, 바꿔 올려도 확인 기록은 계속 누적됩니다. 같은 ID는 한 번만 집계합니다.</p>
+<link rel="stylesheet" href="/admin/operator.css">
+<style>
+.orb-content{max-width:1600px;margin:auto;padding:0 28px 28px;width:100%}
+.orb-content .panel{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:20px}
+.orb-content h2{font-size:17px;font-weight:600;margin-bottom:12px}
+.orb-content p,.small{color:var(--muted);font-size:12px;line-height:1.7}
+.orb-content .toolbar{margin-bottom:16px}.layout{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:20px;align-items:start}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px}
+.stats>div{background:#101925;border:1px solid #223148;border-radius:10px;padding:12px}.stats b{display:block;font-size:24px}.stats span{font-size:11px;color:var(--muted)}
+.board-scroll{margin-top:12px}.board{display:grid;grid-template-columns:repeat(6,94px);gap:6px;width:max-content}
+.module{display:grid;grid-template-columns:44px 44px;gap:6px}.module-label{grid-column:span 2;text-align:center;color:var(--accent);font-size:12px;font-weight:600;padding:4px 0;border-bottom:2px solid var(--accent);margin-bottom:4px}
+button.slot{padding:2px;width:44px;height:44px;min-height:0;border-radius:8px;font-size:10px;background:var(--empty);color:var(--muted);border:1.5px solid var(--border)}
+button.slot.lit{background:rgba(255,147,41,.22);color:#ffd1a3;border-color:#dc9a57}
+button.slot.unknown{background:rgba(250,204,21,.2);color:var(--warn);border-color:var(--warn)}
+button.slot.offline{border-style:dashed;border-color:var(--err);color:var(--err)}
+button.slot.selected{outline:2px solid var(--accent);outline-offset:2px}
+.artists{max-height:480px;overflow:auto;margin-top:12px}.artist{display:flex;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);font-size:12px}.dots{color:var(--accent);white-space:nowrap}
+label{display:block;margin:14px 0 6px;font-size:12px;color:var(--muted)}.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.list{max-height:230px;overflow:auto}.row{padding:9px 0;border-bottom:1px solid var(--border);overflow-wrap:anywhere;font-size:12px}
+.error{color:var(--err)}.error:not(:empty){padding:10px;background:#302027;border:1px solid #673d46;border-radius:8px;margin-bottom:12px}
+#detail{overflow-wrap:anywhere;margin-top:14px;background:#101925;padding:16px;border-radius:10px;font-size:12px}
+progress{display:block;width:100%;height:6px;accent-color:var(--accent)}
+@media(max-width:1050px){.orb-content{padding:0 20px 20px}.layout{grid-template-columns:1fr}}
+@media(max-width:600px){.orb-content{padding:0 14px 20px}.formgrid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.orb-content .panel{padding:16px}}
+</style>
+<body>
+<header><h1>OrbBridge <span>ORB Admin</span></h1><div class="status-bar"><div class="links"><a href="/admin" target="_top" data-control-mode="hardware">Hardware</a><a href="/admin/software" target="_top" data-control-mode="software">Software</a><a href="/admin/orb" target="_top" data-control-mode="orb">ORB</a></div></div></header>
+<div class="page-intro"><div><span class="intro-tag">ORBBRIDGE / CONTROL ROOM</span><h2>오브 점검 & 등록</h2><p>96개씩 바꿔 올려도 확인 기록은 누적됩니다. 같은 ID는 한 번만 집계합니다.</p></div></div>
+<div class="orb-content">
 <div class="toolbar"><span id="mode" class="pill">대기</span><button class="primary" id="start">점검 시작</button><button id="pause">일시정지</button><button id="finish">점검 종료</button><button id="export">결과 저장</button></div>
 <div id="error" class="error" role="alert"></div><div class="stats"><div><b id="total">0</b><span>등록 대상</span></div><div><b id="seen">0</b><span>누적 확인</span></div><div><b id="missing">0</b><span>미확인</span></div><div><b id="current">0</b><span>현재 인식</span></div></div><progress id="progress" value="0" max="1"></progress>
-<div class="layout" style="margin-top:24px"><section class="panel"><h2>실시간 테이블 · 96 슬롯</h2><p class="small">점검 시작 후 오브를 새로 올려 주세요. 이미 놓여 있으면 한 번 뺐다가 올려 주세요.<br>따뜻한 색: 등록 오브 · 노랑: 미등록 · 점선: 통신 미확인<br>어두운 칸은 빈 슬롯 또는 ID를 읽지 못한 슬롯입니다. 실물과 함께 확인해 주세요.</p><div id="board" class="board"></div><div id="detail">슬롯을 선택하면 ID를 확인하고 등록할 수 있습니다.</div></section>
+<div class="layout" style="margin-top:24px"><section class="panel"><h2>실시간 테이블 · 96 슬롯</h2><p class="small">점검 시작 후 오브를 새로 올려 주세요. 이미 놓여 있으면 한 번 뺐다가 올려 주세요.<br>따뜻한 색: 등록 오브 · 노랑: 미등록 · 점선: 통신 미확인<br>어두운 칸은 빈 슬롯 또는 ID를 읽지 못한 슬롯입니다. 실물과 함께 확인해 주세요.</p><div class="board-scroll"><div id="board" class="board"></div></div><div id="detail">슬롯을 선택하면 ID를 확인하고 등록할 수 있습니다.</div></section>
 <section class="panel"><h2>아티스트별 누적 확인</h2><p class="small">음성(멤버)별 목표 4개. 실제 등록 개수도 함께 표시합니다.</p><input id="search" placeholder="아티스트 / 음성 검색" aria-label="아티스트 검색"><div id="artists" class="artists"></div></section></div>
 <section class="panel"><h2>ID 등록 · 교체</h2><p class="small">미등록 오브가 놓인 슬롯을 선택하세요. 기존 ID 교체 시 음성 배정을 이어받고 변경 전 목록을 백업합니다. 별도 등록 프로그램은 동시에 사용하지 마세요.</p><div class="formgrid"><div><label for="newid">선택한 오브 ID</label><input id="newid" readonly><label for="voice">배정할 아티스트 / 음성</label><select id="voice"></select><button id="register" class="primary" style="margin-top:12px">새 ID 등록</button></div><div><label for="oldid">교체할 기존 ID</label><select id="oldid"></select><p class="small">미확인 기존 ID를 먼저 표시합니다. 선택한 기존 ID는 새 ID로 대체됩니다.</p><button id="replace">기존 ID 교체</button></div></div></section>
 <section class="panel"><h2>미확인 ID</h2><p class="small">미확인은 고장 확정이 아닙니다. 누락·접촉 불량·통신 상태를 확인하세요. 기록은 서버 실행 중 유지되며 종료 전 결과를 저장할 수 있습니다.</p><div id="missingList" class="list"></div></section>
+</div>
 <script>
 const $=id=>document.getElementById(id);let state=null,catalog={},selected=null,busy=false;
 const label=v=>catalog[v] ? `${catalog[v]} · ${v}` : v;
 function el(tag,text,cls){const e=document.createElement(tag);e.textContent=text;if(cls)e.className=cls;return e}
-for(let s=1;s<=6;s++){const m=el('div','','module');m.append(el('header',`SLAVE ${s}`));for(let r=1;r<=8;r++)for(let c of [r,r+8]){const b=el('button',`${s}:${c}`,'slot');b.id=`slot-${s}-${c}`;b.onclick=()=>{selected=[s,c];render()};m.append(b)}$('board').append(m)}
+for(let s=1;s<=6;s++){const m=el('div','','module');m.append(el('div',`SLAVE ${s}`,'module-label'));for(let r=1;r<=8;r++)for(let c of [r,r+8]){const b=el('button',`${s}:${c}`,'slot');b.id=`slot-${s}-${c}`;b.onclick=()=>{selected=[s,c];render()};m.append(b)}$('board').append(m)}
 function options(id,items){const e=$(id),value=e.value,signature=JSON.stringify(items);if(e.dataset.signature===signature)return;e.dataset.signature=signature;e.replaceChildren(...items.map(([v,t])=>{const o=el('option',t);o.value=v;return o}));if(items.some(x=>x[0]===value))e.value=value}
 function render(){if(!state)return;for(const [v,p] of Object.entries(state.voices||{}))catalog[v]=p.labels?.kr||p.labels?.en||v;const active=['running','paused'].includes(state.mode),seen=new Set(state.seen),entries=Object.entries(state.mapping),known=entries.filter(([id])=>seen.has(id.toUpperCase())).length;
 $('mode').textContent={idle:'대기',running:'점검 중 · 게임 중단',paused:'일시정지 · 게임 중단',finished:'점검 종료'}[state.mode];$('start').disabled=active||busy;$('pause').disabled=!active||busy;$('finish').disabled=!active||busy;$('pause').textContent=state.mode==='paused'?'계속 점검':'일시정지';$('total').textContent=entries.length;$('seen').textContent=known;$('missing').textContent=state.missing.length;$('current').textContent=state.cells.length;$('progress').max=Math.max(1,entries.length);$('progress').value=known;
@@ -28,4 +63,4 @@ async function action(action,extra={}){busy=true;render();try{const r=await fetc
 $('start').onclick=()=>{if(confirm('모든 게임과 재생을 중단하고 새 점검을 시작합니다. 이전 누적 기록은 초기화됩니다. 계속할까요?'))action('start')};$('pause').onclick=()=>action(state.mode==='paused'?'resume':'pause');$('finish').onclick=()=>action('finish');$('register').onclick=()=>action('register',{id:$('newid').value,voice:$('voice').value});$('replace').onclick=()=>{if($('oldid').value&&confirm('선택한 기존 ID를 새 ID로 교체하고 음성 배정을 이전할까요?'))action('register',{id:$('newid').value,replace_id:$('oldid').value})};$('search').oninput=render;
 $('export').onclick=()=>{if(!state)return;const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=el('a','');a.href=url;a.download='orb-inspection-'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(url)};
 (async()=>{try{const d=await(await fetch('/api/voices')).json();for(const v of d.voices)catalog[v.name]=v.labels?.kr||v.labels?.en||v.name}catch{}await refresh();setInterval(refresh,1000)})();
-</script></html>
+</script></body></html>
