@@ -43,6 +43,8 @@ def start_http_server(
     cfg: dict,
     on_event,
     *,
+    get_orb_inspection=None,
+    on_orb_action=None,
     get_status: Callable[[], dict] | None = None,
     get_game_state: Callable[[], dict] | None = None,
     get_melody: Callable[[], dict] | None = None,
@@ -71,7 +73,7 @@ def start_http_server(
     QUIET_PATHS = (
         "/api/status", "/api/admin/midi/status", "/api/admin/hardware/ports",
         "/api/admin/led",
-        "/api/admin/logs",
+        "/api/admin/logs", "/api/admin/orb",
     )
 
     class Handler(BaseHTTPRequestHandler):
@@ -143,6 +145,13 @@ def start_http_server(
                 self._run_callback(get_log_settings)
                 return
             path = self.path.split("?", 1)[0]
+
+            if path == "/api/admin/orb":
+                self._run_callback(get_orb_inspection)
+                return
+            if path in ("/admin/orb", "/admin/orb/"):
+                self._serve_file(ADMIN_ROOT / "orb" / "index.html")
+                return
 
             if path in ("/", ""):
                 self.send_response(302)
@@ -273,6 +282,10 @@ def start_http_server(
             if self.path == "/api/admin/log-settings":
                 from server.text_log import update_log_settings
                 self._run_callback(update_log_settings, data)
+                return
+
+            if self.path == "/api/admin/orb":
+                self._run_callback(on_orb_action, data)
                 return
 
             if self.path == "/api/admin/hardware/connect":

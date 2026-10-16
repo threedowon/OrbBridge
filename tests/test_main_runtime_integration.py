@@ -1084,3 +1084,36 @@ def test_initial_listen_duration_plus_one_precedes_both_countdowns(monkeypatch, 
             main._game_runtime.close()
         for name in ("server.main", "server.inout.serial_io", "serial"):
             sys.modules.pop(name, None)
+
+
+def test_orb_inspection_stops_game_and_blocks_playback(tray_main, monkeypatch, tmp_path):
+    import json
+    from server.inout import midi_out
+    main, clock, writes = tray_main
+    path = tmp_path / "mapping.json"
+    oid = "2D:01:02:03:04:05:06:07"
+    path.write_text(json.dumps({oid: {"voice": "aespa_1"}}))
+    main._orb_inspection.path = path
+    sent, stopped = [], []
+    monkeypatch.setattr(main.hardware_io, "send_line", lambda line: sent.append(line))
+    monkeypatch.setattr(midi_out, "shutdown", lambda: stopped.append(True))
+    main.start_game()
+    main.orb_action({"action":"start"})
+    assert stopped == [True]
+    assert "H0,0,0" in sent and "D0" in sent
+    assert main.get_game_state()["state"] != "RUNNING"
+    for fn in (main.start_game, main.request_play, main.request_listen, main.request_dfesta):
+        with pytest.raises(RuntimeError): fn()
+    main.handle_serial_message({"type":"game", "action":"start"})
+    main.handle_serial_message({"type":"tray", "present":True, "seated":True})
+    main.handle_serial_message({"type":"heartbeat", "slave":1,"state":1})
+    main.handle_serial_message({"type":"added", "slave":1,"cell":1,"id":oid})
+    assert main._orb_inspection.snapshot()["seen"] == [oid]
+    assert main.get_game_state()["cell_count"] == 0
+    assert main._scheduler_send_notes([{"pitch":0}]) == []
+    main.orb_action({"action":"pause"})
+    with pytest.raises(RuntimeError): main.request_play()
+    main.orb_action({"action":"resume"})
+    main.orb_action({"action":"finish"})
+    assert main.get_game_state()["state"] == "READY"
+    assert main._orb_inspection.snapshot()["seen"] == [oid]

@@ -130,6 +130,8 @@ class MatrixDisplay:
         return {"type": "status", "text": text}
 
     def _payload(self, snapshot: dict, playback: dict, now: float) -> dict:
+        if snapshot.get("orb_inspection"):
+            return self._status("ORB CHECK")
         state = snapshot.get("state")
         mode = str(playback.get("mode") or "").upper()
         cleared = (snapshot.get("timers") or {}).get("since_table_cleared_s")

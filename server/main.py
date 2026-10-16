@@ -29,6 +29,9 @@ from server.game.melody_manager import (
 from server.game.scheduler import PlaybackMode, PlaybackScheduler, parse_melody, build_plan
 from server.inout import hardware_io
 from server.inout.hint_led import HintLedBridge
+from server.orb_inspection import OrbInspection
+
+_orb_inspection = OrbInspection()
 
 _hint_led = HintLedBridge(lambda command: hardware_io.send_line(command))
 
@@ -184,8 +187,13 @@ def _slave_list_locked(now: float) -> list:
 
 
 def _scheduler_send_notes(notes: list[dict]) -> list[dict]:
+    with _orb_inspection.lock:
+        return _send_game_notes(notes)
+
+
+def _send_game_notes(notes: list[dict]) -> list[dict]:
     """도달한 Scheduler beat 하나를 MIDI 묶음으로 보낸다."""
-    if not notes:
+    if _orb_inspection.active or not notes:
         return []
 
     from server.inout.midi_out import trigger_many
@@ -199,7 +207,8 @@ def _scheduler_send_notes(notes: list[dict]) -> list[dict]:
 
 def _scheduler_publish_event(event: dict) -> None:
     """Scheduler callback을 브라우저 WebSocket 이벤트로 변환한다."""
-    _hint_led.handle(event)
+    if not _orb_inspection.active:
+        _hint_led.handle(event)
     event_type = event["type"]
     run_id = int(event["run_id"])
     mode = str(event["mode"])
@@ -588,6 +597,7 @@ def update_software_settings(data: dict) -> dict:
     return {"ok": True, **get_software_settings()}
 
 
+@_orb_inspection.guard
 def set_tray(data: dict, *, hardware: bool = False) -> dict:
     """Physical reports and the admin toggle share one ordered tray path."""
     if not isinstance(data, dict) or type(data.get("present")) is not bool:
@@ -622,6 +632,7 @@ def _set_tray_source(hardware: bool) -> None:
         _publish_transition(get_game_runtime().set_tray(state, state))
 
 
+@_orb_inspection.guard
 def start_game(melody_override: str | None = None) -> dict:
     if _hardware_switching.is_set():
         raise RuntimeError("하드웨어 연결을 변경 중입니다")
@@ -730,6 +741,7 @@ def collect_all_orbs() -> dict:
     return {"ok": True, "changed": changed, "game": snapshot}
 
 
+@_orb_inspection.guard
 def auto_complete_game() -> dict:
     """현재 멜로디의 정답 pitch에 등록 오브를 자동 배치한다."""
 
@@ -809,6 +821,7 @@ def auto_complete_game() -> dict:
     }
 
 
+@_orb_inspection.guard
 def request_listen(*, initial_hint: bool = False) -> dict:
     """RUNNING에서 Python 기준 목표 멜로디 미리듣기를 시작한다."""
     runtime = get_game_runtime()
@@ -830,6 +843,7 @@ def request_listen(*, initial_hint: bool = False) -> dict:
     return {"ok": True, "playback": playback, "game": snapshot}
 
 
+@_orb_inspection.guard
 def request_play() -> dict:
     """배치된 각 오브를 현재 열과 실제 pitch로 재생한다."""
     runtime = get_game_runtime()
@@ -851,6 +865,7 @@ def request_play() -> dict:
     return {"ok": True, "playback": playback, "game": snapshot}
 
 
+@_orb_inspection.guard
 def request_dfesta() -> dict:
     """모든 voice를 재생하고 DFestaPress를 완료 조건에 반영한다."""
     runtime = get_game_runtime()
@@ -903,6 +918,7 @@ LED_EFFECT_NORMAL = 0    # 일반 모드 — 오브를 놓으면 슬레이브가
 LED_EFFECT_ALL_OFF = 2   # 전체 소등 — 이펙트 모드라 오브를 놓아도 켜지지 않는다
 
 
+@_orb_inspection.guard
 def send_led_effect(effect) -> dict:
     """마스터에 'C<n>' 을 보내 슬레이브 링 LED 이펙트를 브로드캐스트한다.
 
@@ -942,7 +958,15 @@ def blackout_leds() -> None:
 
 
 def handle_serial_message(event: dict) -> None:
+    with _orb_inspection.lock:
+        _handle_serial_message(event)
+
+
+def _handle_serial_message(event: dict) -> None:
     """USB/serial 한 줄 JSON — orb 이벤트 또는 game 버튼."""
+    if _orb_inspection.active:
+        _orb_inspection.ingest(event)
+        return
     t = event.get("type")
     if t == "tray":
         set_tray(event, hardware=True)
@@ -1041,6 +1065,7 @@ def handle_serial_message(event: dict) -> None:
     handle_event(event)
 
 # ── 이벤트 처리 ────────────────────────────────────────
+@_orb_inspection.guard
 def handle_event(event: dict) -> dict:
     global orb_mapping
     if _hardware_switching.is_set():
@@ -1334,10 +1359,48 @@ def _update_matrix_display() -> None:
     # Do not expose the brief READY + tray-on snapshot during automatic start.
     with _tray_lock:
         snapshot = get_game_state()
+        snapshot["orb_inspection"] = _orb_inspection.active
         with _scheduler_lock:
             scheduler = _playback_scheduler
         playback = scheduler.display_snapshot() if scheduler is not None else {}
     _matrix_display.update(snapshot, playback)
+
+
+def orb_action(data: dict) -> dict:
+    global orb_mapping
+    with _orb_inspection.lock:
+        action = data.get("action")
+        if action == "start":
+            if _orb_inspection.active:
+                raise RuntimeError("기존 점검을 종료한 뒤 새 점검을 시작하세요")
+            _orb_inspection.start()
+            _cancel_playback()
+            reset_game()
+            _remove_all_cells_for_admin()
+            from server.inout import midi_out
+            midi_out.shutdown()
+            hardware_io.send_line("H0,0,0")
+            hardware_io.send_line("C0")
+            hardware_io.send_line("D0")
+        elif action == "pause" and _orb_inspection.mode == "running":
+            _orb_inspection.mode = "paused"
+        elif action == "resume" and _orb_inspection.mode == "paused":
+            _orb_inspection.mode = "running"
+            _orb_inspection.snapshot()
+            _orb_inspection.seen.update(_orb_inspection.cells.values())
+        elif action == "finish" and _orb_inspection.active:
+            # A new engine starts READY; physical reports must establish tray state again.
+            get_game_runtime().replace_engine(_new_game_engine(), allow_occupied=True)
+            _publish_transition(get_game_runtime().set_tray(None, None))
+            _orb_inspection.mode = "finished"
+            hardware_io.send_line("H0,0,0")
+        elif action == "register":
+            result = _orb_inspection.register(data)
+            orb_mapping = load_mapping()
+            return result
+        else:
+            raise ValueError("현재 상태에서 실행할 수 없는 작업입니다")
+        return {"ok": True, **_orb_inspection.snapshot()}
 
 
 def run_main() -> None:
@@ -1387,6 +1450,8 @@ def run_main() -> None:
         on_game_play=request_play,
         on_game_dfesta=request_dfesta,
         on_admin_led_effect=send_led_effect,
+        get_orb_inspection=_orb_inspection.snapshot,
+        on_orb_action=orb_action,
         get_hardware_ports=hardware_io.list_serial_ports,
         on_hardware_connect=configure_hardware,
         on_hardware_disconnect=disconnect_hardware,
