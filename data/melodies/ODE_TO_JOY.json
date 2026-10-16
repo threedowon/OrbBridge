@@ -1,0 +1,142 @@
+{
+  "songId": "ODE_TO_JOY",
+  "title": "Ode to Joy",
+  "artist": "",
+  "bpm": 120,
+  "range": [
+    "C4",
+    "C5"
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "note": "E4",
+      "duration": 1.0,
+      "velocity": 78,
+      "harmony": [
+        "C4",
+        "G4"
+      ]
+    },
+    {
+      "step": 2,
+      "note": "E4",
+      "duration": 1.0,
+      "velocity": 74,
+      "harmony": [
+        "C4",
+        "G4"
+      ]
+    },
+    {
+      "step": 3,
+      "note": "F4",
+      "duration": 1.0,
+      "velocity": 80,
+      "harmony": [
+        "A4",
+        "C5"
+      ]
+    },
+    {
+      "step": 4,
+      "note": "G4",
+      "duration": 1.0,
+      "velocity": 85,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 5,
+      "note": "G4",
+      "duration": 1.0,
+      "velocity": 81,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 6,
+      "note": "F4",
+      "duration": 1.0,
+      "velocity": 77,
+      "harmony": [
+        "A4",
+        "C5"
+      ]
+    },
+    {
+      "step": 7,
+      "note": "E4",
+      "duration": 1.0,
+      "velocity": 74,
+      "harmony": [
+        "C4",
+        "G4"
+      ]
+    },
+    {
+      "step": 8,
+      "note": "D4",
+      "duration": 1.0,
+      "velocity": 70,
+      "harmony": [
+        "G4",
+        "B4"
+      ]
+    },
+    {
+      "step": 9,
+      "note": "C4",
+      "duration": 1.0,
+      "velocity": 75,
+      "harmony": [
+        "E4",
+        "G4"
+      ]
+    },
+    {
+      "step": 10,
+      "note": "C4",
+      "duration": 1.0,
+      "velocity": 71,
+      "harmony": [
+        "E4",
+        "G4"
+      ]
+    },
+    {
+      "step": 11,
+      "note": "D4",
+      "duration": 1.0,
+      "velocity": 77,
+      "harmony": [
+        "G4",
+        "B4"
+      ]
+    },
+    {
+      "step": 12,
+      "note": "E4",
+      "duration": 1.0,
+      "velocity": 80,
+      "harmony": [
+        "C4",
+        "G4"
+      ]
+    }
+  ],
+  "game_rules": {
+    "dfesta_presses_required": 1
+  },
+  "dfesta": {
+    "weights": {
+      "melody": 70,
+      "harmony_a": 15,
+      "harmony_b": 15
+    }
+  }
+}
