@@ -1117,3 +1117,24 @@ def test_orb_inspection_stops_game_and_blocks_playback(tray_main, monkeypatch, t
     main.orb_action({"action":"finish"})
     assert main.get_game_state()["state"] == "READY"
     assert main._orb_inspection.snapshot()["seen"] == [oid]
+
+
+def test_orb_auto_start_enters_maintenance_and_registers(tray_main, monkeypatch, tmp_path):
+    import json
+    from server.inout import midi_out
+    main, _, _ = tray_main
+    mapping=tmp_path/"mapping.json"
+    mapping.write_text("{}")
+    main._orb_inspection.path=mapping
+    monkeypatch.setattr(main.hardware_io,"send_line",lambda line:True)
+    monkeypatch.setattr(midi_out,"shutdown",lambda:None)
+    result=main.orb_action({"action":"auto_start"})
+    assert result["auto_register"] and result["mode"]=="running"
+    with pytest.raises(RuntimeError):main.start_game()
+    main.handle_serial_message({"type":"added","slave":1,"cell":1,"id":"2D:01:02:03:04:05:06:07"})
+    assert len(json.loads(mapping.read_text()))==1
+    main.orb_action({"action":"auto_stop"})
+    main.handle_serial_message({"type":"added","slave":1,"cell":2,"id":"2D:11:02:03:04:05:06:07"})
+    assert len(json.loads(mapping.read_text()))==1
+    main.orb_action({"action":"finish"})
+    assert not main._orb_inspection.active

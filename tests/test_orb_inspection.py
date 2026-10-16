@@ -99,3 +99,45 @@ def test_matrix_check_overrides_game_messages():
     from server.inout.matrix_display import MatrixDisplay
     matrix=MatrixDisplay({"enabled":False})
     assert matrix._payload({"orb_inspection":True,"state":"RESETTING"},{},0)=={"type":"status","text":"ORB CHECK"}
+
+
+def test_auto_register_round_robin_192_unique_and_capacity(session, monkeypatch):
+    from server import voice_catalog
+    voices=[f"artist_{i:02d}" for i in range(48)]
+    monkeypatch.setattr(voice_catalog,"load_voice_catalog",lambda:{"voices":dict.fromkeys(voices,{})})
+    session.path.write_text("{}")
+    session.begin_registration()
+    ids=[":".join(f"{b:02X}" for b in bytes([45])+i.to_bytes(7,"big")) for i in range(193)]
+    for i,oid in enumerate(ids):
+        event={"type":"added","slave":i%6+1,"cell":i%16+1,"id":oid}
+        session.ingest(event)
+        session.ingest(event)
+        if i==95:
+            mapping=json.loads(session.path.read_text())
+            assert len(mapping)==96
+            assert all(sum(x["voice"]==v for x in mapping.values())==2 for v in voices)
+    mapping=json.loads(session.path.read_text())
+    assert len(mapping)==192 and ids[-1] not in mapping
+    assert all(sum(x["voice"]==v for x in mapping.values())==4 for v in voices)
+    assert not session.auto_register
+    assert mapping[ids[0]]["voice"]==voices[0]
+    assert mapping[ids[48]]["voice"]==voices[0]
+
+
+def test_auto_registration_pause_resume_existing_and_disk_failure(session, monkeypatch):
+    from server import voice_catalog
+    monkeypatch.setattr(voice_catalog,"load_voice_catalog",lambda:{"voices":{"aespa_1":{},"ive_1":{}}})
+    session.begin_registration()
+    session.mode="paused"
+    add(session,B)
+    assert len(json.loads(session.path.read_text()))==1
+    session.mode="running"
+    add(session,B)
+    assert json.loads(session.path.read_text())[B]["voice"]=="ive_1"
+    session.auto_register=False
+    session.begin_registration()
+    assert session.next_voice(json.loads(session.path.read_text()))=="aespa_1"
+    with pytest.raises(RuntimeError): session.register({"id":B,"voice":"aespa_1"})
+    monkeypatch.setattr(session,"register",lambda *a,**kw:(_ for _ in ()).throw(OSError("disk full")))
+    add(session,"2D:AA:BB:CC:DD:EE:FF:00")
+    assert not session.auto_register and "disk full" in session.auto_error

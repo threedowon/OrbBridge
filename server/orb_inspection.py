@@ -18,6 +18,10 @@ class OrbInspection:
         self.heartbeats = {}
         self.last_read = {}
         self.started = None
+        self.auto_register = False
+        self.auto_voices = []
+        self.auto_error = ""
+        self.auto_recent = []
 
     @property
     def active(self):
@@ -33,6 +37,7 @@ class OrbInspection:
         return wrapped
 
     def start(self):
+        self.auto_register = False
         self.mode = "running"
         self.seen.clear()
         self.cells.clear()
@@ -72,6 +77,45 @@ class OrbInspection:
                 self.cells[key] = oid
                 if self.mode == "running":
                     self.seen.add(oid)
+                    if self.auto_register:
+                        try:
+                            mapping = store.load_mapping(self.path)
+                            if store.find_orb(oid, mapping)[0] is None:
+                                voice = self.next_voice(mapping)
+                                if voice is None:
+                                    self.auto_register = False
+                                else:
+                                    self.register({"id": oid, "voice": voice}, automatic=True)
+                                    self.auto_recent = [{"id": oid, "voice": voice}] + self.auto_recent[:19]
+                                    if self.next_voice(store.load_mapping(self.path)) is None:
+                                        self.auto_register = False
+                        except (OSError, ValueError, RuntimeError) as exc:
+                            self.auto_register = False
+                            self.auto_error = f"자동 등록 중단: {exc}"
+
+    def next_voice(self, mapping):
+        counts = {voice: 0 for voice in self.auto_voices}
+        for entry in mapping.values():
+            voice = entry.get("voice")
+            if voice in counts:
+                counts[voice] += 1
+        candidates = [voice for voice in self.auto_voices if counts[voice] < 4]
+        return min(candidates, key=lambda voice: counts[voice]) if candidates else None
+
+    def begin_registration(self):
+        with self.lock:
+            if not self.active:
+                raise RuntimeError("점검 세션을 먼저 시작하세요")
+            from server.voice_catalog import load_voice_catalog
+            self.auto_voices = sorted(load_voice_catalog().get("voices", {}))
+            if not self.auto_voices:
+                raise ValueError("등록할 아티스트 목록이 없습니다")
+            if self.next_voice(store.load_mapping(self.path)) is None:
+                raise ValueError("모든 아티스트가 이미 4개씩 등록되어 있습니다")
+            self.auto_error = ""
+            self.auto_recent = []
+            self.mode = "running"
+            self.auto_register = True
 
     def snapshot(self):
         with self.lock:
@@ -83,14 +127,19 @@ class OrbInspection:
                           if now-max(self.heartbeats.get(k[0], 0), self.last_read.get(k[0], 0)) < 8}
             from server.voice_catalog import load_voice_catalog
             return {"mode": self.mode, "started": self.started,
+                "auto_register": self.auto_register, "auto_error": self.auto_error,
+                "auto_next": self.next_voice(mapping), "auto_recent": list(self.auto_recent),
+                "auto_target": len(self.auto_voices) * 4,
                 "voices": load_voice_catalog().get("voices", {}),
                 "seen": sorted(self.seen), "mapping": mapping,
                 "cells": [{"slave":s,"cell":c,"id":oid} for (s,c),oid in self.cells.items()],
                 "slaves": [{"slave":s,"online":s in online} for s in range(1,7)],
                 "missing": [oid for oid in mapping if oid.upper() not in self.seen]}
 
-    def register(self, data):
+    def register(self, data, *, automatic=False):
         with self.lock:
+            if self.auto_register and not automatic:
+                raise RuntimeError("자동 등록을 중지한 뒤 수동 등록·교체를 진행하세요")
             if not self.active:
                 raise RuntimeError("점검 시작 후 오브를 읽혀 주세요")
             self.snapshot()

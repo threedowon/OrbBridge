@@ -1370,6 +1370,14 @@ def orb_action(data: dict) -> dict:
     global orb_mapping
     with _orb_inspection.lock:
         action = data.get("action")
+        if action == "auto_start":
+            if not _orb_inspection.active:
+                orb_action({"action": "start"})
+            _orb_inspection.begin_registration()
+            return {"ok": True, **_orb_inspection.snapshot()}
+        if action == "auto_stop":
+            _orb_inspection.auto_register = False
+            return {"ok": True, **_orb_inspection.snapshot()}
         if action == "start":
             if _orb_inspection.active:
                 raise RuntimeError("기존 점검을 종료한 뒤 새 점검을 시작하세요")
@@ -1393,6 +1401,7 @@ def orb_action(data: dict) -> dict:
             get_game_runtime().replace_engine(_new_game_engine(), allow_occupied=True)
             _publish_transition(get_game_runtime().set_tray(None, None))
             _orb_inspection.mode = "finished"
+            _orb_inspection.auto_register = False
             hardware_io.send_line("H0,0,0")
         elif action == "register":
             result = _orb_inspection.register(data)
