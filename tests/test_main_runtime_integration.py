@@ -501,6 +501,58 @@ def test_manual_end_enters_resetting_directly():
             sys.modules.pop(name, None)
 
 
+@pytest.fixture
+def simulation_main(monkeypatch):
+    from server.inout import midi_out
+
+    main = _load_main_module()
+    monkeypatch.setattr(main, "load_mapping", lambda: {})
+    monkeypatch.setattr(midi_out, "trigger", lambda *args, **kwargs: {"ok": True})
+    try:
+        yield main
+    finally:
+        if main._game_runtime is not None:
+            main._game_runtime.close()
+        sys.path[:] = [entry for entry in sys.path if entry != str(PROJECT_ROOT)]
+        for name in ("server.main", "server.inout.serial_io", "serial"):
+            sys.modules.pop(name, None)
+
+
+@pytest.mark.parametrize("registered_count", [0, 2, 12])
+def test_simulation_auto_complete_without_full_registration(simulation_main, monkeypatch, registered_count):
+    main = simulation_main
+    registered = {f"ORB-{i:02d}": {"voice": "aespa_1"} for i in range(registered_count)}
+    monkeypatch.setattr(main, "load_mapping", lambda: deepcopy(registered))
+    main.start_game()
+    result = main.auto_complete_game()
+    assert result["ok"] and result["game"]["is_correct"]
+    expected = sum(step.pitch is not None for step in main.playback_melody.steps)
+    assert result["changed"] == expected
+    ids = [cell["id"] for cell in main.get_cells().values()]
+    assert len(set(ids)) == expected
+    assert set(sorted(registered)[:expected]) <= set(ids)
+    assert main.load_mapping() == registered
+    assert main.collect_all_orbs()["changed"] == expected
+    assert main.get_cells() == {}
+
+
+def test_simulation_drag_move_remove_and_physical_id_isolation(simulation_main):
+    main = simulation_main
+    main.start_game()
+    orb_id, orb = next(iter(main.virtual_orb_mapping().items()))
+    event = {"type": "added", "slave": 1, "cell": 1, "id": orb_id}
+    main.handle_simulation_event(event)
+    assert main.get_cells()["1:1"]["voice"] == orb["voice"]
+    assert main.handle_simulation_event(dict(event, type="removed"))["changed"]
+    main.handle_simulation_event(dict(event, slave=2, cell=9))
+    assert set(main.get_cells()) == {"2:9"}
+    main.handle_simulation_event(dict(event, type="removed", slave=2, cell=9))
+    assert main.get_cells() == {}
+    main.handle_event(event)
+    assert main.get_cells()["1:1"]["voice"] == "unknown"
+    assert main.load_mapping() == {}
+
+
 def test_admin_auto_complete_and_collect_use_runtime_state(monkeypatch):
     main = _load_main_module()
     config = deepcopy(main.config)
