@@ -8,9 +8,8 @@
  * USB Serial → PC (main.py), 115200
  * 버튼: 다시듣기(15) / 재생(7) / 디페스타(16) (INPUT_PULLUP — 핀↔GND, 외부저항 불필요)
  * 홀 센서: 시작(5, 6) — 두 개 모두 자석을 감지하는 순간에만 start 를 한 번 보낸다.
- * 출력: 디페스타 LED 데이터 핀(18) — PC(main.py)가 '정답 완성' 상태를 D1/D0 명령으로 지시.
- *        활성화 시 WS2812B 8개 흰색, 누르거나 비활성화되면 꺼짐.
- * Play/다시듣기 LED: 누르는 동안 흰색, 떼면 꺼짐. 요청은 누름당 한 번.
+ * 버튼 LED: 사용하지 않음. 부팅 시 모두 끄며 D1/D0 명령은 무시한다.
+ * 버튼 요청은 누름당 한 번.
  *
  * 프레임(13B): [STX=0x02][TYPE][SLAVE][CELL][UID 8B][CRC8]  (heartbeat 는 UID 첫 2B=state)
  * RS485 핀·속도: TX=39, RX=40, DE=42(하드웨어 RTS), 115200 8N1 — slave 와 맞춘다.
@@ -62,7 +61,6 @@ Adafruit_NeoPixel led(1, RGB_PIN, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel playLed(BUTTON_LED_COUNT, PIN_PLAY_LED, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel listenLed(BUTTON_LED_COUNT, PIN_LISTEN_LED, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel dfestaLed(BUTTON_LED_COUNT, PIN_DFESTA_OUT, NEO_GRB + NEO_KHZ800);
-bool dfestaLedOn = false;
 HardwareSerial RS485(1);
 
 unsigned long lastPlayMs = 0;
@@ -136,22 +134,15 @@ void fireGameButton(const char* action, unsigned long& lastFire) {
 }
 
 void pollButton(int pin, DebouncedButton& button, unsigned long& lastFire,
-                const char* action, Adafruit_NeoPixel& strip, bool isDfesta) {
+                const char* action) {
   if (!button.update(digitalRead(pin) == LOW, millis())) return;
-  if (isDfesta) {
-    // Release does not relight it; only the next PC D1 can activate it.
-    if (button.down) setDfestaLed(false);
-  } else {
-    strip.fill(button.down ? strip.Color(255, 255, 255) : 0);
-    strip.show();
-  }
   if (button.down) fireGameButton(action, lastFire);
 }
 
 void pollButtons() {
-  pollButton(PIN_BTN_PLAY, playButton, lastPlayMs, "play", playLed, false);
-  pollButton(PIN_BTN_DFESTA, dfestaButton, lastDfestaMs, "dfesta", dfestaLed, true);
-  pollButton(PIN_BTN_LISTEN, listenButton, lastListenMs, "listen", listenLed, false);
+  pollButton(PIN_BTN_PLAY, playButton, lastPlayMs, "play");
+  pollButton(PIN_BTN_DFESTA, dfestaButton, lastDfestaMs, "dfesta");
+  pollButton(PIN_BTN_LISTEN, listenButton, lastListenMs, "listen");
 }
 
 bool hallDetected(int pin) {
@@ -268,18 +259,9 @@ void pollRs485() {
   }
 }
 
-void setDfestaLed(bool on) {
-  // A repeated activation command must not relight a held button.
-  on = on && !dfestaButton.down;
-  if (dfestaLedOn == on) return;
-  dfestaLedOn = on;
-  dfestaLed.fill(on ? dfestaLed.Color(255, 255, 255) : 0);
-  dfestaLed.show();
-}
-
 // PC 가 USB 로 보낸 명령 처리:
 //   "C<n>" — LED 테스트: RS485 로 브로드캐스트(멱등하게 여러 번 반복 전송)
-//   "D1"/"D0" — 디페스타 WS2812B 8개 흰색 / 꺼짐 (GPIO18)
+//   "D1"/"D0" — 호환성을 위해 수신하되 버튼 LED는 사용하지 않음
 String usbLine;
 void pollUsbCommand() {
   while (Serial.available()) {
@@ -294,7 +276,7 @@ void pollUsbCommand() {
         hintPending = true;
         hintQueuedAt = millis();
       } else if (usbLine.length() >= 2 && usbLine[0] == 'D') {
-        setDfestaLed(usbLine[1] == '1');
+        // Button LEDs are disabled; keep accepting legacy activation commands.
       }
       usbLine = "";
     } else if (c != '\r') {
@@ -362,7 +344,7 @@ void setup() {
   hallRawB = hallDetected(PIN_HALL_START_B);
   hallRawChangedMs = millis();
 
-  // 버튼 PCB의 LED는 GPIO HIGH/LOW 대신 NeoPixel 데이터로 제어한다.
+  // 연결된 버튼 LED가 이전 색을 유지하지 않도록 부팅 시 모두 끈다.
   Adafruit_NeoPixel* buttonLeds[] = {&playLed, &listenLed, &dfestaLed};
   for (Adafruit_NeoPixel* strip : buttonLeds) {
     strip->begin();
@@ -370,7 +352,6 @@ void setup() {
     strip->clear();
     strip->show();
   }
-  dfestaLedOn = false;
 
   RS485.begin(RS485_BAUD, SERIAL_8N1, RX_PIN, TX_PIN);
   // DE 를 하드웨어 RTS 에 맡긴다. 송신 시작·종료에 맞춰 UART 가 직접 토글하므로
