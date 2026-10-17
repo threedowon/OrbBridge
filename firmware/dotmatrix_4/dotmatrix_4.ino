@@ -137,13 +137,15 @@ void drawStatus(const char *raw) {
              (PANEL_HEIGHT - STATUS_GLYPH_H * size) / 2);
 }
 
+String offlineText = "OFFLINE";
+
 void drawRuntime() {
   display->clearScreen();
   if (linkTimedOut) {
-    drawStatus("OFFLINE");
+    drawStatus(offlineText.c_str());
     return;
   }
-  StaticJsonDocument<256> message;
+  StaticJsonDocument<512> message;
   if (deserializeJson(message, lastCommand)) return;
   const char *type = message["type"] | "";
   if (!strcmp(type, "status")) {
@@ -191,7 +193,7 @@ void drawView() {
 }
 
 void handleCommand(const String &line) {
-  StaticJsonDocument<256> message;
+  StaticJsonDocument<512> message;
   if (deserializeJson(message, line)) return;
   const char *type = message["type"] | "";
   if (strcmp(type, "clear") && strcmp(type, "status") && strcmp(type, "display")) return;
@@ -199,6 +201,15 @@ void handleCommand(const String &line) {
   if (!strcmp(type, "display") &&
       (!message["seconds"].is<int>() || message["seconds"].as<int>() < 0)) return;
   // 같은 명령도 연결 유지 신호로 처리
+  if (message.containsKey("offline_text")) {
+    if (!message["offline_text"].is<const char *>()) return;
+    String candidate = message["offline_text"].as<const char *>();
+    if (candidate.length() > 32) return;
+    for (unsigned int i = 0; i < candidate.length(); i++) {
+      if (candidate[i] < 32 || candidate[i] > 126) return;
+    }
+    offlineText = candidate;
+  }
   lastValidCommandAt = millis();
   linkTimedOut = false;
   if (line == lastCommand) return;
@@ -224,8 +235,8 @@ void setup() {
   display->setBrightness8(DISPLAY_BRIGHTNESS);
   display->clearScreen();
   display->setTextWrap(false);
-  serialLine.reserve(160);
-  lastCommand.reserve(160);
+  serialLine.reserve(384);
+  lastCommand.reserve(384);
   lastValidCommandAt = millis();
   pinMode(UP_BUTTON_PIN, INPUT_PULLUP);
   buttonRaw = buttonStable = digitalRead(UP_BUTTON_PIN) == LOW;
@@ -260,7 +271,7 @@ void loop() {
       serialLine = "";
       droppingLine = false;
     } else if (value != '\r' && !droppingLine) {
-      if (serialLine.length() >= 160) {
+      if (serialLine.length() >= 384) {
         serialLine = "";
         droppingLine = true;
       } else {

@@ -1,0 +1,65 @@
+# 게임 이벤트 MIDI
+
+loopMIDI에 `event` 포트를 만들고 Ableton 이벤트 트랙의 입력을 `event`, 채널 1로 지정한다.
+포트 이름과 채널은 `data/portmapping.json`의 `_event`에서 변경한다.
+Instrument Rack의 Key Zone을 한 음씩 나누어 각각의 Simpler에 연결한다.
+
+| 이벤트 | Ableton 음명 | MIDI 번호 | 종료 |
+| --- | --- | --- | --- |
+| PLACE TRAY 표시 시작 | C3 | 60 | 30 ms 후 Note Off |
+| 트레이 완전 배치 | C#3 | 61 | 30 ms 후 Note Off |
+| 트레이 완전 제거 | D3 | 62 | 30 ms 후 Note Off |
+| 게임 최초 로딩 시작 | D#3 | 63 | 30 ms 후 Note Off |
+| 전체 정답 유지 | E3 | 64 | 정답 해제·DFESTA·종료 시 Note Off |
+| 시간초과 또는 무입력 종료 | F3 | 65 | 30 ms 후 Note Off |
+| GOODBYE 표시 시작 | F#3 | 66 | 30 ms 후 Note Off |
+
+음명은 Ableton 기준이다. 다른 프로그램의 옥타브 표기가 다르면 MIDI 번호를 따른다.
+`data/config.json`의 `event_midi.notes`, `velocity`, `note_duration_ms`에서 변경한다.
+각 이벤트의 MIDI 번호는 서로 달라야 한다. 설정 변경 후 서버를 재시작한다.
+
+일반 이벤트는 Simpler **One-Shot / Trigger**로 설정한다. 짧은 Note Off 이후에도 샘플이 끝까지 재생된다.
+정답 유지음은 **Classic / Loop**로 설정하고 앰프 Sustain을 유지하며 Release를 짧게 설정한다.
+Note On은 정답 진입 시 한 번 전송한다. 반복 상태 보고는 다시 트리거하지 않는다.
+DFESTA가 수락되면 최종 합창 재생 전에 유지음을 해제한다. 디버그처럼 게임이 계속되어도
+같은 정답 배치로 유지음을 다시 켜지 않는다. 배치가 틀어졌다가 다시 맞으면 다시 켠다.
+
+게임 런타임은 이벤트를 순서대로 큐에 넣으며 별도 MIDI worker가 전송한다.
+정답 유지음의 전송 실패는 재시도하고, MIDI 재연결 후에도 현재 정답 상태를 반영한다.
+서버 정상 종료 시 Note Off를 보내고, MIDI 포트를 열 때 이벤트 채널의 잔여 음을 정리한다.
+전원 차단·강제 프로세스 종료 중에는 전송을 보장할 수 없으며 다음 초기화 때 정리된다.
+이벤트 포트가 없어도 기존 보이스 재생은 유지된다. 포트를 추가한 뒤에는 MIDI 재연결 또는 서버 재시작을 실행한다.
+
+## 최초 로딩
+
+`game_rules.initial_hint_delay_s`의 기본값은 3초이다. 0으로 지정하면 즉시 힌트를 재생한다.
+값은 다음 게임 시작 시 읽는다. 로딩 중에는 `LOADING...`을 표시하고 Listen·Play·DFESTA 입력은 무시한다.
+트레이를 뗐다가 다시 올려도 같은 게임에서는 로딩과 힌트를 다시 시작하지 않는다.
+최초 배치 시 트레이 배치음과 로딩음은 각각 전송된다. 0초 설정에서는 로딩음은 생략한다.
+리셋·종료하면 대기 중인 힌트는 취소된다.
+기존 카운트다운 유예 시간인 최초 힌트 길이 + 1초에 로딩 시간이 더해진다.
+
+트레이 배치음은 두 센서가 모두 감지하는 완전 배치 시점이며, 제거음은 두 센서가 모두 비는 시점이다.
+중간 걸침, 동일 상태 반복 보고, 센서 연결 끊김·재연결을 가짜 배치/제거로 처리하지 않는다.
+
+## 표시 문구
+
+`data/config.json`의 `matrix_display.texts`에서 운영 문구를 한 번에 수정한다.
+현재 패널 폰트는 출력 가능한 ASCII 문자 최대 32자를 지원한다. 긴 문구는 실제 폰트 크기에 따라 잘릴 수 있다.
+멤버 이름은 기존 `data/voice_catalog.json`을 사용한다. 진단 화면의 패널/주사율 표시는 펌웨어에 남는다.
+문구 변경 후 서버를 재시작한다.
+
+로딩이 끝나고 정답이 완성되면 `PRESS DFESTA!`를 표시한다. 수락된 DFESTA 재생은 `COMPLETE`가 우선한다.
+READY 사운드는 내부 READY 전환이 아니라 `PLACE TRAY` 화면 시작에 연결된다.
+GOODBYE → 빈 화면 → PLACE TRAY 순서이며 각 앞 구간 길이는 `farewell_duration_s`이다.
+다음 트레이가 먼저 들어오면 새 게임이 우선하여 아직 나오지 않은 READY 사운드는 생략된다.
+화면 heartbeat나 USB 재연결은 같은 화면의 사운드를 반복하지 않는다.
+패널을 사용하는 경우 READY/GOODBYE 이벤트는 해당 화면 명령을 성공적으로 전송한 뒤 발생한다.
+`matrix_display.enabled=false`이면 논리적인 화면 전환을 기준으로 사운드는 유지된다.
+
+일반 운영 문구는 기존 status 명령을 사용하므로 현재 패널에서도 적용된다.
+`offline` 문구 변경은 업데이트된 `firmware/dotmatrix_3` 또는 `firmware/dotmatrix_4`를 업로드해야 적용된다.
+서버가 `offline_text`를 전달하고 패널이 보관했다가 연결 끊김 시 사용한다.
+패널 재부팅 후 첫 명령을 받기 전에는 기본 `OFFLINE`을 사용한다.
+
+검증: Python 가상 시계·가상 MIDI/시리얼 테스트를 사용한다. 실제 Ableton 소리, 패널 및 펌웨어 빌드는 현장 검증 대상이다.
