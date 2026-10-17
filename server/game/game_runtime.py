@@ -55,7 +55,6 @@ class GameRuntime:
         allow_occupied: bool = False,
         tick_interval_s: float = 0.05,
         on_state_change: StateCallback | None = None,
-        on_snapshot: Callable[[dict, dict, str], None] | None = None,
     ) -> None:
         if not isinstance(engine, GameEngine):
             raise TypeError("engine must be a GameEngine")
@@ -63,13 +62,10 @@ class GameRuntime:
             raise ValueError("tick_interval_s must be positive")
         if on_state_change is not None and not callable(on_state_change):
             raise TypeError("on_state_change must be callable")
-        if on_snapshot is not None and not callable(on_snapshot):
-            raise TypeError("on_snapshot must be callable")
 
         self._engine = engine
         self._tick_interval_s = float(tick_interval_s)
         self._on_state_change = on_state_change
-        self._on_snapshot = on_snapshot
         self._queue: Queue[_Command] = Queue()
         self._snapshot_lock = threading.Lock()
         self._snapshot = engine.snapshot()
@@ -145,9 +141,6 @@ class GameRuntime:
         """DFestaPress 한 건을 단일 writer Queue에 등록한다."""
 
         return self._submit("dfesta", timeout=timeout)
-
-    def claim_initial_hint(self, *, timeout: float = 2.0) -> RuntimeResult:
-        return self._submit("initial_hint", timeout=timeout)
 
     def set_dfesta_requirement(self, count: int, *, timeout: float = 2.0) -> RuntimeResult:
         return self._submit("dfesta_requirement", timeout=timeout, count=count)
@@ -267,7 +260,6 @@ class GameRuntime:
 
     def _execute(self, action: str, payload: dict) -> RuntimeResult:
         previous_state = self._engine.state.value
-        previous_snapshot = self.snapshot()
 
         if action == "replace_engine":
             current = self._engine.snapshot()
@@ -291,8 +283,6 @@ class GameRuntime:
             value = self._engine.end(payload["reason"])
         elif action == "dfesta":
             value = self._engine.press_dfesta()
-        elif action == "initial_hint":
-            value = self._engine.claim_initial_hint()
         elif action == "dfesta_requirement":
             self._engine.dfesta_presses_required = self._engine._normalize_press_count(payload["count"])
             value = None
@@ -301,10 +291,6 @@ class GameRuntime:
         elif action == "reset":
             value = self._engine.reset()
         elif action == "tray":
-            # A lease can expire between ticks. Do not turn reconnects into
-            # physical placement/removal sounds using a stale cached snapshot.
-            previous_snapshot["tray"] = dict(zip(
-                ("present", "seated"), self._engine._tray_state(self._engine._now())))
             value = self._engine.set_tray(**payload)
         elif action == "add_orb":
             value = self._engine.add_orb(**payload)
@@ -320,11 +306,6 @@ class GameRuntime:
         snapshot = self._engine.snapshot()
         with self._snapshot_lock:
             self._snapshot = snapshot
-        if self._on_snapshot is not None:
-            try:
-                self._on_snapshot(previous_snapshot, deepcopy(snapshot), action)
-            except Exception:
-                LOGGER.exception("game snapshot callback failed")
         return RuntimeResult(
             value=value,
             previous_state=previous_state,

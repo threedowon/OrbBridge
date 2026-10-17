@@ -1,9 +1,5 @@
 # LED matrix status display
 
-Game-event MIDI, configurable status text, and initial loading are documented in
-[game-event-midi.md](game-event-midi.md). Runtime phrases now come from
-`matrix_display.texts` in `data/config.json`.
-
 The tray cleanup flow builds on dotmatrix_revision at 887e5bf.
 
 For the tray update, install the Python server and flash firmware/master/master.ino
@@ -36,17 +32,15 @@ interrupt a diagnostic screen.
 | Condition | Display |
 | --- | --- |
 | Initial READY, or farewell finished | PLACE TRAY |
-| Initial tray start, before the automatic hint | LOADING... for game_rules.initial_hint_delay_s |
 | Accepted Listen, including the initial automatic Listen | HINT during playback |
 | Accepted Play | PLAYING during playback |
 | Accepted DFesta | COMPLETE during playback |
 | RUNNING without playback | Existing latest orb name and live countdown |
-| Correct complete placement after loading | PRESS DFESTA! (DFESTA playback still takes precedence) |
 | Idle or time-over exit | TIME OVER for 2 s, then PLEASE CLEAR TABLE |
 | Manual reset/end | PLEASE CLEAR TABLE immediately |
 | Completed game | COMPLETE through final DFesta and 2 s afterward, then PLEASE CLEAR TABLE |
 | All orbs AND tray removed / READY reached | GOODBYE for n seconds, blank for n seconds, then PLACE TRAY |
-| Next tray placed during GOODBYE or blank | Start immediately; LOADING..., initial HINT, then the usual running screen |
+| Next tray placed during GOODBYE or blank | Start immediately; initial Listen shows HINT, then the usual running screen |
 | No valid host command for 5 s | OFFLINE until the next valid command |
 
 Rejected requests do not change the display. A new game clears the remembered

@@ -2,8 +2,7 @@
   "current_stage": 1,
   "game_rules": {
     "time_over_s": 120.0,
-    "idle_s": 60.0,
-    "initial_hint_delay_s": 3.0
+    "idle_s": 60.0
   },
   "melody_rotation": {
     "mode": "random",
@@ -22,34 +21,6 @@
     "enabled": true,
     "farewell_duration_s": 4.0,
     "port": "COM6",
-    "baudrate": 115200,
-    "texts": {
-      "ready": "PLACE TRAY",
-      "loading": "LOADING...",
-      "hint": "HINT",
-      "playing": "PLAYING",
-      "complete": "COMPLETE",
-      "press_dfesta": "PRESS DFESTA!",
-      "time_over": "TIME OVER",
-      "clear_table": "PLEASE CLEAR TABLE",
-      "farewell": "GOODBYE",
-      "place_orb": "PLACE ORB",
-      "orb_check": "ORB CHECK",
-      "offline": "OFFLINE"
-    }
-  },
-  "event_midi": {
-    "enabled": true,
-    "velocity": 127,
-    "note_duration_ms": 30,
-    "notes": {
-      "ready": 60,
-      "tray_placed": 61,
-      "tray_removed": 62,
-      "loading": 63,
-      "correct": 64,
-      "time_over": 65,
-      "farewell": 66
-    }
+    "baudrate": 115200
   }
 }

@@ -163,14 +163,6 @@ def _load_main_module():
     sys.modules.pop("server.inout.serial_io", None)
 
     module = importlib.import_module("server.main")
-    # Existing playback tests exercise the no-loading compatibility path.
-    module.config.setdefault("game_rules", {})["initial_hint_delay_s"] = 0
-    original_load_config = module.load_config
-    def load_without_loading(*args, **kwargs):
-        document = original_load_config(*args, **kwargs)
-        document.setdefault("game_rules", {})["initial_hint_delay_s"] = 0
-        return document
-    module.load_config = load_without_loading
     module._playback_scheduler = FakeScheduler()
     module._websocket_service = FakeWebSocketService()
     return module
@@ -1024,9 +1016,7 @@ def test_software_settings_persist_timers_without_hot_reload(tmp_path, monkeypat
         assert settings["restart_required"]
         assert settings["debug_mode"] is False
         assert settings["active_timers"] == {"time_over_s": 120, "idle_s": 30}
-        assert load_config(path)["game_rules"] == {
-            "time_over_s": 180, "idle_s": 45, "initial_hint_delay_s": 0,
-        }
+        assert load_config(path)["game_rules"] == {"time_over_s": 180, "idle_s": 45}
         assert load_config(path)["input_mode"] == original["input_mode"]
         main.reload_melody_data()
         assert (main.time_over_s, main.idle_s) == (120, 30)
@@ -1200,4 +1190,3 @@ def test_orb_auto_start_enters_maintenance_and_registers(tray_main, monkeypatch,
     assert len(json.loads(mapping.read_text()))==1
     main.orb_action({"action":"finish"})
     assert not main._orb_inspection.active
-

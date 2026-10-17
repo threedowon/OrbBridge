@@ -99,7 +99,6 @@ class GameEngine:
         idle_s: float | None,
         dfesta_presses_required: int = 1,
         initial_timer_delay_s: float = 0,
-        initial_hint_delay_s: float = 0,
         tray_present: bool | None = False,
         clock: Callable[[], float] = monotonic,
     ) -> None:
@@ -115,11 +114,6 @@ class GameEngine:
         if isinstance(initial_timer_delay_s, bool) or not isfinite(initial_timer_delay_s) or initial_timer_delay_s < 0:
             raise ValueError("initial_timer_delay_s must be a finite non-negative number")
         self.initial_timer_delay_s = float(initial_timer_delay_s)
-        if isinstance(initial_hint_delay_s, bool) or not isfinite(initial_hint_delay_s) or initial_hint_delay_s < 0:
-            raise ValueError("initial_hint_delay_s must be a finite non-negative number")
-        self.initial_hint_delay_s = float(initial_hint_delay_s)
-        self._initial_hint_pending = False
-        self._initial_hint_at = 0.0
         self._timers_start_at: float | None = None
         self.dfesta_presses_required = self._normalize_press_count(
             dfesta_presses_required
@@ -261,25 +255,12 @@ class GameEngine:
         self._check_start(allow_occupied=allow_occupied)
         self.end_reason = None
         self._started_at = now
-        self._initial_hint_pending = True
-        self._initial_hint_at = now + self.initial_hint_delay_s
         self._timers_start_at = now + self.initial_timer_delay_s
         self._last_activity_at = now
         self._ended_at = None
         self._dfesta_presses = 0
         self._set_state(GameState.RUNNING)
         return self.state
-
-    def claim_initial_hint(self) -> bool:
-        """Claim the first hint once, after its loading deadline."""
-        now = self._now()
-        self._end_if_needed(now)
-        if (self.state is not GameState.RUNNING or not self._initial_hint_pending
-                or now < self._initial_hint_at):
-            return False
-        self._initial_hint_pending = False
-        self._revision += 1
-        return True
 
     def end(self, reason: EndReason | str = EndReason.MANUAL) -> GameState:
         """end 이벤트를 처리하고 RUNNING에서 RESETTING으로 전이한다."""
@@ -338,9 +319,6 @@ class GameEngine:
         if self.state is not GameState.RUNNING:
             raise InvalidTransition(f"DFESTA is invalid from {self.state.value}")
         if self._end_if_needed(now):
-            return False
-
-        if self._initial_hint_pending and self.initial_hint_delay_s > 0:
             return False
 
         # 정답 여부와 관계없이 실제 버튼 입력이므로 Idle 타이머를 초기화한다.
@@ -506,12 +484,6 @@ class GameEngine:
 
         return {
             "state": self.state.value,
-            "initial_hint": {
-                "pending": self.state is GameState.RUNNING and self._initial_hint_pending,
-                "delay_s": self.initial_hint_delay_s,
-                "remaining_s": max(0.0, self._initial_hint_at - now)
-                if self.state is GameState.RUNNING and self._initial_hint_pending else 0.0,
-            },
             "tray": dict(zip(("present", "seated"), self._tray_state(now))),
             "cleanup_end_reason": self._cleanup_end_reason,
             "end_reason": (

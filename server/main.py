@@ -6,7 +6,6 @@ if __name__ == "__main__":
 import json
 import threading
 import time
-import math
 from datetime import datetime
 from copy import deepcopy
 
@@ -22,7 +21,6 @@ from server.game.game_engine import (
 )
 from server.game.game_runtime import GameRuntime, RuntimeResult
 from server.inout.matrix_display import MatrixDisplay
-from server.inout.game_events import GameEvents
 from server.game.melody_manager import (
     MelodyManager,
     answer_sequence_from_melody,
@@ -80,7 +78,6 @@ EVENT_LOG_LIMIT = 100
 _serial_status = {"connected": False, "port": "", "error": ""}
 _hardware_switching = threading.Event()
 _matrix_display: MatrixDisplay | None = None
-_game_events: GameEvents | None = None
 _tray_lock = threading.RLock()
 _tray_hardware = input_mode == "serial"
 
@@ -278,19 +275,12 @@ def _publish_web_event(address: str, args) -> None:
 
 
 def _new_game_engine() -> GameEngine:
-    raw_delay = (config.get("game_rules") or {}).get("initial_hint_delay_s", 0)
-    if isinstance(raw_delay, bool):
-        raise ValueError("game_rules.initial_hint_delay_s must be a number")
-    delay = float(raw_delay)
-    if not math.isfinite(delay) or delay < 0:
-        raise ValueError("game_rules.initial_hint_delay_s must be finite and non-negative")
     return GameEngine(
         answer_sequence,
         time_over_s=time_over_s,
         idle_s=idle_s,
         dfesta_presses_required=999 if _debug_mode else dfesta_presses_required,
-        initial_timer_delay_s=delay + build_plan(PlaybackMode.LISTEN, playback_melody).duration_s + 1.0,
-        initial_hint_delay_s=delay,
+        initial_timer_delay_s=build_plan(PlaybackMode.LISTEN, playback_melody).duration_s + 1.0,
         tray_present=None if _tray_hardware else False,
     )
 
@@ -355,32 +345,9 @@ def get_game_runtime() -> GameRuntime:
                 _new_game_engine(),
                 tick_interval_s=0.05,
                 on_state_change=_on_state_change,
-                on_snapshot=_on_game_snapshot,
             )
             _game_runtime.start()
         return _game_runtime
-
-
-def _on_game_snapshot(previous: dict, current: dict, action: str) -> None:
-    if _game_events is not None:
-        _game_events.observe(previous, current, action)
-
-
-def _start_initial_hint_if_due() -> None:
-    # Share the input guard so reset/start cannot interleave with a claimed hint.
-    with _orb_inspection.lock:
-        if _orb_inspection.active:
-            return
-        runtime = get_game_runtime()
-        initial = runtime.snapshot().get("initial_hint") or {}
-        if not initial.get("pending") or initial.get("remaining_s", 0) > 0:
-            return
-        result = runtime.claim_initial_hint()
-        if result.value:
-            try:
-                request_listen(initial_hint=True)
-            except InvalidTransition:
-                pass  # A concurrent manual end/reset can win after the claim.
 
 
 def get_game_state() -> dict:
@@ -700,7 +667,7 @@ def start_game(melody_override: str | None = None) -> dict:
     _publish_transition(started)
 
     print(f"[game] 시작 — stage {current_stage}, melody={melody_id}")
-    _start_initial_hint_if_due()
+    request_listen(initial_hint=True)
     return {"ok": True, "game": get_game_state()}
 
 
@@ -860,8 +827,6 @@ def request_listen(*, initial_hint: bool = False) -> dict:
     runtime = get_game_runtime()
     snapshot = runtime.snapshot()
     state = snapshot["state"]
-    if (snapshot.get("initial_hint") or {}).get("pending"):
-        return {"ok": False, "ignored": True, "reason": "loading", "game": snapshot}
     if state != GameState.RUNNING.value:
         print(f"[game] 다시 듣기 무시 — {state}")
         return {"ok": False, "ignored": True, "game": snapshot}
@@ -884,8 +849,6 @@ def request_play() -> dict:
     """배치된 각 오브를 현재 열과 실제 pitch로 재생한다."""
     runtime = get_game_runtime()
     snapshot = runtime.snapshot()
-    if (snapshot.get("initial_hint") or {}).get("pending"):
-        return {"ok": False, "ignored": True, "reason": "loading", "game": snapshot}
     if snapshot["state"] != GameState.RUNNING.value:
         print("[game] 재생 무시 — RUNNING 아님")
         return {"ok": False, "ignored": True, "game": snapshot}
@@ -908,8 +871,6 @@ def request_dfesta() -> dict:
     """모든 voice를 재생하고 DFestaPress를 완료 조건에 반영한다."""
     runtime = get_game_runtime()
     snapshot = runtime.snapshot()
-    if (snapshot.get("initial_hint") or {}).get("pending"):
-        return {"ok": False, "ignored": True, "reason": "loading", "game": snapshot}
     if snapshot["state"] != GameState.RUNNING.value:
         print("[game] 디페스타 무시 — RUNNING 아님")
         return {"ok": False, "ignored": True, "game": snapshot}
@@ -942,8 +903,6 @@ def request_dfesta() -> dict:
 
     print("[game] 디페스타")
     try:
-        if _game_events is not None:
-            _game_events.flush()  # Deliver the gate-off before DFESTA playback.
         playback = _start_playback(PlaybackMode.DFESTA)
     finally:
         snapshot = _publish_transition(runtime_result)
@@ -1408,7 +1367,6 @@ def stop_serial_input() -> None:
 
 # ── 진입점 ─────────────────────────────────────────────
 def _update_matrix_display() -> None:
-    _start_initial_hint_if_due()
     if _matrix_display is None:
         return
     # Do not expose the brief READY + tray-on snapshot during automatic start.
@@ -1468,12 +1426,10 @@ def orb_action(data: dict) -> dict:
 
 
 def run_main() -> None:
-    global _matrix_display, _game_events
+    global _matrix_display
     install_logging()
-    _game_events = GameEvents(config.get("event_midi") or {})
     runtime = get_game_runtime()
-    _matrix_display = MatrixDisplay(config.get("matrix_display") or {},
-                                    on_screen_change=_game_events.screen_changed)
+    _matrix_display = MatrixDisplay(config.get("matrix_display") or {})
     start_websocket_service()
     print(f"[stage {current_stage}] 정답 시퀀스: {answer_sequence}")
     print(f"[melody] {melody_id}")
@@ -1542,7 +1498,6 @@ def run_main() -> None:
         stop_serial_input()
         stop_websocket_service()
         runtime.close()
-        _game_events.close()
         with _scheduler_lock:
             scheduler = _playback_scheduler
         if scheduler is not None:
@@ -1554,4 +1509,3 @@ def run_main() -> None:
 
 if __name__ == "__main__":
     run_main()
-

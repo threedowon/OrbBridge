@@ -90,9 +90,5 @@
   "_listen": {
     "port": "listen",
     "channel": 1
-  },
-  "_event": {
-    "port": "event",
-    "channel": 1
   }
 }

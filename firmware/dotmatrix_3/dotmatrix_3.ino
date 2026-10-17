@@ -109,15 +109,13 @@ void drawStatus(const char *raw) {
   display->print(text);
 }
 
-String offlineText = "OFFLINE";
-
 void drawRuntime() {
   display->clearScreen();
   if (linkTimedOut) {
-    drawStatus(offlineText.c_str());
+    drawStatus("OFFLINE");
     return;
   }
-  StaticJsonDocument<512> message;
+  StaticJsonDocument<256> message;
   if (deserializeJson(message, lastCommand)) return;
   const char *type = message["type"] | "";
   if (!strcmp(type, "status")) {
@@ -164,7 +162,7 @@ void drawView() {
 }
 
 void handleCommand(const String &line) {
-  StaticJsonDocument<512> message;
+  StaticJsonDocument<256> message;
   if (deserializeJson(message, line)) return;
   const char *type = message["type"] | "";
   if (strcmp(type, "clear") && strcmp(type, "status") && strcmp(type, "display")) return;
@@ -172,15 +170,6 @@ void handleCommand(const String &line) {
   if (!strcmp(type, "display") &&
       (!message["seconds"].is<int>() || message["seconds"].as<int>() < 0)) return;
   // Host heartbeat recovers a reboot without repeatedly clearing a healthy panel.
-  if (message.containsKey("offline_text")) {
-    if (!message["offline_text"].is<const char *>()) return;
-    String candidate = message["offline_text"].as<const char *>();
-    if (candidate.length() > 32) return;
-    for (unsigned int i = 0; i < candidate.length(); i++) {
-      if (candidate[i] < 32 || candidate[i] > 126) return;
-    }
-    offlineText = candidate;
-  }
   lastValidCommandAt = millis();
   linkTimedOut = false;
   if (line == lastCommand) return;
@@ -210,8 +199,8 @@ void setup() {
   display->setBrightness8(255);
   display->clearScreen();
   display->setTextWrap(false);
-  serialLine.reserve(384);
-  lastCommand.reserve(384);
+  serialLine.reserve(160);
+  lastCommand.reserve(160);
   lastValidCommandAt = millis();
   pinMode(UP_BUTTON_PIN, INPUT_PULLUP);
   buttonRaw = buttonStable = digitalRead(UP_BUTTON_PIN) == LOW;
@@ -246,7 +235,7 @@ void loop() {
       serialLine = "";
       droppingLine = false;
     } else if (value != '\r' && !droppingLine) {
-      if (serialLine.length() >= 384) {
+      if (serialLine.length() >= 160) {
         serialLine = "";
         droppingLine = true;
       } else {
