@@ -19,6 +19,8 @@ from server.app_paths import data_dir
 PORTMAPPING_PATH = data_dir() / "portmapping.json"
 NOTE_BASE = 36
 LISTEN_VOICE = "_listen"
+EVENT_VOICE = "_event"
+_event_retry_notes: set[tuple[str, int, int]] = set()
 
 _init_lock = threading.RLock()
 _ports: dict[str, object] = {}
@@ -171,6 +173,16 @@ def ensure_init(path: Path | None = None) -> tuple[bool, str]:
             )
             if _init_error:
                 print(f"[midi] WARN: {_init_error}")
+            # Clear stale event voices left by an interrupted previous session.
+            event_route = resolve_route(EVENT_VOICE)
+            if event_route and event_route[0] in _ports:
+                event_port, event_channel = event_route
+                try:
+                    for control in (64, 123, 120):
+                        _ports[event_port].send(mido.Message(
+                            "control_change", channel=event_channel, control=control, value=0))
+                except Exception as exc:
+                    print(f"[midi] event cleanup failed: {exc}")
             _start_note_worker()
             _start_port_workers()
             _ready = True
@@ -267,6 +279,7 @@ def shutdown() -> None:
             except Exception:
                 pass
         _ports.clear()
+        _event_retry_notes.clear()
         _port_locks.clear()
         _map = {}
         _catalog_voices = {}
@@ -356,16 +369,17 @@ def _invalidate_generation(key: tuple[str, int, int], generation: int) -> None:
 
 def _activate_note(
     key: tuple[str, int, int],
-    duration_ms: float,
+    duration_ms: float | None,
 ) -> tuple[int, bool]:
     with _note_condition:
         was_active = key in _active_notes
         generation = next(_generations)
         _active_notes[key] = generation
-        heapq.heappush(
-            _off_heap,
-            (time.perf_counter() + duration_ms / 1000.0, generation, key),
-        )
+        if duration_ms is not None:
+            heapq.heappush(
+                _off_heap,
+                (time.perf_counter() + duration_ms / 1000.0, generation, key),
+            )
         _note_condition.notify()
         return generation, was_active
 
@@ -466,6 +480,46 @@ def trigger(
         ]
     )
     return results[0] if results else {"ok": False, "error": "empty"}
+
+
+def event_note(note: int, *, velocity: int = 127,
+               duration_ms: float | None = 30, active: bool = True) -> dict:
+    """Absolute MIDI note on the event port; None duration is an idempotent gate."""
+    if type(note) is not int or not 0 <= note <= 127:
+        raise ValueError("event note must be an integer from 0 to 127")
+    if type(velocity) is not int or not 1 <= velocity <= 127:
+        raise ValueError("event velocity must be an integer from 1 to 127")
+    if duration_ms is not None and (not isfinite(duration_ms) or duration_ms <= 0):
+        raise ValueError("event duration must be positive or None")
+    import mido
+    with _init_lock:
+        ensure_init()
+        route = resolve_route(EVENT_VOICE)
+        if route is None or route[0] not in _ports:
+            return {"ok": False, "error": "event MIDI port is not open"}
+        port_name, channel = route
+        port = _ports[port_name]
+        key = (port_name, channel, note)
+        with _port_locks[port_name]:
+            with _note_condition:
+                was_active = key in _active_notes
+            if ((not active and not was_active) or
+                    (active and duration_ms is None and was_active and key not in _event_retry_notes)):
+                return {"ok": True, "changed": False}
+            try:
+                if was_active:
+                    port.send(mido.Message("note_off", note=note, velocity=0, channel=channel))
+                    with _note_condition:
+                        _active_notes.pop(key, None)
+                if active:
+                    # Register before sending so shutdown can also clean up a failed send.
+                    _activate_note(key, duration_ms)
+                    port.send(mido.Message("note_on", note=note, velocity=velocity, channel=channel))
+                _event_retry_notes.discard(key)
+                return {"ok": True, "changed": True, "note": note}
+            except Exception as exc:
+                _event_retry_notes.add(key)
+                return {"ok": False, "error": str(exc)}
 
 
 def trigger_many(notes: list[dict]) -> list[dict]:

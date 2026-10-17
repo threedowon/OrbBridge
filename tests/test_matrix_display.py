@@ -61,6 +61,51 @@ def playback(mode, active=True, run_id=1):
     return {"mode": mode, "active": active, "run_id": run_id}
 
 
+def test_ready_audio_waits_for_display_write_and_not_heartbeats(rig):
+    matrix, device, _, clock = rig
+    matrix.BOOT_S = 1.6
+    screens = []
+    matrix._on_screen_change = screens.append
+    matrix.update({"state": "READY"})
+    assert not screens and not device.writes
+    clock[0] = 1.6
+    matrix.update({"state": "READY"})
+    matrix.update({"state": "READY"})
+    clock[0] = 3
+    matrix.update({"state": "READY"})
+    assert screens == ["ready"]
+
+
+def test_configured_texts_keep_semantic_events_and_offline_protocol(rig):
+    _, device, serial, clock = rig
+    screens = []
+    matrix = MatrixDisplay({"enabled": True, "texts": {
+        "ready": "HELLO", "farewell": "HELLO", "offline": "NO CONNECTION",
+        "loading": "WAIT", "press_dfesta": "PRESS BUTTON",
+    }}, serial_module=serial, catalog={"voices": {}}, clock=lambda: clock[0],
+        on_screen_change=screens.append)
+    matrix.BOOT_S = 0
+    matrix.update({"state": "READY"})
+    assert device.writes[-1] == {"type": "status", "text": "HELLO", "offline_text": "NO CONNECTION"}
+    matrix.update({"state": "READY", "tray": {"present": False},
+                   "timers": {"since_table_cleared_s": 0}})
+    assert screens == ["ready", "farewell"]
+    game = {**running(), "initial_hint": {"pending": True}, "is_correct": True}
+    matrix.update(game)
+    assert device.writes[-1]["text"] == "WAIT"
+    game["initial_hint"]["pending"] = False
+    matrix.update(game, playback("LISTEN"))
+    assert device.writes[-1]["text"] == "PRESS BUTTON"
+    matrix.update(game, playback("DFESTA"))
+    assert device.writes[-1]["text"] == "COMPLETE"
+
+
+@pytest.mark.parametrize("text", ["가나다", "X" * 33, "A\nB", 12])
+def test_invalid_status_text_is_rejected(text):
+    with pytest.raises(ValueError):
+        MatrixDisplay({"texts": {"ready": text}})
+
+
 def test_running_name_countdown_and_duplicate_suppression(rig):
     matrix, device, _, _ = rig
     matrix.show_voice("ive_5", running())

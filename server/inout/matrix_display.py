@@ -24,12 +24,29 @@ class MatrixDisplay:
     RETRY_S = 1.0
     BOOT_S = 1.6
     CONNECTION_FAILURE_LOG_LIMIT = 5
+    DEFAULT_TEXTS = {
+        "ready": "PLACE TRAY", "loading": "LOADING...", "hint": "HINT",
+        "playing": "PLAYING", "complete": "COMPLETE", "press_dfesta": "PRESS DFESTA!",
+        "time_over": "TIME OVER", "clear_table": "PLEASE CLEAR TABLE",
+        "farewell": "GOODBYE", "place_orb": "PLACE ORB", "orb_check": "ORB CHECK",
+        "offline": "OFFLINE",
+    }
 
     def __init__(self, config: Mapping, *, serial_module=None, catalog=None,
-                 clock=time.monotonic) -> None:
+                 clock=time.monotonic, on_screen_change=None) -> None:
         self.enabled = bool(config.get("enabled", False))
         self.port = str(config.get("port", "COM6"))
         self.baudrate = int(config.get("baudrate", 115200))
+        self.texts = {**self.DEFAULT_TEXTS, **config.get("texts", {})}
+        self._configure_offline = "offline" in config.get("texts", {})
+        for key, value in self.texts.items():
+            if not isinstance(value, str) or len(value) > 32 or any(not " " <= c <= "~" for c in value):
+                raise ValueError(f"matrix_display.texts.{key} must be at most 32 printable ASCII characters")
+        self._screen = None
+        self._resolved_screen = None
+        self._screen_revision = 0
+        self._notified_revision = -1
+        self._on_screen_change = on_screen_change
         try:
             farewell = float(config.get("farewell_duration_s", 4))
             self.farewell_duration_s = farewell if math.isfinite(farewell) and farewell >= 0 else 4.0
@@ -125,13 +142,14 @@ class MatrixDisplay:
         with self._lock:
             self._text = ""
 
-    @staticmethod
-    def _status(text: str) -> dict:
-        return {"type": "status", "text": text}
+    def _status(self, key: str) -> dict:
+        self._screen = key
+        return {"type": "status", "text": self.texts[key]}
 
     def _payload(self, snapshot: dict, playback: dict, now: float) -> dict:
+        self._screen = "blank"
         if snapshot.get("orb_inspection"):
-            return self._status("ORB CHECK")
+            return self._status("orb_check")
         state = snapshot.get("state")
         mode = str(playback.get("mode") or "").upper()
         cleared = (snapshot.get("timers") or {}).get("since_table_cleared_s")
@@ -161,33 +179,37 @@ class MatrixDisplay:
                 self._text = ""
         if state == "READY":
             if cleared_timeout and now < self._timeout_until:
-                return self._status("TIME OVER")
+                return self._status("time_over")
             if snapshot.get("cell_count", 0):
-                return self._status("PLEASE CLEAR TABLE")
+                return self._status("clear_table")
             if (snapshot.get("tray") or {}).get("present") is False and cleared is not None:
                 cleared -= self._farewell_shift_s
                 if cleared < self.farewell_duration_s:
-                    return self._status("GOODBYE")
+                    return self._status("farewell")
                 if cleared < self.farewell_duration_s * 2:
                     return {"type": "clear"}
-            return self._status("PLACE TRAY")
+            return self._status("ready")
         if state == "RESETTING":
             reason = snapshot.get("end_reason")
             if reason == "complete" and playback.get("active") and mode == "DFESTA":
                 self._reset_at = now
-                return self._status("COMPLETE")
+                return self._status("complete")
             elapsed = now - self._reset_at
-            terminal = {"complete": "COMPLETE", "idle": "TIME OVER",
-                        "time_over": "TIME OVER"}.get(reason)
+            terminal = {"complete": "complete", "idle": "time_over",
+                        "time_over": "time_over"}.get(reason)
             if terminal:
                 if elapsed < self.STATUS_HOLD_S:
                     return self._status(terminal)
-            return self._status("PLEASE CLEAR TABLE")
+            return self._status("clear_table")
         if state != "RUNNING":
             return {"type": "clear"}
+        if (snapshot.get("initial_hint") or {}).get("pending"):
+            return self._status("loading")
+        if snapshot.get("is_correct") and not (playback.get("active") and mode == "DFESTA"):
+            return self._status("press_dfesta")
         if playback.get("active"):
-            message = {"LISTEN": "HINT", "PLAY": "PLAYING",
-                       "DFESTA": "COMPLETE"}.get(mode)
+            message = {"LISTEN": "hint", "PLAY": "playing",
+                       "DFESTA": "complete"}.get(mode)
             if message:
                 return self._status(message)
         remaining = (snapshot.get("timers") or {}).get("remaining_time_over_s")
@@ -196,7 +218,7 @@ class MatrixDisplay:
         except (TypeError, ValueError, OverflowError):
             seconds = float("nan")
         if not math.isfinite(seconds):
-            return self._status("PLACE ORB")
+            return self._status("place_orb")
         # Keep the existing name/countdown protocol and layout, including before
         # the first placement (empty name, live countdown).
         return {"type": "display", "text": self._text,
@@ -205,14 +227,25 @@ class MatrixDisplay:
     def update(self, snapshot: dict, playback: dict | None = None) -> None:
         """Send only current state, retry failures, and recover silent board resets."""
         with self._io_lock:
-            if not self.enabled or self._closed:
+            if self._closed:
                 return
             now = self._clock()
             with self._lock:
                 payload = self._payload(snapshot, playback or {}, now)
+            if self._screen != self._resolved_screen:
+                self._resolved_screen = self._screen
+                self._screen_revision += 1
+            if not self.enabled:
+                self._notify_screen()
+                return
+            # Existing firmware ignores this optional field. Updated firmware
+            # remembers it for autonomous link-loss display.
+            if self._configure_offline:
+                payload["offline_text"] = self.texts["offline"]
             if not self._connect(now):
                 return
             if payload == self._last_payload and now - self._last_sent_at < self.RESEND_S:
+                self._notify_screen()
                 return
             line = (json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
                     + "\n").encode("ascii")
@@ -228,8 +261,16 @@ class MatrixDisplay:
             self._last_payload = payload
             self._last_sent_at = now
             self._set_connection_status("connected")
+            self._notify_screen()
+
+    def _notify_screen(self) -> None:
+        if self._notified_revision != self._screen_revision:
+            self._notified_revision = self._screen_revision
+            if self._on_screen_change is not None:
+                self._on_screen_change(self._screen)
 
     def close(self) -> None:
         with self._io_lock:
             self._closed = True
             self._disconnect()
+
