@@ -12,6 +12,7 @@ from copy import deepcopy
 
 from server.app_paths import ensure_data_files, melodies_dir
 from server.data_store import find_orb, load_config, load_mapping, save_config
+from server.simulation_orbs import simulation_orb_mapping, virtual_orb_mapping
 from server.game.game_engine import (
     EndReason,
     GameEngine,
@@ -776,7 +777,7 @@ def collect_all_orbs() -> dict:
 
 @_orb_inspection.guard
 def auto_complete_game() -> dict:
-    """현재 멜로디의 정답 pitch에 등록 오브를 자동 배치한다."""
+    """현재 멜로디의 정답 pitch에 오브를 배치하며 부족분은 가상 오브로 채운다."""
 
     global orb_mapping
 
@@ -787,9 +788,8 @@ def auto_complete_game() -> dict:
 
     orb_mapping = load_mapping()
     available_orbs = [
-        (orb_id, str(entry.get("voice") or "").strip())
-        for orb_id, entry in sorted(orb_mapping.items())
-        if isinstance(entry, dict) and str(entry.get("voice") or "").strip()
+        (orb_id, entry["voice"])
+        for orb_id, entry in simulation_orb_mapping(orb_mapping).items()
     ]
     pitched_steps = [
         step for step in playback_melody.steps if step.pitch is not None
@@ -799,7 +799,7 @@ def auto_complete_game() -> dict:
     if any(step.index >= 12 for step in pitched_steps):
         raise ValueError("auto-complete supports up to 12 melody steps")
     if len(available_orbs) < len(pitched_steps):
-        raise RuntimeError("not enough registered orbs for auto-complete")
+        raise RuntimeError("자동완성에 사용할 오브가 부족합니다. 음색 카탈로그를 확인하세요.")
 
     plan = []
     for step, (orb_id, voice) in zip(pitched_steps, available_orbs):
@@ -1110,9 +1110,21 @@ def _handle_serial_message(event: dict) -> None:
 @_orb_inspection.guard
 def handle_event(event: dict) -> dict:
     global orb_mapping
+    orb_mapping = load_mapping()
+    return _handle_orb_event(event, orb_mapping)
+
+
+@_orb_inspection.guard
+def handle_simulation_event(event: dict) -> dict:
+    # Resolve even previously placed virtual IDs after physical registration grows.
+    mapping = virtual_orb_mapping()
+    mapping.update(load_mapping())
+    return _handle_orb_event(event, mapping)
+
+
+def _handle_orb_event(event: dict, mapping: dict) -> dict:
     if _hardware_switching.is_set():
         raise RuntimeError("하드웨어 연결을 변경 중입니다")
-    orb_mapping = load_mapping()
 
     t = str(event.get("type", "")).lower()
     if t not in ("added", "removed"):
@@ -1127,7 +1139,7 @@ def handle_event(event: dict) -> dict:
         raise ValueError("id must not be empty")
 
     runtime = get_game_runtime()
-    orb_key, orb = find_orb(orb_id, orb_mapping)
+    orb_key, orb = find_orb(orb_id, mapping)
     q, note = parse_cell(cell)
     q_actual = q + (slave - 1) * 2
 
@@ -1489,6 +1501,7 @@ def run_main() -> None:
     start_http_server(
         web_config,
         handle_event,
+        on_simulation_event=handle_simulation_event,
         get_status=get_status,
         get_game_state=get_game_state,
         get_melody=get_active_melody,

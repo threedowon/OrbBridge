@@ -43,6 +43,7 @@ def start_http_server(
     cfg: dict,
     on_event,
     *,
+    on_simulation_event=None,
     get_orb_inspection=None,
     on_orb_action=None,
     get_status: Callable[[], dict] | None = None,
@@ -187,10 +188,13 @@ def start_http_server(
                     self._json(500, {"ok": False, "error": str(exc)})
                 return
 
-            if path == "/api/orbs":
+            if path in ("/api/orbs", "/api/simulation/orbs"):
                 from server.data_store import load_mapping
+                from server.simulation_orbs import simulation_orb_mapping
 
                 mapping = load_mapping()
+                if path == "/api/simulation/orbs":
+                    mapping = simulation_orb_mapping(mapping)
                 orbs = [{"id": oid, **info} for oid, info in mapping.items()]
                 self._json(200, orbs)
                 return
@@ -296,7 +300,7 @@ def start_http_server(
                 self._run_callback(on_hardware_disconnect)
                 return
 
-            if self.path == "/api/event":
+            if self.path in ("/api/event", "/api/simulation/event"):
                 required = ("type", "slave", "cell", "id")
                 if not all(k in data for k in required):
                     self._json(400, {"error": f"required fields: {required}"})
@@ -304,8 +308,12 @@ def start_http_server(
                 if data["type"] not in ("added", "removed"):
                     self._json(400, {"error": "type must be added or removed"})
                     return
+                callback = on_simulation_event if self.path == "/api/simulation/event" else on_event
+                if callback is None:
+                    self._json(501, {"ok": False, "error": "simulation unavailable"})
+                    return
                 try:
-                    result = on_event(data)
+                    result = callback(data)
                 except ValueError as exc:
                     self._json(400, {"ok": False, "error": str(exc)})
                     return
@@ -402,3 +410,4 @@ def start_http_server(
             traceback.print_exc()
 
     threading.Thread(target=run, daemon=True).start()
+

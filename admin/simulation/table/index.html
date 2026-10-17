@@ -761,7 +761,7 @@
     }
 
     async function sendEvent(event) {
-      const res = await fetch(`${API}/api/event`, {
+      const res = await fetch(`${API}/api/simulation/event`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(event),
@@ -1041,7 +1041,7 @@
           btn.draggable = true;
           btn.role = 'button';
           btn.tabIndex = 0;
-          btn.title = `${String.fromCharCode(65 + i)} · ${o.voice} — 드래그해서 배치`;
+          btn.title = `${String.fromCharCode(65 + i)} · ${o.voice}${o.simulated ? ' · 가상 오브' : ''} — 드래그해서 배치`;
           btn.addEventListener('dragstart', (e) => {
             if (!running) {
               e.preventDefault();
@@ -1161,7 +1161,8 @@
     }
 
     async function loadOrbs() {
-      const res = await fetch(`${API}/api/orbs`);
+      const res = await fetch(`${API}/api/simulation/orbs`);
+      if (!res.ok) throw new Error(await res.text());
       allOrbs = await res.json();
       if (running) pickTrayOrbs();
       else buildOrbTray();
