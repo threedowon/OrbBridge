@@ -129,6 +129,7 @@ LedCommandParser ledCommandParser;
 HintCommandParser hintParser;
 HintCommandParser usbHintParser;
 bool hintActive = false;
+bool hintNoteLit = false;
 uint32_t hintStarted = 0;
 uint16_t hintDuration = 0;
 String usbCmdLine;
@@ -377,13 +378,21 @@ void applyHintCommand(const HintCommandParser& command) {
   hintActive = true;
   hintStarted = millis();
   hintDuration = command.duration;
+  hintNoteLit = command.slave == slaveId;
   fillAll(0);
   if (command.slave == slaveId)
     setRing(command.cell - 1, Adafruit_NeoPixel::Color(255, 147, 41));  // 오브 인식과 같은 따뜻한 색
 }
 
 void updateHint() {
-  if (hintActive && uint32_t(millis() - hintStarted) >= hintDuration) stopHint();
+  if (!hintActive) return;
+  const uint32_t elapsed = uint32_t(millis() - hintStarted);
+  if (hintNoteLit && elapsed >= hintDuration) {
+    hintNoteLit = false;
+    fillAll(0);  // Stay dark between notes; occupancy returns only at session end.
+  }
+  // Recover if the server disconnects and the explicit end command is lost.
+  if (elapsed >= 120000UL) stopHint();
 }
 
 void rainbowStatic() {

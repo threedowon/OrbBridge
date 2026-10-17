@@ -19,7 +19,7 @@ def test_only_enabled_hint_lights_rings():
     assert sent == []
     bridge.handle(start(run=2))
     bridge.handle(beat(run=2))
-    assert sent == ["H1,1,460"]
+    assert sent == ["H0,0,1", "H1,1,460"]
     bridge.handle(dict(type="end", run_id=2))
     assert sent[-1] == "H0,0,0"
 
@@ -32,7 +32,7 @@ def test_all_96_slot_addresses():
         for pitch in range(8):
             bridge.handle(beat(step, pitch))
             assert sent[-1] == f"H{step // 2 + 1},{step % 2 * 8 + pitch + 1},460"
-    assert len(set(sent)) == 96
+    assert len(set(sent)) == 97
 
 
 def test_rest_delay_and_cancel_restore():
@@ -42,9 +42,9 @@ def test_rest_delay_and_cancel_restore():
     bridge.handle(beat())
     assert sent[-1] in ("H1,1,360", "H1,1,359")
     bridge.handle(beat(pitch=None))
-    assert sent[-1] == "H0,0,0"
+    assert sent[-1] == "H0,0,1"
     bridge.handle(beat(emitted=9))
-    assert sent[-1] == "H0,0,0"
+    assert sent[-1] == "H0,0,1"
     bridge.handle(dict(type="end", run_id=1, cancelled=True))
     assert bridge.run_id is None
 
@@ -61,3 +61,17 @@ def test_disabled_playback_cancels_hint_and_ignores_old_events():
     bridge.handle(dict(type="end", run_id=1))
     bridge.handle(beat(run=2))
     assert len(sent) == count
+
+
+def test_hint_stays_exclusive_through_rests_and_replacement():
+    sent = []
+    bridge = HintLedBridge(sent.append, lambda: 10)
+    bridge.handle(start())
+    bridge.handle(beat())
+    bridge.handle(beat(pitch=None))
+    bridge.handle(start(run=2))
+    bridge.handle(dict(type="end", run_id=1))
+    bridge.handle(beat(step=2, run=2))
+    assert sent == ["H0,0,1", "H1,1,460", "H0,0,1", "H0,0,1", "H2,1,460"]
+    bridge.handle(dict(type="end", run_id=2))
+    assert sent[-1] == "H0,0,0"

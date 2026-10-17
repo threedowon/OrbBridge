@@ -3,6 +3,7 @@
 #include <stdio.h>
 
 // H<slave>,<cell>,<duration_ms>\n; H0,0,0 restores normal display.
+// H0,0,1 blanks rings while keeping the hint session active.
 // Binary frames on the shared RS485 bus are skipped, including embedded newlines.
 class HintCommandParser {
  public:
@@ -14,7 +15,7 @@ class HintCommandParser {
       if ((*p < '0' || *p > '9') && *p != ',') return false;
     unsigned s, c, d; char extra;
     if (sscanf(line, "H%u,%u,%u%c", &s, &c, &d, &extra) != 3) return false;
-    if (!((s == 0 && c == 0 && d == 0) ||
+    if (!((s == 0 && c == 0 && d <= 2000) ||
           (s >= 1 && s <= 6 && c >= 1 && c <= 16 && d >= 1 && d <= 2000))) return false;
     slave = s; cell = c; duration = d;
     return true;

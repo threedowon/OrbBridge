@@ -334,7 +334,8 @@ void pollHintCommand() {
   if (now - lastBusRxMs < 2) return;
   uint16_t remaining = hintCommand.duration > age ? hintCommand.duration - age : 0;
   char line[24];
-  if (!remaining) snprintf(line, sizeof(line), "\nH0,0,0\n");
+  if (!hintCommand.duration) snprintf(line, sizeof(line), "\nH0,0,0\n");
+  else if (!remaining || !hintCommand.slave) snprintf(line, sizeof(line), "\nH0,0,1\n");
   else snprintf(line, sizeof(line), "\nH%u,%u,%u\n", hintCommand.slave,
                 hintCommand.cell, remaining);
   RS485.print(line);
