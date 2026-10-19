@@ -525,6 +525,14 @@
     #slave-ports option:checked { background:var(--accent); color:white; }
   </style>
   <link rel="stylesheet" href="/admin/operator.css">
+  <style>
+    .hardware-monitor-column {display:flex;flex-direction:column;gap:20px;min-width:0;width:100%;order:2;}
+    .hardware-monitor-column > .slave-status-panel {background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px;}
+    .hardware-monitor-column > .grid-panel {position:static;}
+    @media(max-width:600px){.hardware-monitor-column > .slave-status-panel {padding:16px;}}
+    @media(min-width:1051px){.hardware-monitor-column {order:0;}}
+  </style>
+  <link rel="stylesheet" href="/admin/hardware/layout.css">
 </head>
 <body>
   <header>
@@ -557,11 +565,32 @@
       </div>
     </div>
   </header>
-  <div class="page-intro"><div><span class="intro-tag">ORBBRIDGE / CONTROL ROOM</span><h2>하드웨어 점검</h2><p>연결 상태를 확인하고, 슬롯과 LED를 테스트하세요.</p></div></div>
+  <div class="page-intro"><div><span class="intro-tag">ORBBRIDGE / CONTROL ROOM</span><h2>하드웨어 점검</h2></div></div>
 
   <main>
+    <div class="hardware-monitor-column hardware-only">
+      <div class="system-section">
+        <div class="section-title">시스템</div>
+        <div class="stats-grid">
+          <div class="stat-box"><div class="num" id="stat-filled">0</div><div class="lbl">점유 셀</div></div>
+          <div class="stat-box"><div class="num" id="stat-orbs">0</div><div class="lbl">등록 Orb</div></div>
+          <div class="stat-box"><div class="num" id="stat-stage">—</div><div class="lbl">Stage</div></div>
+          <div class="stat-box"><div class="num" id="stat-mode">—</div><div class="lbl">입력 모드</div></div>
+          <div class="stat-box software-only"><div class="num" id="stat-melody">—</div><div class="lbl">현재 멜로디</div></div>
+          <div class="stat-box software-only"><div class="num" id="stat-next-melody">—</div><div class="lbl">다음 멜로디</div></div>
+          <div class="stat-box software-only"><div class="num" id="stat-total-time">—</div><div class="lbl">TimeOver 잔여</div></div>
+          <div class="stat-box software-only"><div class="num" id="stat-idle-time">—</div><div class="lbl">Idle 잔여</div></div>
+        </div>
+      </div>
+
+      <section class="panel slave-status-panel">
+        <div class="section-title">슬레이브 상태</div>
+        <div class="slave-status" id="slave-status">
+          <div class="slave-empty">감지된 슬레이브 없음</div>
+        </div>
+      </section>
     <section class="panel grid-panel hardware-only">
-      <div class="board-title"><h3>슬롯 모니터</h3><span>6개 보드 · 96개 슬롯 / 셀을 눌러 상세 확인</span></div>
+      <div class="board-title"><h3>슬롯 모니터</h3><span>96 슬롯</span></div>
       <div class="board-scroll">
       <div class="slave-headers" id="slave-headers"></div>
       <div class="grid-wrap">
@@ -578,47 +607,12 @@
         <div class="info-row"><span class="label">Orb ID</span><span class="value" id="d-id">—</span></div>
         <div class="info-row"><span class="label">결과</span><span class="value" id="d-result">—</span></div>
       </div>
-      <div class="logs-dashboard">
-        <form id="log-settings-form" class="hardware-only" style="margin-bottom:18px">
-          <label for="log-directory"><strong>로그 저장 폴더</strong></label>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
-            <input id="log-directory" type="text" required placeholder="예: D:\OrbBridgeLogs" style="flex:1;min-width:200px;margin:0" aria-describedby="log-directory-help">
-            <button id="log-directory-save" type="submit" disabled>저장</button>
-            <button id="log-directory-default" type="button" disabled>기본 경로</button>
-          </div>
-          <p id="log-directory-help" style="font-size:12px;color:var(--muted)">서버 PC의 폴더 경로를 입력하세요. 저장 즉시 새 로그부터 적용되며, 기존 파일은 원래 폴더에 남습니다.</p>
-          <div id="log-directory-status" role="status" style="font-size:12px;overflow-wrap:anywhere"></div>
-        </form>
-        <div class="logs-toolbar"><strong>실시간 로그</strong><span class="log-send">파랑 · 송신</span><span class="log-receive">초록 · 수신</span><span class="log-error">빨강 · 오류</span><span class="log-warning">노랑 · 경고</span><span id="console-log-status" role="status"></span></div>
-        <div class="logs-grid">
-          <section class="log-pane"><header><h3>하트비트</h3><button type="button" data-copy-log="heartbeat-log">복사</button></header><div id="heartbeat-log" class="event-log" aria-label="하트비트 로그"></div></section>
-          <section class="log-pane"><header><h3>원시 시리얼 · 하트비트 제외</h3><button type="button" data-copy-log="serial-log">복사</button></header><div id="serial-log" class="event-log" aria-label="원시 시리얼 로그"></div></section>
-          <section class="log-pane"><header><h3>이벤트</h3><button type="button" data-copy-log="event-log">복사</button></header><div id="event-log-slot"></div></section>
-          <section class="log-pane"><header><h3>서버 콘솔 · LED / HTTP / WS</h3><button type="button" data-copy-log="console-log">복사</button></header><div id="console-log" class="event-log" aria-label="서버 콘솔 로그"></div></section>
-        </div>
-      </div>
     </section>
-
-    <section class="panel side-panel">
-      <div class="system-section">
-        <div class="section-title">시스템</div>
-        <div class="stats-grid">
-          <div class="stat-box"><div class="num" id="stat-filled">0</div><div class="lbl">점유 셀</div></div>
-          <div class="stat-box"><div class="num" id="stat-orbs">0</div><div class="lbl">등록 Orb</div></div>
-          <div class="stat-box"><div class="num" id="stat-stage">—</div><div class="lbl">Stage</div></div>
-          <div class="stat-box"><div class="num" id="stat-mode">—</div><div class="lbl">입력 모드</div></div>
-          <div class="stat-box software-only"><div class="num" id="stat-melody">—</div><div class="lbl">현재 멜로디</div></div>
-          <div class="stat-box software-only"><div class="num" id="stat-next-melody">—</div><div class="lbl">다음 멜로디</div></div>
-          <div class="stat-box software-only"><div class="num" id="stat-total-time">—</div><div class="lbl">TimeOver 잔여</div></div>
-          <div class="stat-box software-only"><div class="num" id="stat-idle-time">—</div><div class="lbl">Idle 잔여</div></div>
-        </div>
-      </div>
-
       <div class="system-section connection-section hardware-only">
-        <div class="section-title">01 / 장치 연결</div>
+        <div class="section-title">장치 연결</div>
         <label style="display:flex;align-items:center;gap:8px"><input style="width:auto;margin:0" type="checkbox" role="switch" id="master-toggle" checked> <b id="hardware-mode">Master ON · RS485 경유</b></label>
-        <p id="hardware-help" style="margin:10px 0;color:var(--muted);font-size:12px">ON: master 포트 선택 / OFF: USB로 직접 연결한 slave 포트 선택</p>
-        <p class="connection-note">경로를 바꾸거나 다시 연결하면 게임이 초기화됩니다. 재시작 시 Master ON으로 돌아갑니다.</p>
+        <p id="hardware-help" style="margin:10px 0;color:var(--muted);font-size:12px">Master COM 포트를 선택하세요.</p>
+        <p class="connection-note">연결 변경 시 게임이 초기화됩니다.</p>
         <div id="port-picker" class="port-picker" hidden></div>
         <div class="toolbar">
           <select id="master-port" aria-label="Master COM 포트"></select>
@@ -631,12 +625,6 @@
         <div id="hardware-error" style="color:var(--err);font-size:12px" role="alert"></div>
       </div>
 
-      <div class="slave-section hardware-only">
-        <div class="section-title">슬레이브 상태</div>
-        <div class="slave-status" id="slave-status">
-          <div class="slave-empty">감지된 슬레이브 없음</div>
-        </div>
-      </div>
 
       <div class="led-section hardware-only">
         <div class="section-title">슬레이브 LED 이펙트</div>
@@ -654,6 +642,30 @@
         </div>
       </div>
 
+
+    </div>
+
+      <section class="panel logs-dashboard">
+        <form id="log-settings-form" class="hardware-only" style="margin-bottom:18px">
+          <label for="log-directory"><strong>로그 저장 폴더</strong></label>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
+            <input id="log-directory" type="text" required placeholder="예: D:\OrbBridgeLogs" style="flex:1;min-width:200px;margin:0" aria-describedby="log-directory-help">
+            <button id="log-directory-save" type="submit" disabled>저장</button>
+            <button id="log-directory-default" type="button" disabled>기본 경로</button>
+          </div>
+          <p id="log-directory-help" style="font-size:12px;color:var(--muted)">새 로그부터 적용 · 기존 파일 유지</p>
+          <div id="log-directory-status" role="status" style="font-size:12px;overflow-wrap:anywhere"></div>
+        </form>
+        <div class="logs-toolbar"><strong>실시간 로그</strong><span class="log-send">파랑 · 송신</span><span class="log-receive">초록 · 수신</span><span class="log-error">빨강 · 오류</span><span class="log-warning">노랑 · 경고</span><span id="console-log-status" role="status"></span></div>
+        <div class="logs-grid">
+          <section class="log-pane"><header><h3>하트비트</h3><button type="button" data-copy-log="heartbeat-log">복사</button></header><div id="heartbeat-log" class="event-log" aria-label="하트비트 로그"></div></section>
+          <section class="log-pane"><header><h3>시리얼</h3><button type="button" data-copy-log="serial-log">복사</button></header><div id="serial-log" class="event-log" aria-label="원시 시리얼 로그"></div></section>
+          <section class="log-pane"><header><h3>이벤트</h3><button type="button" data-copy-log="event-log">복사</button></header><div id="event-log-slot"></div></section>
+          <section class="log-pane"><header><h3>서버 콘솔</h3><button type="button" data-copy-log="console-log">복사</button></header><div id="console-log" class="event-log" aria-label="서버 콘솔 로그"></div></section>
+        </div>
+      </section>
+
+    <section class="panel side-panel software-only">
       <div class="game-section software-only">
         <div class="section-title">게임 제어</div>
         <div class="toolbar">
@@ -1038,14 +1050,14 @@
       document.getElementById('slave-ports').hidden = true;
       document.getElementById('port-picker').hidden = on;
       document.getElementById('hardware-help').textContent = on
-        ? 'master의 USB 포트 한 개를 선택하세요. LED 명령은 RS485로 전달됩니다.'
-        : 'USB로 연결한 slave를 아래에서 체크하고 연결하세요. 게임 버튼은 Software 화면에서 사용할 수 있습니다.';
+        ? 'Master COM 포트를 선택하세요.'
+        : '테스트할 Slave USB 포트를 선택하세요.';
       const labels = {alive:'정상',waiting:'하트비트 대기',unresponsive:'응답 없음 (8초 이상)',disconnected:'포트 연결 끊김'};
       const status = document.getElementById('hardware-status');
       status.replaceChildren();
       if (!h.connections.length) {
         const empty = document.createElement('p'); empty.className='port-empty';
-        empty.textContent = '포트를 선택하고 연결 버튼을 눌러주세요.'; status.appendChild(empty);
+        empty.textContent = '연결 대기'; status.appendChild(empty);
       }
       for (const c of h.connections) {
         const card=document.createElement('div');card.className='connection-card '+c.health;
@@ -1096,13 +1108,13 @@
         }
         const picker = document.getElementById('port-picker'); picker.replaceChildren();
         const select = document.getElementById('slave-ports');
-        if (!payload.ports.length) {const empty=document.createElement('p');empty.className='port-empty';empty.textContent='감지된 USB 장치가 없습니다. 연결 후 새로고침하세요.';picker.appendChild(empty);}
+        if (!payload.ports.length) {const empty=document.createElement('p');empty.className='port-empty';empty.textContent='USB 장치 없음 · 새로고침';picker.appendChild(empty);}
         payload.ports.forEach((port,i)=>{
           const label=document.createElement('label');label.className='port-option';
           const check=document.createElement('input');check.type='checkbox';check.checked=select.options[i].selected;
           check.addEventListener('change',()=>{select.options[i].selected=check.checked;});
           const text=document.createElement('span'); const title=document.createElement('strong');
-          title.textContent=port.device+(port.slave_id ? ' · Slave '+port.slave_id : ' · ID는 연결 후 확인');
+          title.textContent=port.device+(port.slave_id ? ' · Slave '+port.slave_id : ' · ID 미확인');
           const sub=document.createElement('small');sub.textContent=port.description;
           text.append(title,sub);label.append(check,text);picker.appendChild(label);
         });
