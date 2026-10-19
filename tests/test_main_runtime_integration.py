@@ -1201,3 +1201,28 @@ def test_orb_auto_start_enters_maintenance_and_registers(tray_main, monkeypatch,
     main.orb_action({"action":"finish"})
     assert not main._orb_inspection.active
 
+
+def test_orb_version_switch_blocks_game_and_loads_mapping(tray_main, monkeypatch, tmp_path):
+    import json
+    from server import data_store
+    from server.inout import midi_out
+    main, _, _ = tray_main
+    path = tmp_path / "orb_mapping.json"
+    oid = "2D:01:02:03:04:05:06:07"
+    original = {oid: {"voice": "aespa_1"}}
+    path.write_text(json.dumps(original))
+    main._orb_inspection.path = path
+    monkeypatch.setattr(main, "load_mapping", lambda: data_store.load_mapping(path))
+    monkeypatch.setattr(main.hardware_io, "send_line", lambda line: True)
+    monkeypatch.setattr(midi_out, "shutdown", lambda: None)
+    result = main.orb_action({"action": "select_version", "version": "male"})
+    assert result["mode"] == "running" and result["version"] == "male"
+    assert main.orb_mapping == result["mapping"]
+    assert main.orb_mapping[oid]["voice"].split("_")[0] not in ("aespa", "ive")
+    with pytest.raises(RuntimeError):
+        main.request_play()
+    main.orb_action({"action": "select_version", "version": "original"})
+    assert main.orb_mapping == original
+    main.orb_action({"action": "finish"})
+    assert not main._orb_inspection.active
+

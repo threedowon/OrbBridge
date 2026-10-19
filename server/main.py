@@ -1425,6 +1425,16 @@ def orb_action(data: dict) -> dict:
     global orb_mapping
     with _orb_inspection.lock:
         action = data.get("action")
+        if action in ("select_version", "reshuffle_version"):
+            version = data.get("version")
+            if version not in ("original", "male"):
+                raise ValueError("올바른 오브 버전을 선택하세요")
+            if not _orb_inspection.active:
+                orb_action({"action": "start"})
+            result = _orb_inspection.select_version(
+                version, reshuffle=action == "reshuffle_version")
+            orb_mapping = load_mapping()
+            return {**result, **_orb_inspection.snapshot()}
         if action == "auto_start":
             if not _orb_inspection.active:
                 orb_action({"action": "start"})

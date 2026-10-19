@@ -102,6 +102,9 @@ def find_orb(orb_id: str, mapping: dict) -> tuple[str | None, dict | None]:
 
 def load_mapping(path: Path | None = None) -> dict:
     p = path or MAPPING_PATH
+    versions = load_orb_versions(p)
+    if versions is not None:
+        return versions["mappings"][versions["active"]]
     with p.open(encoding="utf-8") as source:
         document = json.load(source)
     if not isinstance(document, dict):
@@ -112,9 +115,28 @@ def load_mapping(path: Path | None = None) -> dict:
 def save_mapping(mapping: dict, path: Path | None = None) -> None:
     p = path or MAPPING_PATH
     ordered = dict(sorted(mapping.items(), key=lambda kv: kv[0]))
-    with p.open("w", encoding="utf-8") as destination:
-        json.dump(ordered, destination, ensure_ascii=False, indent=2)
-        destination.write("\n")
+    versions = load_orb_versions(p)
+    if versions is not None:
+        versions["mappings"][versions["active"]] = ordered
+        save_config(versions, orb_versions_path(p))
+    else:
+        save_config(ordered, p)
+
+
+def orb_versions_path(path: Path | None = None) -> Path:
+    return (path or MAPPING_PATH).with_suffix(".versions.json")
+
+
+def load_orb_versions(path: Path | None = None) -> dict | None:
+    p = orb_versions_path(path)
+    if not p.exists():
+        return None
+    document = load_config(p)
+    active = document.get("active")
+    mappings = document.get("mappings", {})
+    if active not in ("original", "male") or not isinstance(mappings.get(active), dict):
+        raise ValueError("오브 버전 배정표가 올바르지 않습니다")
+    return document
 
 
 def voice_group(voice: str) -> str:
