@@ -583,8 +583,14 @@ def _publish_transition(result: RuntimeResult) -> dict:
 def get_software_settings() -> dict:
     with _settings_lock:
         saved = game_timers_from_config(load_config())
+        available = _melody_manager.available_ids()
+        melody_titles = {
+            song_id: _melody_manager.load(song_id).get("title") or song_id
+            for song_id in available
+        }
         return {"debug_mode": _debug_mode, "saved_timers": saved,
-                "available_melodies": _melody_manager.available_ids(),
+                "available_melodies": available,
+                "melody_titles": melody_titles,
                 "current_melody": melody_id,
                 "active_timers": dict(_startup_timers),
                 "restart_required": saved != _startup_timers}

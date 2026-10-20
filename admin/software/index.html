@@ -1242,12 +1242,32 @@
       });
     });
 
+    function buildMelodyGroups(settings) {
+      const idolPrefixes = /^(?:GD|BTS|SKZ|TXT|aespa|ENHYPEN|IVE|RIIZE|CORTIS)-/i;
+      const groups = [
+        {label: '── 아이돌 곡 ──', songs: []},
+        {label: '── 보편적인 곡 ──', songs: []},
+      ];
+      const titles = settings.melody_titles || {};
+      for (const id of settings.available_melodies || []) {
+        groups[idolPrefixes.test(id) ? 0 : 1].songs.push({id, title: titles[id] || id});
+      }
+      const collator = new Intl.Collator('en', {sensitivity: 'base', numeric: true});
+      return groups.filter(group => group.songs.length).map(group => {
+        const section = document.createElement('optgroup');
+        section.label = group.label;
+        group.songs.sort((a, b) => collator.compare(a.title, b.title) || collator.compare(a.id, b.id));
+        section.append(...group.songs.map(song => new Option(song.title, song.id)));
+        return section;
+      });
+    }
+
     function renderSoftwareSettings(settings, fillInputs = false) {
       debugMode = settings.debug_mode;
       document.getElementById('debug-mode').checked = debugMode;
       const melodySelect = document.getElementById('debug-melody');
       const chosen = melodySelect.value || settings.current_melody;
-      melodySelect.replaceChildren(...(settings.available_melodies || []).map(id => new Option(id, id)));
+      melodySelect.replaceChildren(...buildMelodyGroups(settings));
       if ([...melodySelect.options].some(option => option.value === chosen)) melodySelect.value = chosen;
       melodySelect.disabled = !debugMode;
       document.getElementById('btn-debug-melody').disabled = !debugMode || !melodySelect.value;
