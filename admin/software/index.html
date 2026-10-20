@@ -697,6 +697,8 @@
       <div class="midi-section software-only">
         <div class="section-title">MIDI 진단</div>
         <div class="debug-tools">
+          <label><input type="checkbox" id="debug-mode"> 디버그 모드 · DFesta 완료 999회</label>
+          <p>오브를 유지한 채 게임을 시작할 수 있습니다. 끄면 곡의 원래 완료 횟수로 돌아갑니다.</p>
           <label for="debug-melody">테스트할 멜로디</label>
           <select id="debug-melody" disabled aria-label="테스트할 멜로디"></select>
           <div class="toolbar">
@@ -973,6 +975,7 @@
 
     function renderStatus(s) {
       debugMode = Boolean(s.debug_mode);
+      document.getElementById('debug-mode').checked = debugMode;
       document.getElementById('debug-melody').disabled = debugActionRunning || !debugMode;
       document.getElementById('btn-debug-melody').disabled = debugActionRunning || adminActionRunning || !debugMode || !document.getElementById('debug-melody').value;
       if (!s) return;
@@ -1241,6 +1244,7 @@
 
     function renderSoftwareSettings(settings, fillInputs = false) {
       debugMode = settings.debug_mode;
+      document.getElementById('debug-mode').checked = debugMode;
       const melodySelect = document.getElementById('debug-melody');
       const chosen = melodySelect.value || settings.current_melody;
       melodySelect.replaceChildren(...(settings.available_melodies || []).map(id => new Option(id, id)));
@@ -1267,11 +1271,25 @@
       }
     }
 
+    document.getElementById('debug-mode').addEventListener('change', async event => {
+      const checkbox = event.target;
+      checkbox.disabled = true;
+      try {
+        const settings = await postGame('/api/admin/software/settings', {debug_mode: checkbox.checked});
+        renderSoftwareSettings(settings);
+        document.getElementById('debug-message').textContent = settings.debug_mode ? '디버그 모드 켜짐 · DFesta 완료 횟수 999회 적용' : '디버그 모드 꺼짐 · 곡의 기본 완료 횟수 복원';
+      } catch (error) {
+        checkbox.checked = debugMode;
+        document.getElementById('debug-message').textContent = error.message;
+      } finally { checkbox.disabled = false; }
+    });
+
     document.getElementById('btn-melody-refresh').addEventListener('click', () => loadSoftwareSettings());
     document.getElementById('btn-debug-melody').addEventListener('click', async event => {
       const button = event.currentTarget;
       debugActionRunning = true;
       button.disabled = true;
+      document.getElementById('debug-mode').disabled = true;
       try {
         const settings = await postGame('/api/admin/software/settings', {
           debug_melody: document.getElementById('debug-melody').value,
@@ -1284,6 +1302,7 @@
       } finally {
         debugActionRunning = false;
         button.disabled = !debugMode;
+        document.getElementById('debug-mode').disabled = false;
       }
     });
 
