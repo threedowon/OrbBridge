@@ -1,0 +1,8 @@
+{
+  "serial": {
+    "port": "COM19"
+  },
+  "matrix_display": {
+    "port": "COM3"
+  }
+}

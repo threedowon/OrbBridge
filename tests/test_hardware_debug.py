@@ -235,7 +235,18 @@ def test_http_mode_switch_validation_and_state(debug, monkeypatch, tmp_path):
         with urllib.request.urlopen(base + "/api/admin/hardware/ports") as response:
             assert json.load(response) == {"ports": []}
         with urllib.request.urlopen(base + "/api/admin/logs") as response:
-            assert isinstance(json.load(response)["logs"], list)
+            log_payload = json.load(response)
+            assert isinstance(log_payload["logs"], list)
+            assert isinstance(log_payload["issues"], list)
+        from server.text_log import write_log
+        write_log('[recover] slave=1 cell=2 → removed 유실 복구(screen+admin)')
+        with urllib.request.urlopen(base + "/api/admin/logs") as response:
+            assert any(r['key'] == 'removed' for r in json.load(response)['issues'])
+        assert post('/api/admin/issues/clear', {})['ok']
+        with urllib.request.urlopen(base + "/api/admin/logs") as response:
+            payload = json.load(response)
+            assert payload['issues'] == []
+            assert any('removed 유실' in r['line'] for r in payload['logs'])
         with pytest.raises(urllib.error.HTTPError) as error:
             post("/api/admin/hardware/connect", [])
         assert error.value.code == 400

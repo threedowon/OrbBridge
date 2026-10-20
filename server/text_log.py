@@ -145,6 +145,9 @@ def update_log_settings(data: dict) -> dict:
 
 def write_log(text: str, source: str = "LOG") -> bool:
     global _error_reported
+    from server.important_issues import important_issues
+    for line in str(text).splitlines():
+        important_issues.record(line, source, describe_log(line, source))
     if source in ("STDOUT", "STDERR", "SYSTEM", "LOG"):
         with _recent_console_lock:
             for line in str(text).splitlines() or [""]:

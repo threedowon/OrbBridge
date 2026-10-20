@@ -166,7 +166,8 @@ def start_http_server(
 
             if path == "/api/admin/logs":
                 from server.text_log import recent_console
-                self._json(200, {"logs": recent_console()})
+                from server.important_issues import important_issues
+                self._json(200, {"logs": recent_console(), "issues": important_issues.snapshot()})
                 return
 
             if path == "/api/voices":
@@ -286,6 +287,12 @@ def start_http_server(
             if self.path == "/api/admin/log-settings":
                 from server.text_log import update_log_settings
                 self._run_callback(update_log_settings, data)
+                return
+
+            if self.path == "/api/admin/issues/clear":
+                from server.important_issues import important_issues
+                important_issues.clear()
+                self._json(200, {"ok": True})
                 return
 
             if self.path == "/api/admin/orb":

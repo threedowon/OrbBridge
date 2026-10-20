@@ -103,6 +103,7 @@ READY → RUNNING → RESETTING → READY
 
 - `data/config.json`: 게임·통신 속도·디스플레이 문구 등 공통 설정.
 - `data/ports.json`: 이 PC의 COM 포트. Git에서 제외되므로 다른 PC의 변경으로 덮이지 않는다.
+- `data/ports1.json`: Git에 포함하는 예시 설정. 다른 PC에서는 이 파일을 같은 폴더에 `ports.json`으로 복사한 뒤 COM 번호를 수정한다. 예시 파일은 그대로 남겨 둔다.
 
 `ports.json`에는 다음 두 값만 넣는다. 포트를 바꾼 뒤 서버를 재시작한다.
 

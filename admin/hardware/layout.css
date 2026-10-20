@@ -127,3 +127,14 @@ main > .logs-dashboard {margin-top:0;display:flex;flex-direction:column;}
 .log-pane .log-entry {padding:0;border-bottom:0;line-height:19px;}
 #event-log-slot {flex:none;}
 main > .logs-dashboard {align-self:start;}
+.issues-panel {margin:16px 0 24px;border:1px solid var(--border);border-radius:10px;padding:14px;}
+.issues-panel header {display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;padding:0;border:0;background:none;}
+.issues-panel header button {font-size:11px;padding:6px 10px;}
+#issues-list {max-height:360px;overflow:auto;}
+.issue-row {padding:10px 12px;margin-bottom:8px;background:var(--bg);border-left:3px solid #e0b35b;border-radius:5px;}
+.issue-active {border-left-color:#ff6464;}
+.issue-row strong {display:block;font-size:12px;}
+.issue-row span,.issue-row p,#issues-note {font-size:11px;line-height:1.6;color:var(--muted);}
+.issue-row p {overflow-wrap:anywhere;}
+#issues-note {margin-top:10px;}
+.issues-empty {font-size:12px;color:var(--ok);padding:8px 0;}
