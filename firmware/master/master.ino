@@ -280,7 +280,7 @@ void pollUsbCommand() {
       }
       usbLine = "";
     } else if (c != '\r') {
-      if (usbLine.length() < 16) usbLine += c;
+      if (usbLine.length() < 24) usbLine += c;
       else usbLine = "";
     }
   }
@@ -318,6 +318,8 @@ void pollHintCommand() {
   char line[24];
   if (!hintCommand.duration) snprintf(line, sizeof(line), "\nH0,0,0\n");
   else if (!remaining || !hintCommand.slave) snprintf(line, sizeof(line), "\nH0,0,1\n");
+  else if (hintCommand.playback) snprintf(line, sizeof(line), "\nP%u,%u,%u,%u\n",
+                hintCommand.slave, hintCommand.cell, hintCommand.mask, remaining);
   else snprintf(line, sizeof(line), "\nH%u,%u,%u\n", hintCommand.slave,
                 hintCommand.cell, remaining);
   RS485.print(line);

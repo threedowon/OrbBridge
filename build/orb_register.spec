@@ -12,7 +12,9 @@ a = Analysis(
     [str(root_dir / "tools" / "orb_register.py")],
     pathex=[str(root_dir)],
     binaries=[],
-    datas=[(str(root_dir / "data"), "data")],
+    datas=[(str(p), str(Path("data") / p.relative_to(root_dir / "data").parent))
+           for p in (root_dir / "data").rglob("*")
+           if p.is_file() and p.name != "ports.json"],
     hiddenimports=[
         "serial",
         "serial.tools",

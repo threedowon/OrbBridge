@@ -27,6 +27,21 @@ def load_config(path: Path | None = None) -> dict:
         document = json.load(source)
     if not isinstance(document, dict):
         raise ValueError("config must be an object")
+    if target == CONFIG_PATH:
+        local_path = target.with_name("ports.json")
+        if not local_path.exists():
+            # Preserve legacy machine settings when upgrading an existing PC.
+            ports = {
+                section: {"port": document.get(section, {}).get("port", default)}
+                for section, default in (("serial", "COM19"), ("matrix_display", "COM3"))
+            }
+            save_config(ports, local_path)
+        ports = load_config(local_path)
+        for section in ("serial", "matrix_display"):
+            value = ports.get(section, {}).get("port")
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"ports.json: {section}.port must be a non-empty string")
+            document.setdefault(section, {})["port"] = value.strip()
     return document
 
 
@@ -36,6 +51,13 @@ def save_config(config: dict, path: Path | None = None) -> None:
     if not isinstance(config, dict):
         raise ValueError("config must be an object")
     target = path or CONFIG_PATH
+    if target == CONFIG_PATH:
+        # Saving game settings must not copy machine-specific ports back into Git.
+        config = {key: (dict(value) if isinstance(value, dict) else value)
+                  for key, value in config.items()}
+        for section in ("serial", "matrix_display"):
+            if isinstance(config.get(section), dict):
+                config[section].pop("port", None)
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_suffix(target.suffix + ".tmp")
     temporary.write_text(

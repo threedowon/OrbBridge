@@ -93,7 +93,29 @@ READY → RUNNING → RESETTING → READY
 
 ## 설정
 
-`data/config.json`이 유일한 실행 설정이다.
+`data/config.json`의 `hall_sensor_count`는 트레이 안착에 필요한 홀센서 수다.
+기본값 `2`는 두 센서 모두 감지해야 하고, `1`은 둘 중 하나만 감지해도 안착으로 처리한다.
+변경 후 서버를 재시작한다. 현재 마스터 펌웨어는 그대로 사용하며 Software 탭의
+트레이 시뮬레이션과 통신 끊김 처리는 바뀌지 않는다. 고장 센서가 항상 감지 상태로
+고정되면 트레이 제거를 판단할 수 없으므로 해당 센서의 입력 상태를 먼저 점검한다.
+
+실행 설정은 두 파일로 나뉜다.
+
+- `data/config.json`: 게임·통신 속도·디스플레이 문구 등 공통 설정.
+- `data/ports.json`: 이 PC의 COM 포트. Git에서 제외되므로 다른 PC의 변경으로 덮이지 않는다.
+
+`ports.json`에는 다음 두 값만 넣는다. 포트를 바꾼 뒤 서버를 재시작한다.
+
+```json
+{
+  "serial": {"port": "COM19"},
+  "matrix_display": {"port": "COM3"}
+}
+```
+
+첫 실행에 로컬 파일이 없으면 자동 생성한다. 기존 config에 포트가 있으면 그 값을 가져오고,
+없으면 COM19 / COM3으로 시작하므로 각 PC에서 실제 번호로 수정한다.
+로컬 파일의 포트가 우선하며 공통 설정을 저장할 때는 포트 값을 제외한다.
 
 ```json
 {
@@ -109,12 +131,10 @@ READY → RUNNING → RESETTING → READY
     "port": 8080
   },
   "serial": {
-    "port": "COM5",
     "baudrate": 115200
   },
   "matrix_display": {
     "enabled": true,
-    "port": "COM6",
     "baudrate": 115200
   }
 }

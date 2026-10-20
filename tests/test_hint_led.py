@@ -75,3 +75,32 @@ def test_hint_stays_exclusive_through_rests_and_replacement():
     assert sent == ["H0,0,1", "H1,1,460", "H0,0,1", "H0,0,1", "H2,1,460"]
     bridge.handle(dict(type="end", run_id=2))
     assert sent[-1] == "H0,0,0"
+
+
+def test_play_cursor_includes_silent_beats_and_all_sounding_pitches():
+    sent = []
+    bridge = HintLedBridge(sent.append, lambda: 10)
+    bridge.handle(start(mode="play", hint=False))
+    for step in range(12):
+        event = beat(step=step, pitch=None)
+        event['mode'] = 'play'
+        bridge.handle(event)
+        assert sent[-1] == f"P{step // 2 + 1},{step % 2 + 1},0,460"
+    event['notes'] = [{'pitch': 0}, {'pitch': 7}, {'pitch': 0}]
+    bridge.handle(event)
+    assert sent[-1] == 'P6,2,129,460'
+    bridge.handle(dict(type='end', run_id=1))
+    assert sent[-1] == 'H0,0,0'
+
+
+def test_play_replaced_by_hint_ignores_stale_beats_and_end():
+    sent = []
+    bridge = HintLedBridge(sent.append, lambda: 10)
+    bridge.handle(start(mode='play'))
+    bridge.handle(start(run=2))
+    before = list(sent)
+    bridge.handle(beat(run=1))
+    bridge.handle(dict(type='end', run_id=1))
+    assert sent == before
+    bridge.handle(beat(run=2))
+    assert sent[-1] == 'H1,1,460'

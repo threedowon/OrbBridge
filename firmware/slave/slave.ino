@@ -129,6 +129,7 @@ LedCommandParser ledCommandParser;
 HintCommandParser hintParser;
 HintCommandParser usbHintParser;
 bool hintActive = false;
+bool playbackCursor = false;
 bool hintNoteLit = false;
 uint32_t hintStarted = 0;
 uint16_t hintDuration = 0;
@@ -369,6 +370,7 @@ void fillAll(uint32_t color) {
 void stopHint() {
   if (!hintActive) return;
   hintActive = false;
+  playbackCursor = false;
   fillAll(0);
   applyEffectOnce();
 }
@@ -378,7 +380,25 @@ void applyHintCommand(const HintCommandParser& command) {
   hintActive = true;
   hintStarted = millis();
   hintDuration = command.duration;
+  playbackCursor = command.playback;
   hintNoteLit = command.slave == slaveId;
+  if (playbackCursor) {
+    // Restore the previous column to its tracked occupancy, then overlay this beat.
+    for (int i = 0; i < BUS_COUNT; ++i) {
+      uint8_t level = ringLevel[i];
+      setRing(i, Adafruit_NeoPixel::Color(level, uint16_t(147) * level / 255,
+                                        uint16_t(41) * level / 255));
+    }
+    if (command.slave == slaveId) {
+      for (int pitch = 0; pitch < 8; ++pitch) {
+        const bool sounding = command.mask & (1 << pitch);
+        setRing((command.cell - 1) * 8 + pitch, sounding
+          ? Adafruit_NeoPixel::Color(255, 147, 41)
+          : Adafruit_NeoPixel::Color(20, 20, 20));
+      }
+    }
+    return;
+  }
   fillAll(0);
   if (command.slave == slaveId)
     setRing(command.cell - 1, Adafruit_NeoPixel::Color(255, 147, 41));  // 오브 인식과 같은 따뜻한 색
@@ -387,6 +407,7 @@ void applyHintCommand(const HintCommandParser& command) {
 void updateHint() {
   if (!hintActive) return;
   const uint32_t elapsed = uint32_t(millis() - hintStarted);
+  if (playbackCursor && elapsed >= hintDuration) { stopHint(); return; }
   if (hintNoteLit && elapsed >= hintDuration) {
     hintNoteLit = false;
     fillAll(0);  // Stay dark between notes; occupancy returns only at session end.

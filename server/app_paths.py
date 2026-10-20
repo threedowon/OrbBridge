@@ -15,11 +15,11 @@ _SEED_FILES = (
 
 _DEFAULT_DOCUMENTS = {
     "config.json": (
-        '{"current_stage":1,"input_mode":"table",'
+        '{"current_stage":1,"hall_sensor_count":2,"input_mode":"table",'
         '"melody_rotation":{"mode":"random","playlist":[]},'
         '"web":{"host":"127.0.0.1","port":8080},'
-        '"serial":{"port":"COM5","baudrate":115200},'
-        '"matrix_display":{"enabled":true,"port":"COM6",'
+        '"serial":{"baudrate":115200},'
+        '"matrix_display":{"enabled":true,'
         '"baudrate":115200}}\n'
     ),
     "orb_mapping.json": "{}\n",

@@ -256,6 +256,10 @@ def test_validated_usb_events_reach_game_callback_and_master_commands_stay_local
     line(d, "COM2", type="added", slave=1, cell=1, id="AA", transport="usb")
     assert [e["type"] for e in received] == ["heartbeat", "added"]
     assert not d.send_line("D1")
+    assert d.send_line("P6,2,255,2000")
+    assert d.send_line("P1,1,0,460")
+    for invalid in ("P7,1,0,460", "P1,3,0,460", "P1,1,256,460", "P1,1,0,0", "P1,1,0,2001"):
+        assert not d.send_line(invalid)
     assert not any(w.startswith(b"D") for w in devices["COM2"].writes)
     line(d, "COM2", type="game", action="start")
     assert len(received) == 2

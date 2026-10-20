@@ -365,7 +365,7 @@ def send_line(command: str) -> bool:
     with _lock:
         targets = list(_connections.values())
         mode = _mode
-    if mode == "direct" and not re.fullmatch(r"C[0-9]|H0,0,[01]|H[1-6],(?:[1-9]|1[0-6]),(?:[1-9][0-9]{0,2}|1[0-9]{3}|2000)", command):
+    if mode == "direct" and not re.fullmatch(r"C[0-9]|H0,0,[01]|H[1-6],(?:[1-9]|1[0-6]),(?:[1-9][0-9]{0,2}|1[0-9]{3}|2000)|P[1-6],[12],(?:[0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]),(?:[1-9][0-9]{0,2}|1[0-9]{3}|2000)", command):
         return False  # Master-only D commands never reach slave USB ports.
     results = [_write(c, command) if not c.get("error") and
                (mode == "master" or c.get("ready", False)) else False

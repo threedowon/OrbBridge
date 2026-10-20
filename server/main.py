@@ -12,6 +12,7 @@ from copy import deepcopy
 
 from server.app_paths import ensure_data_files, melodies_dir
 from server.data_store import find_orb, load_config, load_mapping, save_config
+from server.tray_input import hall_sensor_count, tray_state
 from server.simulation_orbs import simulation_orb_mapping, virtual_orb_mapping
 from server.game.game_engine import (
     EndReason,
@@ -42,6 +43,7 @@ ensure_data_files()
 
 # ── 설정 로드 ──────────────────────────────────────────
 config = load_config()
+hall_sensor_count(config)  # Reject invalid hardware policy at startup.
 orb_mapping = load_mapping()
 
 _melody_manager = MelodyManager(melodies_dir())
@@ -640,12 +642,7 @@ def update_software_settings(data: dict) -> dict:
 @_orb_inspection.guard
 def set_tray(data: dict, *, hardware: bool = False) -> dict:
     """Physical reports and the admin toggle share one ordered tray path."""
-    if not isinstance(data, dict) or type(data.get("present")) is not bool:
-        raise ValueError("tray.present must be a boolean")
-    present = data["present"]
-    seated = data.get("seated", present) if not hardware else data.get("seated")
-    if type(seated) is not bool or (seated and not present):
-        raise ValueError("invalid tray.seated")
+    present, seated = tray_state(data, hardware=hardware, config=config)
     if _hardware_switching.is_set():
         raise RuntimeError("하드웨어 연결을 변경 중입니다")
     with _tray_lock:

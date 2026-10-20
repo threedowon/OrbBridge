@@ -16,7 +16,9 @@ def _collect_datas():
     ]
     data = root_dir / "data"
     if data.is_dir():
-        datas.append((str(data), "data"))
+        datas.extend((str(p), str(Path("data") / p.relative_to(data).parent))
+                     for p in data.rglob("*")
+                     if p.is_file() and p.name != "ports.json")
     return datas
 
 
