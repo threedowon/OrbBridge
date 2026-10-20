@@ -15,13 +15,13 @@
     "port": 8080
   },
   "serial": {
-    "port": "COM3",
+    "port": "COM19",
     "baudrate": 115200
   },
   "matrix_display": {
     "enabled": true,
     "farewell_duration_s": 4.0,
-    "port": "COM4",
+    "port": "COM3",
     "baudrate": 115200,
     "texts": {
       "ready": "PLACE TRAY",

@@ -6,7 +6,7 @@
 // ===== 현장 조정값: 수정 후 다시 업로드 =====
 const int TEXT_OFFSET_X = 0;       // 전체 글자 좌우 이동(px): - 왼쪽, + 오른쪽
 const int TEXT_OFFSET_Y = 0;       // 전체 글자 상하 이동(px): - 위, + 아래
-const uint8_t DISPLAY_BRIGHTNESS = 150; // 전체 화면 밝기: 0 꺼짐 ~ 255 최대
+const uint8_t DISPLAY_BRIGHTNESS = 255; // 전체 화면 밝기: 0 꺼짐 ~ 255 최대
 const bool USE_SMALL_FONT = false;  // true: 작은 폰트(4x6px 칸), false: 기존 폰트(6x8px 칸)
 const int FONT_SIZE = 1;           // 선택한 폰트의 정수 배율: 1 최소, 2 두 배
 const int PADDING_TOP = 12;        // 이름/카운트다운 기본 y좌표(px)
