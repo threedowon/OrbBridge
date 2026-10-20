@@ -1,0 +1,142 @@
+{
+  "songId": "HAPPY_BIRTHDAY",
+  "title": "Happy Birthday",
+  "artist": "",
+  "bpm": 120,
+  "range": [
+    "C4",
+    "C5"
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "note": "C4",
+      "duration": 0.5,
+      "velocity": 78,
+      "harmony": [
+        "E4",
+        "G4"
+      ]
+    },
+    {
+      "step": 2,
+      "note": "C4",
+      "duration": 0.5,
+      "velocity": 72,
+      "harmony": [
+        "E4",
+        "G4"
+      ]
+    },
+    {
+      "step": 3,
+      "note": "D4",
+      "duration": 1,
+      "velocity": 82,
+      "harmony": [
+        "G4",
+        "B4"
+      ]
+    },
+    {
+      "step": 4,
+      "note": "C4",
+      "duration": 1,
+      "velocity": 76,
+      "harmony": [
+        "E4",
+        "G4"
+      ]
+    },
+    {
+      "step": 5,
+      "note": "F4",
+      "duration": 1,
+      "velocity": 86,
+      "harmony": [
+        "A4",
+        "C5"
+      ]
+    },
+    {
+      "step": 6,
+      "note": "E4",
+      "duration": 2,
+      "velocity": 75,
+      "harmony": [
+        "C4",
+        "G4"
+      ]
+    },
+    {
+      "step": 7,
+      "note": "C4",
+      "duration": 0.5,
+      "velocity": 77,
+      "harmony": [
+        "E4",
+        "G4"
+      ]
+    },
+    {
+      "step": 8,
+      "note": "C4",
+      "duration": 0.5,
+      "velocity": 71,
+      "harmony": [
+        "E4",
+        "G4"
+      ]
+    },
+    {
+      "step": 9,
+      "note": "D4",
+      "duration": 1,
+      "velocity": 82,
+      "harmony": [
+        "G4",
+        "B4"
+      ]
+    },
+    {
+      "step": 10,
+      "note": "C4",
+      "duration": 1,
+      "velocity": 76,
+      "harmony": [
+        "E4",
+        "G4"
+      ]
+    },
+    {
+      "step": 11,
+      "note": "G4",
+      "duration": 1,
+      "velocity": 88,
+      "harmony": [
+        "C4",
+        "E4"
+      ]
+    },
+    {
+      "step": 12,
+      "note": "F4",
+      "duration": 2,
+      "velocity": 74,
+      "harmony": [
+        "A4",
+        "C5"
+      ]
+    }
+  ],
+  "game_rules": {
+    "dfesta_presses_required": 1
+  },
+  "dfesta": {
+    "weights": {
+      "melody": 70,
+      "harmony_a": 15,
+      "harmony_b": 15
+    }
+  }
+}
