@@ -10,7 +10,7 @@
     "mode": "random",
     "playlist": []
   },
-  "input_mode": "table",
+  "input_mode": "serial",
   "web": {
     "host": "127.0.0.1",
     "port": 8080
