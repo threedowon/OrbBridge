@@ -1,15 +1,11 @@
 {
-  "master_pitch": 31,
-  "note_offsets": {
-    "36": 0,
-    "37": 1,
-    "38": 2,
-    "39": 2,
-    "40": 3,
-    "41": 4,
-    "42": 5,
-    "43": 5
-  },
-  "volume": 0.6986,
-  "muted": false
+  "version": 2,
+  "volume_db": -18.0,
+  "note_length_ms": 150.0,
+  "release_ms": 8.0,
+  "mono": true,
+  "exclusive": false,
+  "muted": false,
+  "octave": 0,
+  "tone": "Sine"
 }
