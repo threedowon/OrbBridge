@@ -16,6 +16,7 @@ _SEED_FILES = (
 _DEFAULT_DOCUMENTS = {
     "config.json": (
         '{"current_stage":1,"hall_sensor_count":2,"hint_led_fade_ms":600,"input_mode":"table",'
+        '"tray_placement_delay_s":0.5,"tray_removal_delay_s":1.5,'
         '"melody_rotation":{"mode":"random","playlist":[]},'
         '"web":{"host":"127.0.0.1","port":8080},'
         '"serial":{"baudrate":115200},'

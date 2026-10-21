@@ -12,7 +12,7 @@ from copy import deepcopy
 
 from server.app_paths import ensure_data_files, melodies_dir
 from server.data_store import find_orb, load_config, load_mapping, save_config
-from server.tray_input import hall_sensor_count, tray_state
+from server.tray_input import TrayDebouncer, hall_sensor_count, tray_state
 from server.simulation_orbs import simulation_orb_mapping, virtual_orb_mapping
 from server.game.game_engine import (
     EndReason,
@@ -43,6 +43,7 @@ ensure_data_files()
 # ── 설정 로드 ──────────────────────────────────────────
 config = load_config()
 hall_sensor_count(config)  # Reject invalid hardware policy at startup.
+_tray_input = TrayDebouncer(config)
 _hint_led = HintLedBridge(lambda command: hardware_io.send_line(command), fade_ms=config.get("hint_led_fade_ms", 600), tray_easing=config.get("tray_led_easing", "none"))
 orb_mapping = load_mapping()
 
@@ -696,23 +697,53 @@ def set_tray(data: dict, *, hardware: bool = False) -> dict:
     with _tray_lock:
         if hardware != _tray_hardware:
             raise InvalidTransition("실제 Master 연결 중에는 tray 시뮬레이션을 사용할 수 없습니다")
-        runtime = get_game_runtime()
-        before = runtime.snapshot().get("tray")
-        result = runtime.set_tray(present, seated, ttl_s=3.0 if hardware else None)
-        snapshot = _publish_transition(result)
-        if before != snapshot["tray"]:
-            _publish_web_event("/game/tray", [snapshot["tray"]])
-        # Heartbeats refresh the lease only. They never retrigger a game, nor
-        # does the first report after boot/reconnect synthesize a placement.
-        if result.value and snapshot["state"] == "READY" and snapshot["cell_count"] == 0:
-            return start_game()
-        return {"ok": True, "game": snapshot}
+        if hardware:
+            _tray_input.feed(present, seated)
+            return _apply_pending_tray()
+        return _apply_tray_state(present, seated)
+
+
+def _apply_tray_state(present, seated, *, ttl_s=None, baseline=False) -> dict:
+    """Apply a confirmed reading while the inspection/tray locks are held."""
+    runtime = get_game_runtime()
+    if baseline:
+        # Also covers a reconnect between server polls. Never turn an old
+        # absent snapshot into a placement using the first new report.
+        _publish_transition(runtime.set_tray(None, None))
+    before = runtime.snapshot().get("tray")
+    result = runtime.set_tray(present, seated, ttl_s=ttl_s)
+    snapshot = _publish_transition(result)
+    if before != snapshot["tray"]:
+        _publish_web_event("/game/tray", [snapshot["tray"]])
+    if result.value and snapshot["state"] == "READY" and snapshot["cell_count"] == 0:
+        return start_game()
+    return {"ok": True, "game": snapshot}
+
+
+def _apply_pending_tray() -> dict:
+    reading = _tray_input.poll()
+    if reading is None:
+        return {"ok": True, "game": get_game_state()}
+    return _apply_tray_state(reading.present, reading.seated,
+                             ttl_s=reading.ttl_s, baseline=reading.baseline)
+
+
+def _poll_tray_input() -> None:
+    # Poll independently of report arrival so 0.5 s does not become the
+    # master's 1 s heartbeat period. Use the same lock order as serial input.
+    with _orb_inspection.lock:
+        if _orb_inspection.active or _hardware_switching.is_set():
+            return
+        with _tray_lock:
+            if _tray_hardware:
+                _apply_pending_tray()
 
 
 def _set_tray_source(hardware: bool) -> None:
     global _tray_hardware
     with _tray_lock:
         _tray_hardware = hardware
+        _tray_input.reset()
         state = None if hardware else False
         _publish_transition(get_game_runtime().set_tray(state, state))
 
@@ -1378,8 +1409,10 @@ def _update_serial_status(connected: bool, port: str, error: str) -> None:
         _serial_status.update(
             {"connected": connected, "port": port, "error": error}
         )
-    if _tray_hardware:
-        _publish_transition(get_game_runtime().set_tray(None, None))
+    with _tray_lock:
+        if _tray_hardware:
+            _tray_input.reset()
+            _publish_transition(get_game_runtime().set_tray(None, None))
     if not connected:
         return
     # ESP 가 재부팅하면 표시등이 LOW 로 돌아가므로 현재 상태를 다시 보낸다.
@@ -1462,6 +1495,7 @@ def stop_serial_input() -> None:
 
 # ── 진입점 ─────────────────────────────────────────────
 def _update_matrix_display() -> None:
+    _poll_tray_input()
     _start_initial_hint_if_due()
     # Do not expose the brief READY + tray-on snapshot during automatic start.
     with _tray_lock:
@@ -1501,6 +1535,8 @@ def orb_action(data: dict) -> dict:
         if action == "start":
             if _orb_inspection.active:
                 raise RuntimeError("기존 점검을 종료한 뒤 새 점검을 시작하세요")
+            with _tray_lock:
+                _tray_input.reset()
             _orb_inspection.start()
             _cancel_playback()
             reset_game()
@@ -1518,6 +1554,8 @@ def orb_action(data: dict) -> dict:
             _orb_inspection.seen.update(_orb_inspection.cells.values())
         elif action == "finish" and _orb_inspection.active:
             # A new engine starts READY; physical reports must establish tray state again.
+            with _tray_lock:
+                _tray_input.reset()
             get_game_runtime().replace_engine(_new_game_engine(), allow_occupied=True)
             _publish_transition(get_game_runtime().set_tray(None, None))
             _orb_inspection.mode = "finished"

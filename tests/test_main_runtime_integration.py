@@ -414,24 +414,30 @@ def test_admin_tray_end_to_end_cleanup_and_next_player(tray_main, return_at):
         assert writes[-1]["text"] == "PLACE TRAY"
 
 
-def test_serial_tray_boot_heartbeat_partial_removal_and_input_source(tray_main):
+def test_serial_tray_boot_heartbeat_partial_removal_and_input_source(tray_main, monkeypatch):
+    from server.tray_input import TrayDebouncer
     main, clock, writes = tray_main
+    monkeypatch.setattr(main, "_tray_input", TrayDebouncer({}, clock=lambda: clock[0]))
     main._set_tray_source(True)
     main.handle_serial_message({"type": "tray", "present": True, "seated": True})
     assert main.get_game_state()["state"] == "READY"  # no start on boot already seated
     with pytest.raises(main.InvalidTransition):
         main.set_tray({"present": False})  # admin cannot overwrite live hardware
-    for seated in [False, True]:
-        main.handle_serial_message({"type": "tray", "present": seated, "seated": seated})
+    main.handle_serial_message({"type": "tray", "present": False, "seated": False})
+    clock[0] = 1.5
+    main._update_matrix_display()
+    main.handle_serial_message({"type": "tray", "present": True, "seated": True})
+    clock[0] = 2
+    main._update_matrix_display()
     assert main.get_game_state()["state"] == "RUNNING"
     starts = len(main._playback_scheduler.starts)
-    clock[0] = 1
+    clock[0] = 3
     main.handle_serial_message({"type": "tray", "present": True, "seated": True})
     assert len(main._playback_scheduler.starts) == starts
     main.end_game()
     main.handle_serial_message({"type": "tray", "present": True, "seated": False})
     assert main.get_game_state()["state"] == "RESETTING"
-    clock[0] = 5
+    clock[0] = 6.1
     main.get_game_runtime().barrier()
     assert main.get_game_state()["tray"]["present"] is None
     assert main.get_game_state()["state"] == "RESETTING"

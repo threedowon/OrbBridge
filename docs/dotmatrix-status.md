@@ -123,9 +123,31 @@ Every report is one newline-terminated JSON object at the existing 115200 baud:
 
 These mean both sensors clear, one sensor detecting, and both sensors detecting,
 respectively. The master no longer also emits game/start for the same hall event.
-The server stores present and seated through its existing runtime queue.
+The server filters physical readings before storing present and seated through
+its existing runtime queue. Configure the stability windows in data/config.json:
+
+```json
+"tray_placement_delay_s": 0.5,
+"tray_removal_delay_s": 1.5
+```
+
+Placement requires the configured one/two-sensor condition to remain stable for
+0.5 s before LOADING starts. Both sensors must remain clear for 1.5 s before
+removal is confirmed. A returning signal cancels pending removal, preserving the
+current loading deadline, playback, and game. Repeated reports do not restart
+these waits. Only confirmed changes produce tray MIDI events. The server polls
+every 50 ms, so it does not wait for the next 1 s master heartbeat to confirm a
+change. This filter is server-only; no new firmware upload is needed.
+
+Both settings accept finite, non-negative seconds; zero disables that wait.
+Missing settings use 0.5/1.5. Restart the server after editing them. Software tray
+toggles remain immediate. Boot/reconnect readings establish a baseline rather
+than triggering a new game, and source switches/ORB inspection clear pending
+changes.
+
 Hardware reports expire after 3 s; missing input becomes unknown, not absent.
-Periodic reports restore state after reconnect without needing a serial query.
+Polling never renews that lease. Periodic reports restore state after reconnect
+without needing a serial query.
 
 Only a known seated=false → seated=true transition starts a game, while READY
 and with no orbs. Identical reports never restart playback or refresh Idle.
@@ -134,8 +156,8 @@ Unknown/reconnect reports do not count as activity. An already reached Idle or
 game deadline wins over a simultaneous tray change; the game deadline is unchanged.
 The first occupied report after boot/reconnect does not auto-start; lift and
 replace the tray. A placement during cleanup is not queued for later: remove
-everything first, then place the next tray. Lifting the tray during RUNNING does
-not itself end the game.
+everything first, then place the next tray. Confirmed removal during RUNNING
+ends the game only once all orbs are also removed.
 
 Both /admin and /admin/software replace the momentary start button with a TRAY
 ON/OFF toggle. POST /api/game/tray with {"present":true} or {"present":false}
