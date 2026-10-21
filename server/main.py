@@ -1418,6 +1418,7 @@ def _update_matrix_display() -> None:
     with _tray_lock:
         snapshot = get_game_state()
         snapshot["orb_inspection"] = _orb_inspection.active
+        snapshot["melody_title"] = melody_document.get("title")
         with _scheduler_lock:
             scheduler = _playback_scheduler
         playback = scheduler.display_snapshot() if scheduler is not None else {}

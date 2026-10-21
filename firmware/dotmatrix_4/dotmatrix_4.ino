@@ -2,6 +2,7 @@
 #include <ArduinoJson.h>
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <Fonts/TomThumb.h> // Adafruit GFX에 포함된 작은 영문 폰트
+#include "SingleLineScroll.h"
 
 // ===== 현장 조정값: 수정 후 다시 업로드 =====
 const int TEXT_OFFSET_X = 0;       // 전체 글자 좌우 이동(px): - 왼쪽, + 오른쪽
@@ -47,6 +48,8 @@ bool viewDirty = false;
 bool buttonRaw = false;
 bool buttonStable = false;
 uint32_t buttonChangedAt = 0;
+SingleLineScroll titleScroll;
+int titleDrawnX = 0;
 
 const int CHAR_W = USE_SMALL_FONT ? 4 : 6;
 const int STATUS_GLYPH_H = USE_SMALL_FONT ? 5 : 7; // 대문자 높이
@@ -154,6 +157,15 @@ void drawButtonPrompt(const char *raw) {
   display->drawLine(right - head, centerY + 4 * FONT_SIZE, right, centerY, color);
 }
 
+void drawTitle(const char *raw) {
+  String text(raw);
+  text.toUpperCase();
+  titleDrawnX = titleScroll.x(millis());
+  display->clearScreen();
+  drawTextAt(text.c_str(), titleDrawnX,
+             (PANEL_HEIGHT - STATUS_GLYPH_H * FONT_SIZE) / 2);
+}
+
 String offlineText = "OFFLINE";
 
 void drawRuntime() {
@@ -168,6 +180,7 @@ void drawRuntime() {
   if (!strcmp(type, "status")) {
     const char *arrow = message["arrow"] | "";
     if (!strcmp(arrow, "right")) drawButtonPrompt(message["text"].as<const char *>());
+    else if (message["scroll"] == true) drawTitle(message["text"].as<const char *>());
     else drawStatus(message["text"].as<const char *>());
   } else if (!strcmp(type, "display")) {
     String text = formatName(message["text"].as<const char *>());
@@ -233,6 +246,13 @@ void handleCommand(const String &line) {
   linkTimedOut = false;
   if (line == lastCommand) return;
   lastCommand = line;
+  // Repeated server heartbeats must not restart a title's scroll.
+  titleScroll.stop();
+  if (!strcmp(type, "status") && message["scroll"] == true) {
+    const int length = strlen(message["text"].as<const char *>());
+    const int width = length ? (length * CHAR_W - 1) * FONT_SIZE : 0;
+    titleScroll.begin(width, DISPLAY_WIDTH, millis());
+  }
   // 진단 화면에서도 최신 운영 명령은 계속 수신
   if (viewMode == 0) viewDirty = true;
 }
@@ -300,8 +320,11 @@ void loop() {
   }
   if (!linkTimedOut && millis() - lastValidCommandAt >= LINK_TIMEOUT_MS) {
     linkTimedOut = true;
+    titleScroll.stop();
     lastCommand = "";
     if (viewMode == 0) viewDirty = true;
   }
+  if (viewMode == 0 && !linkTimedOut && titleScroll.active() &&
+      titleScroll.x(millis()) != titleDrawnX) viewDirty = true;
   if (viewDirty) drawView();
 }

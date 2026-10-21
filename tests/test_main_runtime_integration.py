@@ -111,12 +111,12 @@ def test_matrix_follows_accepted_requests_and_ignores_delayed_web_events(monkeyp
         main.auto_complete_game()
         main.request_dfesta()
         main._update_matrix_display()
-        assert writes[-1]["text"] == "COMPLETE"
+        assert writes[-1]["text"] == main.get_active_melody()["title"]
         assert main.get_game_state()["state"] == "RESETTING"
         main.reset_game()
         main._update_matrix_display()
         # The runtime keeps the completion reason when resetting a completed game.
-        assert writes[-1]["text"] == "COMPLETE"
+        assert writes[-1]["text"] == main.get_active_melody()["title"]
     finally:
         matrix.close()
         if main._game_runtime is not None:
@@ -220,6 +220,22 @@ def test_admin_status_exposes_matrix_connection(tray_main, monkeypatch):
     assert main.get_status()["matrix"]["state"] == "disconnected"
     monkeypatch.setattr(main, "_matrix_display", None)
     assert main.get_status()["matrix"] is None
+
+
+def test_matrix_completion_uses_current_json_title_not_artist_or_filename(tray_main, monkeypatch):
+    main, _, writes = tray_main
+    monkeypatch.setattr(main, "melody_document", {
+        **main.melody_document, "title": "BTS - DYNAMITE", "artist": "DO NOT PREPEND"})
+    main.set_tray({"present": True})
+    main._update_matrix_display()
+    main.get_game_runtime().add_orb(orb_id="a", slave=1, cell=1)
+    assert main.request_dfesta()["ok"]
+    main._update_matrix_display()
+    assert writes[-1] == {"type": "status", "text": "BTS - DYNAMITE", "scroll": True}
+    assert main.get_game_state()["state"] == "RUNNING"
+    main._playback_scheduler.close()
+    main._update_matrix_display()
+    assert writes[-1] == {"type": "status", "text": "PRESS DFESTA!", "arrow": "right"}
 
 
 def test_dfesta_release_allows_new_placements_then_combined_tray_cleanup(tray_main, monkeypatch):

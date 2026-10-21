@@ -12,6 +12,25 @@ the arrow. Other status messages remain centered. Update the server and flash
 the matrix sketch in use to enable this layout. Older matrix firmware ignores
 the extra field and continues to display centered text.
 
+The former `COMPLETE` screen now uses the current `data/melodies/*.json` **title**
+alone. The server does not prepend `artist` or derive a name from `songId` or the
+filename. The normal DFESTA playback/cleanup timing and semantic `complete` event
+remain unchanged. A missing/blank title falls back to `matrix_display.texts.complete`.
+
+Title messages use `{"type":"status","text":"BTS - DYNAMITE","scroll":true}`.
+Updated `dotmatrix_3` and `dotmatrix_4` show a single uppercase line across the full
+panel width, with no countdown or arrow. Titles that fit stay centered; longer
+titles scroll left at one pixel per 35 ms, pausing one second at each end before
+repeating. At the current 192px width and default font, 32 characters fit. There is
+no second line or automatic smaller font. Repeated host heartbeats do not restart
+the scroll, and changing screens or losing the server connection stops it.
+
+The built-in fonts support printable ASCII. The server flattens whitespace,
+replaces unsupported characters with `?`, and caps titles at 128 characters to
+fit the serial frame even when JSON escapes quotes/backslashes. Flash the matrix
+sketch in use and restart the server for this feature. Subsequent title edits are
+loaded on the next game start and do not require another firmware upload.
+
 The tray cleanup flow builds on dotmatrix_revision at 887e5bf.
 
 For the tray update, install the Python server and flash firmware/master/master.ino
@@ -29,8 +48,8 @@ Update the Python server and flash the matching matrix sketch together:
 Both updated sketches retain the built-in font, use 2-bit depth, and draw only
 white pixels on black. Status text is uppercase and centered horizontally and
 vertically. Each complete frame is drawn offscreen and swapped once. Repeated
-commands do not redraw the panel. Game screens have no animation, fades,
-strobing, or color effects.
+commands do not redraw the panel. Other than scrolling long song titles, game
+screens have no animation, fades, strobing, or color effects.
 
 On dotmatrix_3, the MatrixPortal UP button (pin 6) cycles through:
 game → panel/bit-depth/refresh info → solid white → red → green → blue →
@@ -47,12 +66,12 @@ interrupt a diagnostic screen.
 | Initial tray start, before the automatic hint | LOADING... for game_rules.initial_hint_delay_s |
 | Accepted Listen, including the initial automatic Listen | HINT during playback |
 | Accepted Play | PLAYING during playback |
-| Accepted DFesta | COMPLETE during playback |
+| Accepted DFesta | Melody JSON title during playback (COMPLETE fallback) |
 | RUNNING without playback | Existing latest orb name and live countdown |
 | Correct complete placement after loading | PRESS DFESTA! (DFESTA playback still takes precedence) |
 | Idle or time-over exit | TIME OVER for 2 s, then PLEASE CLEAR TABLE |
 | Manual reset/end | PLEASE CLEAR TABLE immediately |
-| Completed game | COMPLETE through final DFesta and 2 s afterward, then PLEASE CLEAR TABLE |
+| Completed game | Melody title through final DFesta and 2 s afterward, then PLEASE CLEAR TABLE |
 | All orbs AND tray removed / READY reached | GOODBYE for n seconds, blank for n seconds, then PLACE TRAY |
 | Next tray placed during GOODBYE or blank | Start immediately; LOADING..., initial HINT, then the usual running screen |
 | No valid host command for 5 s | OFFLINE until the next valid command |

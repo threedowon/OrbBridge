@@ -196,6 +196,70 @@ def test_final_dfesta_stays_complete_until_audio_ends_then_clears(rig):
     assert device.writes[-1]["text"] == "PLEASE CLEAR TABLE"
 
 
+@pytest.mark.parametrize("state", ["RUNNING", "RESETTING"])
+def test_dfesta_displays_title_only_without_changing_completion_semantics(rig, state):
+    matrix, device, _, now = rig
+    screens = []
+    matrix._on_screen_change = screens.append
+    game = {**running(), "state": state, "end_reason": "complete",
+            "melody_title": "BTS - Dynamite"}
+    matrix.update(game, playback("dfesta"))
+    assert device.writes[-1] == {"type": "status", "text": "BTS - Dynamite", "scroll": True}
+    now[0] = 1
+    matrix.update(game, playback("dfesta"))
+    assert device.writes[-1] == device.writes[-2]  # Stable heartbeat keeps scroll moving.
+    assert screens == ["complete"]
+    matrix.update(game, playback("dfesta", False))
+    if state == "RESETTING":
+        now[0] += 2
+        matrix.update(game)
+        assert device.writes[-1]["text"] == "PLEASE CLEAR TABLE"
+    else:
+        assert device.writes[-1]["type"] == "display"
+    assert "scroll" not in device.writes[-1]
+
+
+@pytest.mark.parametrize("title", [None, "", "  ", 123])
+def test_missing_title_falls_back_to_configured_complete(rig, title):
+    matrix, device, _, _ = rig
+    matrix.texts["complete"] = "WELL DONE"
+    matrix.update({**running(), "melody_title": title}, playback("DFESTA"))
+    assert device.writes[-1] == {"type": "status", "text": "WELL DONE"}
+
+
+def test_long_title_is_not_cut_to_32_and_new_song_does_not_reuse_old_title(rig):
+    matrix, device, _, _ = rig
+    title = "A VERY LONG SONG TITLE THAT MUST REMAIN ON ONE LINE"
+    matrix.update({**running(), "melody_title": title}, playback("dfesta"))
+    assert device.writes[-1]["text"] == title
+    assert device.writes[-1]["scroll"] is True
+    matrix.update({"state": "READY"})
+    matrix.update({**running(), "melody_title": "New song"}, playback("dfesta", run_id=2))
+    assert device.writes[-1]["text"] == "New song"
+
+
+def test_title_normalization_and_escaped_packet_fit_matrix_input_buffer(rig):
+    matrix, device, _, _ = rig
+    matrix.update({**running(), "melody_title": "A\nB\t가"}, playback("dfesta"))
+    assert device.writes[-1]["text"] == "A B ?"
+    matrix._configure_offline = True
+    matrix.texts["offline"] = '"' * 32
+    matrix.update({**running(), "melody_title": '\\"' * 100}, playback("dfesta"))
+    payload = device.writes[-1]
+    assert len(payload["text"]) == 128
+    assert len(json.dumps(payload, ensure_ascii=True, separators=(",", ":")).encode("ascii")) < 384
+
+
+def test_title_does_not_override_other_screens(rig):
+    matrix, device, _, _ = rig
+    game = {**running(), "melody_title": "Dynamite"}
+    for mode, expected in [("listen", "HINT"), ("play", "PLAYING")]:
+        matrix.update(game, playback(mode))
+        assert device.writes[-1] == {"type": "status", "text": expected}
+    matrix.update({**game, "is_correct": True})
+    assert device.writes[-1] == {"type": "status", "text": "PRESS DFESTA!", "arrow": "right"}
+
+
 def test_ready_and_new_session_do_not_retain_name_or_status(rig):
     matrix, device, _, _ = rig
     matrix.show_voice("ive_5", running())

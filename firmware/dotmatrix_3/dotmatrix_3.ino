@@ -1,6 +1,7 @@
 // ArduinoJson과 ESP32-HUB75-MatrixPanel-I2S-DMA 라이브러리를 사용한다.
 #include <ArduinoJson.h>
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
+#include "SingleLineScroll.h"
 
 #define PANEL_WIDTH 64
 #define PANEL_HEIGHT 32
@@ -27,6 +28,8 @@ bool viewDirty = false;
 bool buttonRaw = false;
 bool buttonStable = false;
 uint32_t buttonChangedAt = 0;
+SingleLineScroll titleScroll;
+int titleDrawnX = 0;
 
 // ===== 사용자 설정 변수 =====
 const int PADDING_TOP    = 12;  // 상단 여백(px) — 텍스트 시작 y좌표
@@ -125,6 +128,18 @@ void drawButtonPrompt(const char *raw) {
   display->drawLine(right - head, centerY + 4 * FONT_SIZE, right, centerY, color);
 }
 
+void drawTitle(const char *raw) {
+  String text(raw);
+  text.toUpperCase();
+  titleDrawnX = titleScroll.x(millis());
+  display->clearScreen();
+  display->setTextWrap(false);
+  display->setTextSize(FONT_SIZE);
+  display->setTextColor(display->color565(255, 255, 255));
+  display->setCursor(titleDrawnX, (PANEL_HEIGHT - 7 * FONT_SIZE) / 2);
+  display->print(text);
+}
+
 String offlineText = "OFFLINE";
 
 void drawRuntime() {
@@ -139,6 +154,7 @@ void drawRuntime() {
   if (!strcmp(type, "status")) {
     const char *arrow = message["arrow"] | "";
     if (!strcmp(arrow, "right")) drawButtonPrompt(message["text"].as<const char *>());
+    else if (message["scroll"] == true) drawTitle(message["text"].as<const char *>());
     else drawStatus(message["text"].as<const char *>());
   } else if (!strcmp(type, "display")) {
     String text = formatName(message["text"].as<const char *>());
@@ -203,6 +219,13 @@ void handleCommand(const String &line) {
   linkTimedOut = false;
   if (line == lastCommand) return;
   lastCommand = line;
+  // Repeated server heartbeats must not restart a title's scroll.
+  titleScroll.stop();
+  if (!strcmp(type, "status") && message["scroll"] == true) {
+    const int length = strlen(message["text"].as<const char *>());
+    const int width = length ? (length * CHAR_W - 1) * FONT_SIZE : 0;
+    titleScroll.begin(width, DISPLAY_WIDTH, millis());
+  }
   // Keep receiving the latest game screen while a diagnostic view is selected.
   if (viewMode == 0) viewDirty = true;
 }
@@ -274,8 +297,11 @@ void loop() {
   }
   if (!linkTimedOut && millis() - lastValidCommandAt >= 5000) {
     linkTimedOut = true;
+    titleScroll.stop();
     lastCommand = "";
     if (viewMode == 0) viewDirty = true;
   }
+  if (viewMode == 0 && !linkTimedOut && titleScroll.active() &&
+      titleScroll.x(millis()) != titleDrawnX) viewDirty = true;
   if (viewDirty) drawView();
 }

@@ -1,4 +1,4 @@
-"""Static game information for the 192×32 LED matrix."""
+"""Game information and single-line melody titles for the 192×32 LED matrix."""
 
 from __future__ import annotations
 
@@ -142,9 +142,17 @@ class MatrixDisplay:
         with self._lock:
             self._text = ""
 
-    def _status(self, key: str) -> dict:
+    def _status(self, key: str, *, title=None) -> dict:
         self._screen = key
         payload = {"type": "status", "text": self.texts[key]}
+        if key == "complete" and isinstance(title, str) and title.strip():
+            # Use the JSON title alone, never prepend artist or infer it from
+            # the filename. The panel font supports printable ASCII only.
+            text = " ".join(title.split())
+            payload["text"] = "".join(c if " " <= c <= "~" else "?" for c in text)[:128]
+            # Let the panel measure its own font; fitting titles remain static.
+            # 128 chars also fit the 384-byte frame with worst-case JSON escaping.
+            payload["scroll"] = True
         if key == "press_dfesta":
             payload["arrow"] = "right"
         return payload
@@ -196,7 +204,7 @@ class MatrixDisplay:
             reason = snapshot.get("end_reason")
             if reason == "complete" and playback.get("active") and mode == "DFESTA":
                 self._reset_at = now
-                return self._status("complete")
+                return self._status("complete", title=snapshot.get("melody_title"))
             elapsed = now - self._reset_at
             if reason == "tray_removed" and elapsed < self.farewell_duration_s:
                 return self._status("farewell")
@@ -204,7 +212,7 @@ class MatrixDisplay:
                         "time_over": "time_over"}.get(reason)
             if terminal:
                 if elapsed < self.STATUS_HOLD_S:
-                    return self._status(terminal)
+                    return self._status(terminal, title=snapshot.get("melody_title"))
             return self._status("clear_table")
         if state != "RUNNING":
             return {"type": "clear"}
@@ -216,7 +224,7 @@ class MatrixDisplay:
             message = {"LISTEN": "hint", "PLAY": "playing",
                        "DFESTA": "complete"}.get(mode)
             if message:
-                return self._status(message)
+                return self._status(message, title=snapshot.get("melody_title"))
         remaining = (snapshot.get("timers") or {}).get("remaining_time_over_s")
         try:
             seconds = float(remaining)
