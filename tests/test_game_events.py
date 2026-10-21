@@ -59,7 +59,7 @@ def test_loading_is_once_per_game_and_blocks_buttons(event_main):
     for _ in range(3):
         main._update_matrix_display()
     events.flush()
-    assert notes == [(60, True), (61, True), (63, True), (62, True), (61, True)]
+    assert notes == [(60, True), (61, True), (63, True), (62, True), (61, True), (63, True)]
     assert main.get_game_state()["timers"]["remaining_time_over_s"] == 60
 
 

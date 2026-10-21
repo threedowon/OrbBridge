@@ -43,7 +43,7 @@ ensure_data_files()
 # ── 설정 로드 ──────────────────────────────────────────
 config = load_config()
 hall_sensor_count(config)  # Reject invalid hardware policy at startup.
-_hint_led = HintLedBridge(lambda command: hardware_io.send_line(command), fade_ms=config.get("hint_led_fade_ms", 600))
+_hint_led = HintLedBridge(lambda command: hardware_io.send_line(command), fade_ms=config.get("hint_led_fade_ms", 600), tray_easing=config.get("tray_led_easing", "none"))
 orb_mapping = load_mapping()
 
 _melody_manager = MelodyManager(melodies_dir())

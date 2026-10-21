@@ -12,6 +12,7 @@ class HintCommandParser {
   uint16_t fadeMs = 600;
   bool playback = false;
   bool tray = false;
+  uint8_t trayEasing = 0;
   bool breathing = false;
   char breathColumns[13] = {};
   bool dfesta = false;
@@ -34,7 +35,13 @@ class HintCommandParser {
       if ((*p < '0' || *p > '9') && *p != ',') return false;
     unsigned s, c, d, m, fade = 600; char extra;
     if (line[0] == 'T') {
-      if (sscanf(line, "T%u%c", &d, &extra) != 1 || d < 1 || d > 60000) return false;
+      unsigned easing = 0;
+      if (sscanf(line, "T%u,%u%c", &d, &easing, &extra) != 2) {
+        if (sscanf(line, "T%u%c", &d, &extra) != 1) return false;
+        easing = 0;
+      }
+      if (d < 1 || d > 60000 || easing > 2) return false;
+      trayEasing = easing;
       slave = 0; cell = 0; duration = d; playback = false; tray = true; dfesta = false;
       return true;
     }

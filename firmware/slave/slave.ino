@@ -140,6 +140,7 @@ uint16_t hintDuration = 0;
 uint16_t hintFadeMs = 600;
 bool trayGlow = false;
 uint16_t trayRiseMs = 0;
+uint8_t trayEasing = 0;
 bool hintEnding = false;
 uint32_t hintEndStarted = 0;
 bool hintRingLit[BUS_COUNT] = {};
@@ -375,8 +376,29 @@ uint32_t orbGold(uint8_t brightness) {
 
 // 슬롯 링을 지정한 밝기로 그린다. 이펙트 모드에서는 링을 건드리지 않지만
 // 밝기는 계속 추적해, 이펙트를 끄면 실제 배치와 다시 맞는다.
+// The accumulated column follows its answer orb's normal contact fade.
+int dfestaAnswer(int column) {
+  for (int pitch = 7; pitch >= 0; --pitch)
+    if (dfestaMasks[column] & (1 << pitch)) return column * 8 + pitch;
+  return -1;
+}
+
+void drawDfestaColumn(int column) {
+  const int answer = dfestaAnswer(column);
+  const uint8_t level = answer >= 0 ? ringLevel[answer] : 0;
+  for (int pitch = 0; pitch < 8; ++pitch)
+    setRing(column * 8 + pitch,
+      (dfestaMasks[column] & (1 << pitch)) ? orbGold(level) : 0, false);
+}
+
 void setSlotLevel(int i, uint8_t level) {
+  // During ready breathing, a missing contact must not compete with the pulse.
+  if (!hintActive && (breathMask & (uint16_t(1) << i)) && missing[i]) level = 0;
   ringLevel[i] = level;
+  if (hintActive && dfestaCursor && dfestaAnswer(i / 8) == i) {
+    drawDfestaColumn(i / 8);
+    ringLow.show(); ringHigh.show();
+  }
   if (ledEffect != 0 || hintActive) return;
   setRing(i, orbGold(level));
 }
@@ -408,7 +430,8 @@ void applyHintCommand(const HintCommandParser& command) {
     if (slaveId >= 1 && slaveId <= 6) {
       for (int column = 0; column < 2; ++column) {
         int pitch = command.breathColumns[(slaveId - 1) * 2 + column] - '0';
-        if (pitch > 0) mask |= uint16_t(1) << (column * 8 + pitch - 1);
+        if (pitch > 0 && hasLast[column * 8 + pitch - 1])
+          mask |= uint16_t(1) << (column * 8 + pitch - 1);
       }
     }
     const bool changed = mask != breathMask;
@@ -426,6 +449,7 @@ void applyHintCommand(const HintCommandParser& command) {
     hintEnding = false;
     hintStarted = millis();
     hintDuration = command.duration;
+    trayEasing = command.trayEasing;
     // Keep the original total duration; shorten both phases for short delays.
     trayRiseMs = command.duration / 2 < 800 ? command.duration / 2 : 800;
     hintFadeMs = command.duration - trayRiseMs < 800 ? command.duration - trayRiseMs : 800;
@@ -465,8 +489,7 @@ void applyHintCommand(const HintCommandParser& command) {
       // Do not relight a column whose answer egg was already removed.
       dfestaMasks[column] = answer >= 0 && hasLast[column * 8 + answer] ? command.mask : 0;
     }
-    for (int i = 0; i < BUS_COUNT; ++i)
-      setRing(i, (dfestaMasks[i / 8] & (1 << (i % 8))) ? orbGold(255) : 0, false);
+    for (int column = 0; column < 2; ++column) drawDfestaColumn(column);
     ringLow.show(); ringHigh.show();
     return;
   }
@@ -520,7 +543,10 @@ void updateHint() {
   if (trayGlow) {
     if (uint32_t(millis() - hintFrameAt) < 20) return;
     hintFrameAt = millis();
-    const int topPitch = !trayRiseMs || elapsed >= trayRiseMs ? 7 : elapsed * 7 / trayRiseMs;
+    float progress = !trayRiseMs || elapsed >= trayRiseMs ? 1.0f : float(elapsed) / trayRiseMs;
+    if (trayEasing == 1) progress *= progress;
+    else if (trayEasing == 2) progress = 1.0f - (1.0f - progress) * (1.0f - progress);
+    const int topPitch = int(progress * 7);
     const uint32_t fadeStart = hintDuration - hintFadeMs;
     uint8_t level = 255;
     if (elapsed >= fadeStart)
@@ -619,7 +645,7 @@ void runEffectAnim() {
     const uint8_t level = 32 + uint8_t(223 * (0.5f - 0.5f * cosf(phase * 6.2831853f)));
     for (int i = 0; i < BUS_COUNT; ++i)
       if (breathMask & (uint16_t(1) << i))
-        setRing(i, Adafruit_NeoPixel::Color(level, uint16_t(147) * level / 255, uint16_t(41) * level / 255));
+        setRing(i, hasLast[i] && !missing[i] ? orbGold(level) : 0);
     return;
   }
   if (ledEffect < 7) return;
@@ -688,6 +714,8 @@ void onAdded(int i, const byte addr[8]) {
 }
 
 void onRemoved(int i, const byte addr[8]) {
+  // Clear locally before waiting for the server to revoke the ready effect.
+  breathMask &= ~(uint16_t(1) << i);
   if (hintActive && dfestaCursor) {
     const int column = i / 8;
     int answer = -1;
@@ -726,6 +754,7 @@ void scanBus(int i) {
       missing[i] = true;
       missSinceMs[i] = millis();
       lastFadeMs[i] = 0;
+      if (!hintActive && (breathMask & (uint16_t(1) << i))) setSlotLevel(i, 0);
     }
     unsigned long gone = millis() - missSinceMs[i];
     if (gone >= REMOVE_DEBOUNCE_MS) {

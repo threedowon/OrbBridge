@@ -90,7 +90,7 @@ def test_identical_tray_reports_do_not_refresh_idle_timer(engine):
     assert game.snapshot()["end_reason"] == "idle"
 
 
-@pytest.mark.parametrize("present,seated", [(False, False), (True, False)])
+@pytest.mark.parametrize("present,seated", [(True, False)])
 def test_actual_tray_change_refreshes_idle(engine, present, seated):
     game, clock = engine
     game.set_tray(True, True)
@@ -166,3 +166,29 @@ def test_runtime_engine_reload_preserves_tray_and_original_expiry(engine):
         assert runtime.snapshot()["tray"]["present"] is None
     finally:
         runtime.close()
+
+
+@pytest.mark.parametrize("occupied", [False, True])
+def test_removing_tray_ends_running_game(engine, occupied):
+    game, _ = engine
+    game.set_tray(True, True)
+    game.start()
+    if occupied:
+        game.add_orb(orb_id="a", slave=1, cell=1)
+    game.set_tray(False, False)
+    snapshot = game.snapshot()
+    assert snapshot["state"] == ("RESETTING" if occupied else "READY")
+    assert (snapshot["end_reason"] or snapshot["cleanup_end_reason"]) == "tray_removed"
+    if occupied:
+        game.remove_orb(slave=1, cell=1)
+        assert game.snapshot()["state"] == "READY"
+
+
+def test_sensor_unknown_does_not_end_game_but_confirmed_absence_does(engine):
+    game, _ = engine
+    game.set_tray(True, True)
+    game.start()
+    game.set_tray(None, None)
+    assert game.snapshot()["state"] == "RUNNING"
+    game.set_tray(False, False)
+    assert game.snapshot()["state"] == "READY"

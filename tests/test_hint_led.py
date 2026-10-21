@@ -241,3 +241,27 @@ def test_natural_completion_state_does_not_clear_dfesta():
     bridge.observe_snapshot({'tray': {'present': True}},
                             {'tray': {'present': True}, 'state': 'RESETTING'}, 'dfesta')
     assert sent == ['H0,0,1,600']
+
+@pytest.mark.parametrize('mode', ['play', 'listen', 'dfesta'])
+def test_game_tray_removal_blacks_out_and_ignores_cancel(mode):
+    sent = []
+    bridge = HintLedBridge(sent.append)
+    bridge.handle(start(mode=mode))
+    bridge.observe_snapshot({'state': 'RUNNING', 'tray': {'present': True}},
+        {'state': 'RESETTING', 'end_reason': 'tray_removed', 'tray': {'present': False}}, 'tray')
+    assert sent[-1] == 'H0,0,4,600'
+    count = len(sent)
+    bridge.handle(dict(type='end', run_id=1, cancelled=True))
+    assert len(sent) == count
+
+@pytest.mark.parametrize('easing,command', [('none', 'T2000'), ('easein', 'T2000,1'), ('easeout', 'T2000,2')])
+def test_tray_easing_config(easing, command):
+    sent = []
+    bridge = HintLedBridge(sent.append, tray_easing=easing)
+    bridge.tray_transition('READY', 'RUNNING', {'initial_hint': {'pending': True, 'remaining_s': 3}})
+    assert sent == [command]
+
+
+def test_invalid_tray_easing_rejected():
+    with pytest.raises(ValueError, match='tray_led_easing'):
+        HintLedBridge(lambda _: None, tray_easing='typo')

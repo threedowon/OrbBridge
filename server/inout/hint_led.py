@@ -3,10 +3,13 @@ import time
 
 
 class HintLedBridge:
-    def __init__(self, send_line, clock=time.perf_counter, *, fade_ms=600):
+    def __init__(self, send_line, clock=time.perf_counter, *, fade_ms=600, tray_easing="none"):
         if type(fade_ms) is not int or not 0 <= fade_ms <= 3000:
             raise ValueError("hint_led_fade_ms must be an integer from 0 to 3000")
         self.send_line = lambda command: send_line(f"{command},{fade_ms}" if command.startswith('H') else command)
+        if tray_easing not in ("none", "easein", "easeout"):
+            raise ValueError("tray_led_easing must be none, easein, or easeout")
+        self.tray_easing = ("none", "easein", "easeout").index(tray_easing)
         self.clock = clock
         self.run_id = None
         self.latest_run = -1
@@ -36,10 +39,12 @@ class HintLedBridge:
         tray_before = previous.get('tray', {})
         tray_after = current.get('tray', {})
         removed = (tray_before.get('present') is True and tray_after.get('present') is not True)
-        if self.dfesta_held and (action == 'reset' or removed):
+        game_tray_removed = previous.get('state') == 'RUNNING' and (current.get('end_reason') or current.get('cleanup_end_reason')) == 'tray_removed'
+        if (self.dfesta_held and (action == 'reset' or removed)) or game_tray_removed:
             # Ignore subsequent queued beats/end from this run. H4 holds blackout.
             self.run_id = None
             self.dfesta_held = False
+            self.tray_active = False
             self.send_line('H0,0,4')
 
     def tray_transition(self, previous, current, snapshot):
@@ -49,7 +54,7 @@ class HintLedBridge:
             duration = min(60000, max(0, int((remaining - 1.0) * 1000)))
             if initial.get('pending') and duration > 0:
                 self.tray_active = True
-                self.send_line(f'T{duration}')
+                self.send_line(f'T{duration}' + (f',{self.tray_easing}' if self.tray_easing else ''))
         elif current != 'RUNNING' and self.tray_active:
             self.tray_active = False
             self.send_line('H0,0,0')

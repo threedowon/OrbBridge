@@ -418,3 +418,23 @@ def test_late_cleanup_does_not_repeat_timeout(rig):
                    "tray": {"present": False},
                    "timers": {"since_table_cleared_s": 0}})
     assert device.writes[-1]["text"] == "GOODBYE"
+
+@pytest.mark.parametrize('occupied', [False, True])
+def test_tray_removal_shows_goodbye_even_with_orbs(rig, occupied):
+    from server.game.game_engine import GameEngine
+    matrix, device, _, now = rig
+    game = GameEngine({'1': 'C'}, time_over_s=60, idle_s=30, clock=lambda: now[0])
+    game.set_tray(True, True)
+    game.start()
+    matrix.update(game.snapshot())
+    if occupied:
+        game.add_orb(orb_id='a', slave=1, cell=1)
+    game.set_tray(False, False)
+    matrix.update(game.snapshot(), playback('PLAY'))
+    assert device.writes[-1]['text'] == 'GOODBYE'
+    now[0] += matrix.farewell_duration_s
+    matrix.update(game.snapshot())
+    if occupied:
+        assert device.writes[-1]['text'] == 'PLEASE CLEAR TABLE'
+    else:
+        assert device.writes[-1] == {'type': 'clear'}

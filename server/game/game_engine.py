@@ -32,6 +32,7 @@ class EndReason(str, Enum):
     IDLE = "idle"
     TIME_OVER = "time_over"
     MANUAL = "manual"
+    TRAY_REMOVED = "tray_removed"
 
 
 class PlacementResult(str, Enum):
@@ -165,6 +166,8 @@ class GameEngine:
         if previous != (present, seated):
             self._revision += 1
         self._end_if_needed(now)
+        if self.state is GameState.RUNNING and present is False and previous[0] is not False:
+            self._enter_resetting(EndReason.TRAY_REMOVED, now)
         # Expiry wins at the deadline. Only known physical changes are activity;
         # reconnect/unknown reports and periodic copies must not postpone Idle.
         if (self.state is GameState.RUNNING and previous != (present, seated)

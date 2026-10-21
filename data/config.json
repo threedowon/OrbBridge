@@ -1,6 +1,7 @@
 {
   "current_stage": 1,
   "hall_sensor_count": 2,
+  "tray_led_easing": "easeout",
   "hint_led_fade_ms": 600,
   "game_rules": {
     "time_over_s": 120.0,
@@ -31,7 +32,7 @@
       "complete": "COMPLETE",
       "press_dfesta": "PRESS DFESTA!",
       "time_over": "TIME OVER",
-      "clear_table": "PLEASE RETURN ORB & TRAY",
+      "clear_table": "PLEASE RETURN ORB AND TRAY",
       "farewell": "GOODBYE",
       "place_orb": "PLACE ORB",
       "orb_check": "ORB CHECK",

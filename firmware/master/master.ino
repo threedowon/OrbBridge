@@ -338,7 +338,7 @@ void pollHintCommand() {
   if (hintCommand.breathing) snprintf(line, sizeof(line), "\nB%s\n", hintCommand.breathColumns);
   else if (hintCommand.tray) {
     if (!remaining) { hintPending = false; return; }
-    snprintf(line, sizeof(line), "\nT%u\n", remaining);
+    snprintf(line, sizeof(line), "\nT%u,%u\n", remaining, hintCommand.trayEasing);
   }
   else if (!hintCommand.duration) snprintf(line, sizeof(line), "\nH0,0,0,%u\n", hintCommand.fadeMs);
   else if (!hintCommand.slave) snprintf(line, sizeof(line), "\nH0,0,%u,%u\n", hintCommand.duration, hintCommand.fadeMs);

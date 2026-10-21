@@ -195,6 +195,8 @@ class MatrixDisplay:
                 self._reset_at = now
                 return self._status("complete")
             elapsed = now - self._reset_at
+            if reason == "tray_removed" and elapsed < self.farewell_duration_s:
+                return self._status("farewell")
             terminal = {"complete": "complete", "idle": "time_over",
                         "time_over": "time_over"}.get(reason)
             if terminal:
