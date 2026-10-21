@@ -993,8 +993,8 @@ def blackout_leds() -> None:
     """서버가 내려갈 때 슬레이브 링과 디페스타 표시등을 모두 끈다.
 
     테이블에 오브가 남아 있어도 불이 켜진 채로 방치되지 않게 한다.
-    LED_EFFECT_ALL_OFF 는 이펙트 모드라, 서버가 없는 동안 오브를 올려도
-    슬레이브가 링을 켜지 않는다.
+    C2로 먼저 소등한 뒤 stop_serial_input에서 서버 연결 신호를 중단하고
+    L0/U0를 보낸다. 비정상 종료 시에는 보드의 5초 연결 만료로 소등한다.
     """
 
     if not _serial_writer.send_line(f"C{LED_EFFECT_ALL_OFF}"):
@@ -1552,9 +1552,9 @@ def run_main() -> None:
     except KeyboardInterrupt:
         print("종료")
     finally:
-        _matrix_display.close()
         blackout_leds()   # 시리얼 스레드가 포트를 닫기 전에 보내야 한다
         stop_serial_input()
+        _matrix_display.close()
         stop_websocket_service()
         runtime.close()
         _game_events.close()

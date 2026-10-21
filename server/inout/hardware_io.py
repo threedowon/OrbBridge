@@ -343,6 +343,10 @@ def _health(c: dict, t: float) -> str:
 
 def _write(c: dict, command: str) -> bool:
     with c["write_lock"]:
+        # Once stopping, no playback callback or in-flight heartbeat may undo
+        # the offline command sent before the port closes.
+        if c["stop"].is_set() and command not in ("L0", "U0"):
+            return False
         device = c.get("device")
         if device is None:
             return False
@@ -414,14 +418,17 @@ def _serial_loop(c: dict, mode: str, generation: int) -> None:
                 c.update(open=True, error="", started_ms=now_ms(), last_heartbeat_ms=0.0,
                          ready=False, slave_id=None, reported_slave_id=None, crc_bad=None, crc_delta=0,
                          diagnostics={})
+            lease_command = "U1" if mode == "direct" else "L1"
+            if not _write(c, lease_command):
+                raise serial.SerialException("서버 연결 신호 전송 실패")
             if mode == "master":
                 on_ready()
-            next_lease = 0.0
+            next_lease = time.monotonic() + 1
             pending = bytearray()
             while not stop.is_set():
-                if mode == "direct" and time.monotonic() >= next_lease:
-                    if not _write(c, "U1"):
-                        raise serial.SerialException("USB 직접 모드 요청 실패")
+                if time.monotonic() >= next_lease:
+                    if not _write(c, lease_command):
+                        raise serial.SerialException("서버 연결 신호 갱신 실패")
                     next_lease = time.monotonic() + 1
                 chunk = device.read_until(b"\n", 4096)
                 pending.extend(chunk)
@@ -437,8 +444,7 @@ def _serial_loop(c: dict, mode: str, generation: int) -> None:
                 c["error"] = str(exc)
                 _port_lost_locked(c, str(exc))
         finally:
-            if mode == "direct":
-                _write(c, "U0")
+            _write(c, "U0" if mode == "direct" else "L0")
             with c["write_lock"]:
                 c["device"] = None
                 if device is not None:

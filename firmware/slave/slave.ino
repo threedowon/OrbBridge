@@ -22,6 +22,7 @@
 #include <HardwareSerial.h>
 #include "LedCommandParser.h"
 #include "HintCommandParser.h"
+#include "ServerLease.h"
 
 #define TX_PIN       39
 #define RX_PIN       40
@@ -158,7 +159,8 @@ uint8_t ledAckEffect = 0;
 uint32_t ledReceivedMs = 0;
 uint32_t ledAppliedMs = 0;
 bool usbDirect = false;
-unsigned long usbLeaseMs = 0;
+ServerLease serverLease;
+bool slotLedsOnline = false;  // Boot dark, even if eggs are already on the table.
 // USB diagnostics: distinguish an idle scanner, no ROM, and ROM CRC failures.
 uint32_t usbScanCount = 0;
 uint32_t usbLedCommandCount = 0;
@@ -167,8 +169,29 @@ uint16_t usbCrcErrorMask = 0;
 void sendHeartbeat();
 void applyEffectOnce();   // 전방 선언
 void runEffectAnim();
+void fillAll(uint32_t color);
+
+void updateServerLease() {
+  const bool online = serverLease.online(millis());
+  if (!online) usbDirect = false;
+  if (online == slotLedsOnline) return;
+  slotLedsOnline = online;
+  // Discard all old animations on either transition; keep scanning/occupancy.
+  dfestaReleasing = false;
+  dfestaBlocked = true;
+  dfestaCursor = false;
+  dfestaMasks[0] = dfestaMasks[1] = 0;
+  breathMask = 0;
+  hintActive = playbackCursor = hintNoteLit = hintEnding = trayGlow = false;
+  memset(hintRingLit, 0, sizeof(hintRingLit));
+  ledAckPending = false;
+  ledEffect = 0;
+  if (online) applyEffectOnce();
+  else fillAll(0);
+}
 
 void applyLedCommand(int effect) {
+  if (!slotLedsOnline) return;
   dfestaReleasing = false;
   dfestaBlocked = true;
   dfestaCursor = false;
@@ -188,21 +211,24 @@ void applyLedCommand(int effect) {
   ledAckPending = true;
 }
 
-// Debug PC renews U1 every second. Disconnect/crash restores RS485 after 5s.
+// Debug PC renews U1 every second. Expiry blacks out LEDs and restores RS485.
 // USB commands never propagate to the RS485 bus.
 void pollUsb() {
-  if (usbDirect && millis() - usbLeaseMs > 5000) usbDirect = false;
+  updateServerLease();
   while (Serial.available()) {
     char c = (char)Serial.read();
     if (c == '\n') {
       if (usbCmdLine == "U1") {
         bool entering = !usbDirect;
+        if (entering) { serverLease.disable(); updateServerLease(); }
         usbDirect = true;
-        usbLeaseMs = millis();
+        serverLease.renew(millis());
+        updateServerLease();
         if (entering) sendHeartbeat();
-      } else if (usbCmdLine == "U0") {
-        usbDirect = false;
-      } else if (usbDirect && usbHintParser.parse(usbCmdLine.c_str())) {
+      } else if (usbCmdLine == "U0" && usbDirect) {
+        serverLease.disable();
+        updateServerLease();
+      } else if (usbDirect && usbHintParser.parse(usbCmdLine.c_str()) && usbHintParser.lease < 0) {
         applyHintCommand(usbHintParser);
       } else if (usbDirect && usbCmdLine.length() == 2 &&
                  usbCmdLine[0] == 'C' && usbCmdLine[1] >= '0' && usbCmdLine[1] <= '9') {
@@ -262,12 +288,19 @@ uint8_t crc8(const uint8_t* data, int len) {
 // RS485 수신 처리: carrier-sense 활동 감지 + master LED 명령("C<n>\n") 파싱.
 // 바이너리 프레임의 UID/CRC 안에도 C, 숫자, 개행이 들어갈 수 있으므로 분리한다.
 void drainBus() {
+  updateServerLease();
   while (RS485.available()) {
     unsigned char c = (unsigned char)RS485.read();
     lastBusRxMs = millis();
     int effect = ledCommandParser.feed(c, lastBusRxMs);
     bool hintReady = hintParser.feed(c, lastBusRxMs);
-    if (!usbDirect && hintReady) applyHintCommand(hintParser);
+    if (!usbDirect && hintReady) {
+      if (hintParser.lease >= 0) {
+        if (hintParser.lease) serverLease.renew(millis());
+        else serverLease.disable();
+        updateServerLease();
+      } else applyHintCommand(hintParser);
+    }
     if (!usbDirect && effect >= 0) {
       applyLedCommand(effect);
     }
@@ -365,6 +398,7 @@ void updateLed() {
 }
 
 void setRing(int busIndex, uint32_t color, bool showNow = true) {
+  if (!slotLedsOnline) color = 0;
   const LedMap& m = LED_MAP[busIndex];
   if (m.strip < 0) return;                        // 이 슬롯은 LED 없음 → 무시
   Adafruit_NeoPixel& strip = (m.strip == 0) ? ringLow : ringHigh;
@@ -401,6 +435,7 @@ void setSlotLevel(int i, uint8_t level) {
   // During ready breathing, a missing contact must not compete with the pulse.
   if (!hintActive && (breathMask & (uint16_t(1) << i)) && missing[i]) level = 0;
   ringLevel[i] = level;
+  if (!slotLedsOnline) return;
   if (hintActive && dfestaCursor && !dfestaReleasing && dfestaAnswer(i / 8) == i) {
     drawDfestaColumn(i / 8);
     ringLow.show(); ringHigh.show();
@@ -411,6 +446,7 @@ void setSlotLevel(int i, uint8_t level) {
 
 // ── LED 테스트 이펙트 ───────────────────────────────────
 void fillAll(uint32_t color) {
+  if (!slotLedsOnline) color = 0;
   for (uint16_t i = 0; i < LED_COUNT_LOW; i++)  ringLow.setPixelColor(i, color);
   for (uint16_t i = 0; i < LED_COUNT_HIGH; i++) ringHigh.setPixelColor(i, color);
   ringLow.show();
@@ -448,6 +484,7 @@ void releaseDfesta() {
 }
 
 void applyHintCommand(const HintCommandParser& command) {
+  if (!slotLedsOnline) return;
   if (command.breathing) {
     uint16_t mask = 0;
     if (slaveId >= 1 && slaveId <= 6) {
@@ -571,7 +608,7 @@ void applyHintCommand(const HintCommandParser& command) {
 }
 
 void updateHint() {
-  if (!hintActive) return;
+  if (!slotLedsOnline || !hintActive) return;
   if (dfestaReleasing) {
     const uint32_t age = uint32_t(millis() - dfestaReleaseStarted);
     if (age >= REMOVE_DEBOUNCE_MS) { stopHint(); return; }
@@ -651,6 +688,7 @@ void updateHint() {
 }
 
 void rainbowStatic() {
+  if (!slotLedsOnline) return;
   for (uint16_t i = 0; i < LED_COUNT_LOW; i++)
     ringLow.setPixelColor(i, Adafruit_NeoPixel::ColorHSV((uint16_t)(i * 65536L / LED_COUNT_LOW)));
   for (uint16_t i = 0; i < LED_COUNT_HIGH; i++)
@@ -661,6 +699,7 @@ void rainbowStatic() {
 
 // 명령 받은 즉시 적용되는 정적 이펙트. 애니메이션(7~9)은 loop 의 runEffectAnim 에서 갱신.
 void applyEffectOnce() {
+  if (!slotLedsOnline) return;
   switch (ledEffect) {
     case 0:
       // Restore tracked occupancy immediately. scanBus does not redraw a ring
@@ -679,7 +718,7 @@ void applyEffectOnce() {
 
 // 애니메이션 이펙트 (loop 에서 ~30ms 마다 호출)
 void runEffectAnim() {
-  if (hintActive) return;
+  if (!slotLedsOnline || hintActive) return;
   if (breathMask && uint32_t(millis() - breathRenewed) > 2500) {
     breathMask = 0; applyEffectOnce();
   }

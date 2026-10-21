@@ -148,10 +148,10 @@ void drawButtonPrompt(const char *raw) {
   const int centerY = PADDING_TOP + STATUS_GLYPH_H * FONT_SIZE / 2 + TEXT_OFFSET_Y;
   const int head = 5 * FONT_SIZE;
   const uint16_t color = display->color565(255, 255, 255);
-  display->fillRect(right - width + 1, centerY - FONT_SIZE,
-                    width - head, 2 * FONT_SIZE + 1, color);
-  display->fillTriangle(right, centerY, right - head, centerY - 4 * FONT_SIZE,
-                        right - head, centerY + 4 * FONT_SIZE, color);
+  // Thin, open arrow: one-pixel shaft and head, retaining the same bounds.
+  display->drawFastHLine(right - width + 1, centerY, width, color);
+  display->drawLine(right - head, centerY - 4 * FONT_SIZE, right, centerY, color);
+  display->drawLine(right - head, centerY + 4 * FONT_SIZE, right, centerY, color);
 }
 
 String offlineText = "OFFLINE";

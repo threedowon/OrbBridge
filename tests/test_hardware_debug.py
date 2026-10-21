@@ -147,7 +147,62 @@ def test_multi_usb_route_snapshot_led_and_return_to_master(debug):
     assert not d._snapshot()["cells"]
     wait_for(lambda: d._master["open"])
     assert d.send_led(0)
-    assert devices["COM1"].writes == [b"C0\n"]
+    wait_for(lambda: b"L1\n" in devices["COM1"].writes)
+    assert b"C0\n" in devices["COM1"].writes
+
+
+@pytest.mark.parametrize("mode,alive,offline", [
+    ("master", b"L1\n", b"L0\n"), ("direct", b"U1\n", b"U0\n"),
+])
+def test_server_lease_renews_without_incoming_data_and_stops_cleanly(debug, mode, alive, offline):
+    d, devices = debug
+    d.configure_connection(mode, ["COM1"])
+    wait_for(lambda: "COM1" in devices and devices["COM1"].writes.count(alive) >= 2)
+    device = devices["COM1"]
+    session = d._connections["COM1"]
+    assert device.writes[0] == alive
+    d.stop_serial()
+    assert device.closed and device.writes[-1] == offline
+    assert not d.send_line("C1")
+    # Even a callback that captured the old session cannot undo shutdown.
+    assert not d._write(session, "C0")
+    assert not d._write(session, alive.decode().strip())
+    assert device.writes[-1] == offline
+
+
+def test_master_lease_precedes_ready_callback_and_shutdown_rejects_late_cues(debug):
+    d, devices = debug
+    entered, release = threading.Event(), threading.Event()
+    late_results = []
+
+    def ready():
+        assert devices["COM1"].writes == [b"L1\n"]
+        d.send_line("C0")
+
+    def receive(event):
+        entered.set()
+        release.wait(2)
+        late_results.append(d.send_line("Q1,1,255,500"))
+
+    d.on_ready = ready
+    d.on_message = receive
+    d.start_serial("COM1", 115200)
+    wait_for(lambda: "COM1" in devices and b"C0\n" in devices["COM1"].writes)
+    device = devices["COM1"]
+    session = d._connections["COM1"]
+    device.lines.put(b'{"type":"game","action":"start"}\n')
+    assert entered.wait(1)
+    stopper = threading.Thread(target=d.stop_serial)
+    stopper.start()
+    try:
+        wait_for(session["stop"].is_set)
+    finally:
+        release.set()
+        stopper.join(2)
+    assert not stopper.is_alive()
+    assert late_results == [False]
+    assert device.writes[-1] == b"L0\n"
+    assert b"Q1,1,255,500\n" not in device.writes
 
 
 def test_direct_rejects_wrong_firmware_duplicate_ids_and_partial_led_failure(debug):

@@ -17,7 +17,14 @@ class HintCommandParser {
   char breathColumns[13] = {};
   bool dfesta = false;
   uint8_t mask = 0;
+  int8_t lease = -1;  // L1 = server alive, L0 = server offline.
   bool parse(const char* line) {
+    lease = -1;
+    if (line[0] == 'L') {
+      if ((line[1] != '0' && line[1] != '1') || line[2]) return false;
+      lease = line[1] - '0';
+      return true;
+    }
     if (line[0] == 'B') {
       unsigned n = 0;
       while (line[n + 1]) {

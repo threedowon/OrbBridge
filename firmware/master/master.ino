@@ -20,6 +20,7 @@
 #include "LedBroadcast.h"
 #include "DebouncedButton.h"
 #include "HintCommandParser.h"
+#include "ServerLease.h"
 
 #define TX_PIN       39
 #define RX_PIN       40
@@ -90,6 +91,19 @@ bool breathPending = false;
 char breathLine[13] = {};
 uint32_t breathQueuedAt = 0;
 uint32_t hintQueuedAt = 0;
+ServerLease serverLease;
+LedBroadcast serverOfflineBroadcast;
+bool serverOfflinePending = false;
+bool serverRenewPending = false;
+
+void serverOffline() {
+  serverLease.disable();
+  serverRenewPending = false;
+  hintPending = breathPending = false;
+  ledBroadcast.stop();
+  serverOfflineBroadcast.queue(0, millis());
+  serverOfflinePending = true;
+}
 
 // 바이너리 프레임 조립 버퍼
 uint8_t frame[FRAME_LEN];
@@ -271,11 +285,17 @@ void pollUsbCommand() {
     char c = (char)Serial.read();
     if (c == '\n') {
       HintCommandParser parsed;
-      if (usbLine.length() == 2 && usbLine[0] == 'C' &&
+      const bool parsedHint = parsed.parse(usbLine.c_str());
+      if (parsedHint && parsed.lease >= 0) {
+        if (parsed.lease) {
+          serverLease.renew(millis());
+          serverRenewPending = true;
+        } else serverOffline();
+      } else if (serverLease.online(millis()) && usbLine.length() == 2 && usbLine[0] == 'C' &&
           usbLine[1] >= '0' && usbLine[1] <= '9') {
         ledBroadcast.queue(usbLine[1] - '0', millis());
         hintPending = false;
-      } else if (parsed.parse(usbLine.c_str())) {
+      } else if (serverLease.online(millis()) && parsedHint) {
         ledBroadcast.stop();  // Old effect retries must not overwrite this cue.
         if (parsed.breathing) {
           memcpy(breathLine, parsed.breathColumns, sizeof(breathLine));
@@ -297,7 +317,34 @@ void pollUsbCommand() {
   }
 }
 
+// Forward PC heartbeats independently of visual cues. Never manufacture L1
+// from slave heartbeats. L0 retries finish before a reconnect can renew L1.
+void pollServerLease() {
+  const uint32_t now = millis();
+  if (serverLease.enabled() && !serverLease.online(now)) serverOffline();
+  if (serverOfflinePending) {
+    if (serverOfflineBroadcast.ready(now, lastBusRxMs)) {
+      RS485.print("\nL0\n");
+      RS485.flush(true);
+      serverOfflineBroadcast.sent(millis());
+    }
+    if (serverOfflineBroadcast.finished(millis())) {
+      serverOfflineBroadcast.stop();
+      serverOfflinePending = false;
+    }
+    return;
+  }
+  if (!serverRenewPending) return;
+  // A heartbeat delayed by a busy bus must not prolong a dead server's lease.
+  if (serverLease.age(now) >= 1000) { serverRenewPending = false; return; }
+  if (now - lastBusRxMs < 2) return;
+  RS485.print("\nL1\n");
+  RS485.flush(true);
+  serverRenewPending = false;
+}
+
 void pollLedBroadcast() {
+  if (!serverLease.online(millis()) || serverOfflinePending || serverRenewPending) return;
   pollRs485();
   unsigned long now = millis();
   if (ledBroadcast.ready(now, lastBusRxMs)) {
@@ -319,6 +366,7 @@ void pollLedBroadcast() {
 }
 
 void pollHintCommand() {
+  if (!serverLease.online(millis()) || serverOfflinePending || serverRenewPending) return;
   if (!hintPending) {
     if (breathPending && uint32_t(millis() - lastBusRxMs) >= 2) {
       if (uint32_t(millis() - breathQueuedAt) <= 1000) {
@@ -401,6 +449,7 @@ void setup() {
 void loop() {
   pollRs485();
   pollUsbCommand();   // PC → RS485 LED 명령 전달
+  pollServerLease();
   pollHintCommand();
   pollLedBroadcast();
   pollButtons();
