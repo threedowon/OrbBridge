@@ -56,6 +56,7 @@ class GameRuntime:
         tick_interval_s: float = 0.05,
         on_state_change: StateCallback | None = None,
         on_snapshot: Callable[[dict, dict, str], None] | None = None,
+        time_over_hold: Callable[[], bool] | None = None,
     ) -> None:
         if not isinstance(engine, GameEngine):
             raise TypeError("engine must be a GameEngine")
@@ -65,11 +66,14 @@ class GameRuntime:
             raise TypeError("on_state_change must be callable")
         if on_snapshot is not None and not callable(on_snapshot):
             raise TypeError("on_snapshot must be callable")
+        if time_over_hold is not None and not callable(time_over_hold):
+            raise TypeError("time_over_hold must be callable")
 
         self._engine = engine
         self._tick_interval_s = float(tick_interval_s)
         self._on_state_change = on_state_change
         self._on_snapshot = on_snapshot
+        self._time_over_hold = time_over_hold
         self._queue: Queue[_Command] = Queue()
         self._snapshot_lock = threading.Lock()
         self._snapshot = engine.snapshot()
@@ -204,6 +208,10 @@ class GameRuntime:
 
         return self._submit("snapshot", timeout=timeout)
 
+    def tick(self, *, timeout: float = 2.0) -> RuntimeResult:
+        """Evaluate pending deadlines immediately after a sequence finishes."""
+        return self._submit("tick", timeout=timeout)
+
     def publish_state_change(self, result: RuntimeResult) -> None:
         """명령으로 발생한 상태 전이를 관련 출력 뒤에 발행한다.
 
@@ -268,6 +276,7 @@ class GameRuntime:
     def _execute(self, action: str, payload: dict) -> RuntimeResult:
         previous_state = self._engine.state.value
         previous_snapshot = self.snapshot()
+        self._engine.hold_time_over = bool(self._time_over_hold and self._time_over_hold())
 
         if action == "replace_engine":
             current = self._engine.snapshot()

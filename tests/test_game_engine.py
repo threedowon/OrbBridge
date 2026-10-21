@@ -546,3 +546,45 @@ def test_dfesta_does_not_extend_timed_game_and_expiry_blocks_playback():
     clock.advance(1)
     assert not engine.press_dfesta()
     assert engine.end_reason is EndReason.TIME_OVER
+
+
+def test_active_sequence_defers_time_over_but_rejects_new_buttons():
+    clock = FakeClock()
+    engine = make_engine(clock, {"1": "C"}, time_over_s=10, idle_s=None)
+    start_running(engine)
+    engine.add_orb(orb_id="a", slave=1, cell=1)
+    engine.hold_time_over = True
+    clock.advance(10)
+    assert engine.tick() is GameState.RUNNING
+    assert engine.snapshot()["timers"]["remaining_time_over_s"] == 0
+    assert not engine.record_activity()
+    assert not engine.press_dfesta()
+    assert engine.state is GameState.RUNNING
+    # Expiry still refers to the original deadline, even after physical input.
+    engine.remove_orb(slave=1, cell=1)
+    engine.add_orb(orb_id="a", slave=1, cell=1)
+    engine.hold_time_over = False
+    assert engine.tick() is GameState.RESETTING
+    assert engine.end_reason is EndReason.TIME_OVER
+
+
+@pytest.mark.parametrize("action", ["reset", "end"])
+def test_manual_stop_interrupts_sequence_after_deadline(action):
+    clock = FakeClock()
+    engine = make_engine(clock, time_over_s=10, idle_s=None)
+    start_running(engine)
+    engine.hold_time_over = True
+    clock.advance(10)
+    assert engine.tick() is GameState.RUNNING
+    assert getattr(engine, action)() is GameState.RESETTING
+    assert engine.end_reason is EndReason.MANUAL
+
+
+def test_playback_does_not_defer_an_earlier_idle_deadline():
+    clock = FakeClock()
+    engine = make_engine(clock, time_over_s=10, idle_s=5)
+    start_running(engine)
+    engine.hold_time_over = True
+    clock.advance(10)
+    assert engine.tick() is GameState.RESETTING
+    assert engine.end_reason is EndReason.IDLE

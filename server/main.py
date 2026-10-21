@@ -94,6 +94,8 @@ _game_runtime: GameRuntime | None = None
 # GameRuntime은 게임 상태를, PlaybackScheduler는 박자와 MIDI 출력을 소유한다.
 _scheduler_lock = threading.Lock()
 _playback_scheduler: PlaybackScheduler | None = None
+_playback_deadline_lock = threading.Lock()
+_playback_deadline_run: int | None = None
 
 # ── 직접 WebSocket (브라우저 실시간 이벤트 + 재연결 snapshot) ──
 # screen과 admin 내부 모니터 화면은 모두 이 서비스에서 직접 상태를 받는다.
@@ -212,6 +214,9 @@ def _send_game_notes(notes: list[dict]) -> list[dict]:
 
 
 def _scheduler_before_start(event: dict) -> None:
+    global _playback_deadline_run
+    with _playback_deadline_lock:
+        _playback_deadline_run = int(event["run_id"])
     if _game_events is not None:
         _game_events.playback_started(int(event["run_id"]))
         _game_events.flush()  # Deliver the prompt Note Off before any melody notes.
@@ -219,6 +224,17 @@ def _scheduler_before_start(event: dict) -> None:
 
 def _scheduler_publish_event(event: dict) -> None:
     """Scheduler callback을 브라우저 WebSocket 이벤트로 변환한다."""
+    global _playback_deadline_run
+    if event["type"] == "end":
+        with _playback_deadline_lock:
+            finished_current = _playback_deadline_run == int(event["run_id"])
+            if finished_current:
+                _playback_deadline_run = None
+        # Apply TIME OVER before releasing the prompt MIDI gate. Otherwise a
+        # completed answer can briefly play its ready sound after time is up.
+        if finished_current and _game_runtime is not None and _game_runtime.running:
+            result = _game_runtime.tick()
+            _game_runtime.publish_state_change(result)
     if event["type"] == "end" and _game_events is not None:
         _game_events.playback_ended(int(event["run_id"]))
     if not _orb_inspection.active:
@@ -267,10 +283,19 @@ def get_playback_scheduler() -> PlaybackScheduler:
 
 def _cancel_playback() -> None:
     """GameRuntime 상태 callback을 막지 않도록 join 없이 취소한다."""
+    global _playback_deadline_run
+    with _playback_deadline_lock:
+        _playback_deadline_run = None
     with _scheduler_lock:
         scheduler = _playback_scheduler
     if scheduler is not None:
         scheduler.cancel()
+
+
+def _hold_time_over_for_playback() -> bool:
+    # Do not take the scheduler lock from the runtime: before_start owns it.
+    with _playback_deadline_lock:
+        return _playback_deadline_run is not None
 
 
 def _start_playback(mode: PlaybackMode, *, hint_led: bool = False) -> dict:
@@ -371,6 +396,7 @@ def get_game_runtime() -> GameRuntime:
                 tick_interval_s=0.05,
                 on_state_change=_on_state_change,
                 on_snapshot=_on_game_snapshot,
+                time_over_hold=_hold_time_over_for_playback,
             )
             _game_runtime.start()
         return _game_runtime
@@ -894,7 +920,7 @@ def request_listen(*, initial_hint: bool = False) -> dict:
     # Listen은 셀을 바꾸지 않지만 실제 참여자 입력이므로 Idle을 초기화한다.
     activity = runtime.record_activity()
     snapshot = _publish_transition(activity)
-    if snapshot["state"] != GameState.RUNNING.value:
+    if not activity.value or snapshot["state"] != GameState.RUNNING.value:
         print("[game] 다시 듣기 무시 — 타이머 만료")
         return {"ok": False, "ignored": True, "game": snapshot}
 
@@ -919,7 +945,7 @@ def request_play() -> dict:
     # 제한 시각과 입력이 같으면 Queue의 엔진 판정이 제한 시각을 우선한다.
     activity = runtime.record_activity()
     snapshot = _publish_transition(activity)
-    if snapshot["state"] != GameState.RUNNING.value:
+    if not activity.value or snapshot["state"] != GameState.RUNNING.value:
         print("[game] 재생 무시 — 타이머 만료")
         return {"ok": False, "ignored": True, "game": snapshot}
 
@@ -946,6 +972,9 @@ def request_dfesta() -> dict:
         runtime_result.state == GameState.RESETTING.value
         and runtime_result.snapshot.get("end_reason")
         != EndReason.COMPLETE.value
+    ) or (
+        not runtime_result.value
+        and runtime_result.snapshot.get("timers", {}).get("remaining_time_over_s") == 0
     ):
         snapshot = _publish_transition(runtime_result)
         print("[game] 디페스타 무시 — 타이머 만료")
