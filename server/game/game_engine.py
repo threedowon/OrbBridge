@@ -356,7 +356,8 @@ class GameEngine:
 
         self._dfesta_presses += 1
         self._revision += 1
-        if self._dfesta_presses >= self.dfesta_presses_required:
+        # Timed games remain playable after DFESTA; their original deadline stays fixed.
+        if self.time_over_s is None and self._dfesta_presses >= self.dfesta_presses_required:
             self._enter_resetting(EndReason.COMPLETE, now)
         return True
 

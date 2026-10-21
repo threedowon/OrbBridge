@@ -85,7 +85,7 @@ def test_lifecycle_and_placement_use_cached_engine_snapshot():
 def test_command_state_changes_are_published_in_caller_order():
     transitions = []
     runtime = GameRuntime(
-        make_engine(answers={"1": "C"}),
+        make_engine(answers={"1": "C"}, time_over_s=None),
         on_state_change=lambda old, new, snapshot: transitions.append(
             (old, new, snapshot["end_reason"])
         ),
@@ -325,8 +325,8 @@ def test_runtime_preserves_end_reason_in_snapshot():
 
 
 
-def test_dfesta_debug_requirement_keeps_game_running_until_999_presses():
-    runtime = GameRuntime(make_engine(answers={"1": "C"}))
+def test_dfesta_debug_requirement_keeps_untimed_game_running_until_999_presses():
+    runtime = GameRuntime(make_engine(answers={"1": "C"}, time_over_s=None))
     runtime.start()
     try:
         runtime.start_game()

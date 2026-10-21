@@ -173,7 +173,7 @@ def test_running_placement_is_judged_correct_wrong_rest_or_unknown():
     )
 
 
-def test_correct_answer_waits_for_dfesta_before_resetting():
+def test_correct_answer_dfesta_keeps_timed_game_running():
     engine = make_engine(FakeClock())
     start_running(engine)
 
@@ -192,8 +192,8 @@ def test_correct_answer_waits_for_dfesta_before_resetting():
     }
 
     assert engine.press_dfesta() is True
-    assert engine.state is GameState.RESETTING
-    assert engine.end_reason is EndReason.COMPLETE
+    assert engine.state is GameState.RUNNING
+    assert engine.end_reason is None
 
 
 def test_extra_wrong_orb_blocks_dfesta_completion_until_removed():
@@ -206,8 +206,8 @@ def test_extra_wrong_orb_blocks_dfesta_completion_until_removed():
     assert engine.press_dfesta() is False
     assert engine.remove_orb(orb_id="wrong", slave=1, cell=2)
     assert engine.press_dfesta() is True
-    assert engine.state is GameState.RESETTING
-    assert engine.end_reason is EndReason.COMPLETE
+    assert engine.state is GameState.RUNNING
+    assert engine.end_reason is None
 
 
 def test_configured_dfesta_count_requires_every_press():
@@ -215,6 +215,7 @@ def test_configured_dfesta_count_requires_every_press():
         FakeClock(),
         {"1": "C"},
         dfesta_presses_required=2,
+        time_over_s=None,
     )
     start_running(engine)
     engine.add_orb(orb_id="orb-c", slave=1, cell=1)
@@ -528,3 +529,20 @@ def test_activity_after_intro_resets_idle_only_and_manual_reset_does_not_wait():
     assert engine.snapshot()["timers"]["remaining_time_over_s"] == 20
     engine.reset()
     assert engine.state is GameState.RESETTING
+
+
+def test_dfesta_does_not_extend_timed_game_and_expiry_blocks_playback():
+    clock = FakeClock()
+    engine = make_engine(clock, {"1": "C"}, time_over_s=60, idle_s=None)
+    start_running(engine)
+    engine.add_orb(orb_id="a", slave=1, cell=1)
+    clock.advance(20)
+    assert engine.press_dfesta()
+    assert engine.snapshot()["timers"]["remaining_time_over_s"] == 40
+    engine.remove_orb(slave=1, cell=1)
+    engine.add_orb(orb_id="a", slave=1, cell=1)
+    clock.advance(39)
+    assert engine.press_dfesta()
+    clock.advance(1)
+    assert not engine.press_dfesta()
+    assert engine.end_reason is EndReason.TIME_OVER

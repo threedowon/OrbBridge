@@ -455,9 +455,7 @@ void applyHintCommand(const HintCommandParser& command) {
     hintFadeMs = command.duration - trayRiseMs < 800 ? command.duration - trayRiseMs : 800;
     hintFrameAt = hintStarted;
     memset(hintRingLit, 0, sizeof(hintRingLit));
-    for (int i = 0; i < BUS_COUNT; ++i)
-      setRing(i, i % 8 == 0 ? orbGold(255) : 0, false);
-    ringLow.show(); ringHigh.show();
+    fillAll(0);  // All rows fade in together from black.
     return;
   }
   trayGlow = false;
@@ -546,16 +544,13 @@ void updateHint() {
     float progress = !trayRiseMs || elapsed >= trayRiseMs ? 1.0f : float(elapsed) / trayRiseMs;
     if (trayEasing == 1) progress *= progress;
     else if (trayEasing == 2) progress = 1.0f - (1.0f - progress) * (1.0f - progress);
-    const int topPitch = int(progress * 7);
     const uint32_t fadeStart = hintDuration - hintFadeMs;
-    uint8_t level = 255;
+    uint8_t level = uint8_t(progress * 255);
     if (elapsed >= fadeStart)
       level = elapsed >= hintDuration ? 0 : uint32_t(255) * (hintDuration - elapsed) / hintFadeMs;
     // Avoid the red tail caused by global-brightness channel quantization.
     if (level < 40) level = 0;
-    for (int i = 0; i < BUS_COUNT; ++i)
-      setRing(i, i % 8 <= topPitch ? orbGold(level) : 0, false);
-    ringLow.show(); ringHigh.show();
+    fillAll(orbGold(level));
     // Hold blackout until the first hint starts, just as before.
     if (elapsed >= hintDuration) trayGlow = false;
     return;
