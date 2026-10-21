@@ -131,6 +131,7 @@ HintCommandParser usbHintParser;
 bool hintActive = false;
 bool playbackCursor = false;
 bool dfestaCursor = false;
+uint8_t dfestaMasks[2] = {0, 0};
 uint16_t breathMask = 0;
 uint32_t breathStarted = 0, breathRenewed = 0, breathFrame = 0;
 bool hintNoteLit = false;
@@ -138,6 +139,7 @@ uint32_t hintStarted = 0;
 uint16_t hintDuration = 0;
 uint16_t hintFadeMs = 600;
 bool trayGlow = false;
+uint16_t trayRiseMs = 0;
 bool hintEnding = false;
 uint32_t hintEndStarted = 0;
 bool hintRingLit[BUS_COUNT] = {};
@@ -162,6 +164,9 @@ void applyEffectOnce();   // 전방 선언
 void runEffectAnim();
 
 void applyLedCommand(int effect) {
+  dfestaCursor = false;
+  dfestaMasks[0] = dfestaMasks[1] = 0;
+  breathMask = 0;
   hintActive = false;
   ledReceivedMs = millis();
   ledEffect = effect;
@@ -385,6 +390,8 @@ void fillAll(uint32_t color) {
 }
 
 void stopHint() {
+  dfestaMasks[0] = dfestaMasks[1] = 0;
+  dfestaCursor = false;
   if (!hintActive) return;
   hintActive = false;
   playbackCursor = false;
@@ -411,31 +418,59 @@ void applyHintCommand(const HintCommandParser& command) {
     return;
   }
   if (command.tray) {
+    dfestaCursor = false;
+    dfestaMasks[0] = dfestaMasks[1] = 0;
     trayGlow = true;
     hintActive = true;
     playbackCursor = false;
     hintEnding = false;
     hintStarted = millis();
-    hintFadeMs = command.duration < 800 ? command.duration : 800;
-    const uint16_t holdMs = command.duration - hintFadeMs;
-    for (int i = 0; i < BUS_COUNT; ++i) {
-      hintRingLit[i] = true;
-      hintRingStarted[i] = hintStarted;
-      hintRingDuration[i] = holdMs;
-      hintRingBrightness[i] = 255;
-    }
-    fillAll(Adafruit_NeoPixel::Color(255, 147, 41));
+    hintDuration = command.duration;
+    // Keep the original total duration; shorten both phases for short delays.
+    trayRiseMs = command.duration / 2 < 800 ? command.duration / 2 : 800;
+    hintFadeMs = command.duration - trayRiseMs < 800 ? command.duration - trayRiseMs : 800;
+    hintFrameAt = hintStarted;
+    memset(hintRingLit, 0, sizeof(hintRingLit));
+    for (int i = 0; i < BUS_COUNT; ++i)
+      setRing(i, i % 8 == 0 ? orbGold(255) : 0, false);
+    ringLow.show(); ringHigh.show();
     return;
   }
   trayGlow = false;
   if (!command.playback) hintFadeMs = command.fadeMs;
   if (!command.duration) { stopHint(); return; }
+  // H4: clear accumulated result and hold blackout until a new LED session.
+  if (!command.playback && !command.slave && command.duration == 4) {
+    dfestaMasks[0] = dfestaMasks[1] = 0;
+    breathMask = 0;
+    hintActive = playbackCursor = dfestaCursor = true;
+    fillAll(0);
+    return;
+  }
   // Control values: 1=new session, 2=skip expired cue, 3=finish after tails.
   if (!command.playback && !command.slave && command.duration == 2) return;
   if (!command.playback && !command.slave && command.duration == 3) {
     if (hintActive && !playbackCursor) { hintEnding = true; hintEndStarted = millis(); }
     return;
   }
+  if (command.dfesta) {
+    if (!dfestaCursor) dfestaMasks[0] = dfestaMasks[1] = 0;
+    hintActive = playbackCursor = dfestaCursor = true;
+    hintEnding = false;
+    if (command.slave == slaveId) {
+      const int column = command.cell - 1;
+      int answer = -1;
+      for (int pitch = 0; pitch < 8; ++pitch)
+        if (command.mask & (1 << pitch)) answer = pitch;
+      // Do not relight a column whose answer egg was already removed.
+      dfestaMasks[column] = answer >= 0 && hasLast[column * 8 + answer] ? command.mask : 0;
+    }
+    for (int i = 0; i < BUS_COUNT; ++i)
+      setRing(i, (dfestaMasks[i / 8] & (1 << (i % 8))) ? orbGold(255) : 0, false);
+    ringLow.show(); ringHigh.show();
+    return;
+  }
+  dfestaMasks[0] = dfestaMasks[1] = 0;
   const bool resetRings = !hintActive || playbackCursor || command.playback || !command.slave;
   if (resetRings) {
     memset(hintRingLit, 0, sizeof(hintRingLit));
@@ -480,7 +515,26 @@ void applyHintCommand(const HintCommandParser& command) {
 
 void updateHint() {
   if (!hintActive) return;
+  if (dfestaCursor) return;  // Result remains until egg removal or explicit reset.
   const uint32_t elapsed = uint32_t(millis() - hintStarted);
+  if (trayGlow) {
+    if (uint32_t(millis() - hintFrameAt) < 20) return;
+    hintFrameAt = millis();
+    const int topPitch = !trayRiseMs || elapsed >= trayRiseMs ? 7 : elapsed * 7 / trayRiseMs;
+    const uint32_t fadeStart = hintDuration - hintFadeMs;
+    uint8_t level = 255;
+    if (elapsed >= fadeStart)
+      level = elapsed >= hintDuration ? 0 : uint32_t(255) * (hintDuration - elapsed) / hintFadeMs;
+    // Avoid the red tail caused by global-brightness channel quantization.
+    if (level < 40) level = 0;
+    for (int i = 0; i < BUS_COUNT; ++i)
+      setRing(i, i % 8 <= topPitch ? orbGold(level) : 0, false);
+    ringLow.show(); ringHigh.show();
+    // Hold blackout until the first hint starts, just as before.
+    if (elapsed >= hintDuration) trayGlow = false;
+    return;
+  }
+
   if (playbackCursor && elapsed >= hintDuration) {
     if (dfestaCursor) {
       if (hintNoteLit) { fillAll(0); hintNoteLit = false; }
@@ -634,6 +688,17 @@ void onAdded(int i, const byte addr[8]) {
 }
 
 void onRemoved(int i, const byte addr[8]) {
+  if (hintActive && dfestaCursor) {
+    const int column = i / 8;
+    int answer = -1;
+    for (int pitch = 0; pitch < 8; ++pitch)
+      if (dfestaMasks[column] & (1 << pitch)) answer = pitch;
+    if (answer == i % 8) {
+      dfestaMasks[column] = 0;
+      for (int pitch = 0; pitch < 8; ++pitch) setRing(column * 8 + pitch, 0, false);
+      ringLow.show(); ringHigh.show();
+    }
+  }
   setSlotLevel(i, 0);
   sendFrameRepeated(T_REMOVED, i + 1, addr);
 }

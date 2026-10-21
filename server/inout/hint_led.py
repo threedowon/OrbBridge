@@ -12,12 +12,13 @@ class HintLedBridge:
         self.latest_run = -1
         self.mode = None
         self.tray_active = False
+        self.dfesta_held = False
         self.breath_command = None
         self.breath_sent_at = 0
 
     def sync_ready(self, snapshot, playback, inspection=False):
         columns = ['0'] * 12
-        if (not inspection and snapshot.get('completion', {}).get('waiting_for_dfesta')
+        if (not inspection and not self.dfesta_held and snapshot.get('completion', {}).get('waiting_for_dfesta')
                 and not playback.get('active') and self.run_id is None):
             for cell in snapshot.get('cells', {}).values():
                 if cell.get('result') != 'correct':
@@ -30,6 +31,16 @@ class HintLedBridge:
         if command != self.breath_command or (command != 'B000000000000' and now - self.breath_sent_at >= 0.5):
             if self.send_line(command):
                 self.breath_command, self.breath_sent_at = command, now
+
+    def observe_snapshot(self, previous, current, action):
+        tray_before = previous.get('tray', {})
+        tray_after = current.get('tray', {})
+        removed = (tray_before.get('present') is True and tray_after.get('present') is not True)
+        if self.dfesta_held and (action == 'reset' or removed):
+            # Ignore subsequent queued beats/end from this run. H4 holds blackout.
+            self.run_id = None
+            self.dfesta_held = False
+            self.send_line('H0,0,4')
 
     def tray_transition(self, previous, current, snapshot):
         if current == 'RUNNING' and previous != 'RUNNING':
@@ -53,6 +64,7 @@ class HintLedBridge:
             self.tray_active = False
             was_active = self.run_id is not None
             self.mode = event["mode"]
+            self.dfesta_held = self.mode == "dfesta"
             enabled = self.mode in ("play", "dfesta") or (event.get("hint_led") and self.mode == "listen")
             self.run_id = run if enabled else None
             if self.run_id is not None:
@@ -65,7 +77,9 @@ class HintLedBridge:
             return
         if kind == "end":
             # A natural hint ending lets the final note decay; cancellation is immediate.
-            self.send_line("H0,0,3" if self.mode == "listen" and not event.get("cancelled") else "H0,0,0")
+            if self.mode != "dfesta" or event.get("cancelled"):
+                self.dfesta_held = False
+                self.send_line("H0,0,3" if self.mode == "listen" and not event.get("cancelled") else "H0,0,0")
             self.run_id = None
         elif kind == "beat":
             notes = event.get("notes") or []
@@ -78,8 +92,6 @@ class HintLedBridge:
                 if duration > 0 and 0 <= step < 12:
                     mask = (1 << (pitch + 1)) - 1 if type(pitch) is int and 0 <= pitch < 8 else 0
                     self.send_line(f"Q{step // 2 + 1},{step % 2 + 1},{mask},{duration}")
-                else:
-                    self.send_line("H0,0,1")
                 return
             if self.mode == "play" and duration > 0 and 0 <= step < 12:
                 mask = 0

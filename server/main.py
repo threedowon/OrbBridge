@@ -365,6 +365,7 @@ def get_game_runtime() -> GameRuntime:
 
 
 def _on_game_snapshot(previous: dict, current: dict, action: str) -> None:
+    _hint_led.observe_snapshot(previous, current, action)
     if _game_events is not None:
         _game_events.observe(previous, current, action)
 

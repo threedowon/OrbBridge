@@ -204,3 +204,40 @@ def test_play_replaced_by_hint_ignores_stale_beats_and_end():
     assert sent == before
     bridge.handle(beat(run=2))
     assert sent[-1] == 'H1,1,460,600'
+
+def test_dfesta_natural_end_holds_and_tray_removal_blacks_out_ignoring_late_beats():
+    sent = []
+    bridge = HintLedBridge(sent.append, lambda: 10)
+    bridge.handle(start(mode='dfesta', hint=False))
+    event = beat(step=0, pitch=4)
+    event['answer_pitch'] = 4
+    bridge.handle(event)
+    bridge.handle(dict(type='end', run_id=1, cancelled=False))
+    assert sent[-1] == 'Q1,1,31,460'
+    bridge.sync_ready({'completion': {'waiting_for_dfesta': True}, 'cells': {
+        '1:5': {'slave': 1, 'cell': 5, 'result': 'correct'}}}, {})
+    assert sent[-1] == 'B000000000000'
+    bridge.observe_snapshot({'tray': {'present': True}}, {'tray': {'present': False}}, 'tray')
+    assert sent[-1] == 'H0,0,4,600'
+    count = len(sent)
+    bridge.handle(event)
+    assert len(sent) == count
+
+
+def test_reset_clears_dfesta_during_playback_and_ignores_end():
+    sent = []
+    bridge = HintLedBridge(sent.append)
+    bridge.handle(start(mode='dfesta', hint=False))
+    bridge.observe_snapshot({}, {}, 'reset')
+    assert sent[-1] == 'H0,0,4,600'
+    bridge.handle(dict(type='end', run_id=1, cancelled=True))
+    assert sent[-1] == 'H0,0,4,600'
+
+
+def test_natural_completion_state_does_not_clear_dfesta():
+    sent = []
+    bridge = HintLedBridge(sent.append)
+    bridge.handle(start(mode='dfesta', hint=False))
+    bridge.observe_snapshot({'tray': {'present': True}},
+                            {'tray': {'present': True}, 'state': 'RESETTING'}, 'dfesta')
+    assert sent == ['H0,0,1,600']
