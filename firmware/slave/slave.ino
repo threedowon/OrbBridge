@@ -351,16 +351,15 @@ void updateLed() {
   }
 }
 
-void setRing(int busIndex, uint32_t color) {
+void setRing(int busIndex, uint32_t color, bool showNow = true) {
   const LedMap& m = LED_MAP[busIndex];
   if (m.strip < 0) return;                        // 이 슬롯은 LED 없음 → 무시
   Adafruit_NeoPixel& strip = (m.strip == 0) ? ringLow : ringHigh;
   for (int j = 0; j < LEDS_PER_RING; j++) strip.setPixelColor(m.offset + j, color);
-  strip.show();
+  if (showNow) strip.show();
 }
 
-// Keep PLAY's dim and bright rings on the same gold RGB ratio.
-// Avoid very low channel values, where rounding and LED response alter the hue.
+// Use the same gold RGB ratio for playback and occupancy.
 uint32_t playGold(uint8_t brightness) {
   return Adafruit_NeoPixel::Color(
     brightness,
@@ -393,7 +392,7 @@ void stopHint() {
   playbackCursor = false;
   hintEnding = false;
   memset(hintRingLit, 0, sizeof(hintRingLit));
-  fillAll(0);
+  if (ledEffect != 0) fillAll(0);
   applyEffectOnce();
 }
 
@@ -439,7 +438,7 @@ void applyHintCommand(const HintCommandParser& command) {
   const bool resetRings = !hintActive || playbackCursor || command.playback || !command.slave;
   if (resetRings) {
     memset(hintRingLit, 0, sizeof(hintRingLit));
-    fillAll(0);
+    if (!command.playback) fillAll(0);
   }
   hintEnding = false;
   hintActive = true;
@@ -453,16 +452,18 @@ void applyHintCommand(const HintCommandParser& command) {
     for (int i = 0; i < BUS_COUNT; ++i) {
       uint8_t level = dfestaCursor ? 0 : ringLevel[i];
       setRing(i, Adafruit_NeoPixel::Color(level, uint16_t(147) * level / 255,
-                                        uint16_t(41) * level / 255));
+                                        uint16_t(41) * level / 255), false);
     }
     if (command.slave == slaveId) {
       for (int pitch = 0; pitch < 8; ++pitch) {
         const bool sounding = command.mask & (1 << pitch);
-        setRing((command.cell - 1) * 8 + pitch, sounding
+        setRing((command.cell - 1) * 8 + pitch, (!dfestaCursor || sounding)
           ? playGold(255)
-          : (dfestaCursor ? 0 : playGold(64)));
+          : 0, false);
       }
     }
+    ringLow.show();
+    ringHigh.show();
     return;
   }
   if (command.slave == slaveId) {
