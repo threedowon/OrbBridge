@@ -346,6 +346,7 @@ class PlaybackScheduler:
         *,
         send_notes: Callable[[list[dict]], object],
         publish_event: Callable[[dict], object],
+        stop_notes: Callable[[list[dict]], object] | None = None,
         clock: Callable[[], float] = time.perf_counter,
     ) -> None:
         if not callable(send_notes) or not callable(publish_event):
@@ -354,6 +355,7 @@ class PlaybackScheduler:
             raise TypeError("clock must be callable")
         self._send_notes = send_notes
         self._publish_event = publish_event
+        self._stop_notes = stop_notes
         self._clock = clock
         self._lock = threading.Lock()
         self._run_id = 0
@@ -466,11 +468,11 @@ class PlaybackScheduler:
             "step_count": len(plan.cues),
         }
 
-    def cancel(self) -> None:
+    def cancel(self, *, run_id: int | None = None) -> None:
         """호출한 런타임 스레드를 막지 않고 취소를 요청한다."""
 
         with self._lock:
-            if self._cancel is not None:
+            if self._cancel is not None and (run_id is None or run_id == self._run_id):
                 self._cancel.set()
 
     def close(self, timeout: float = 2.0) -> None:
@@ -559,6 +561,7 @@ class PlaybackScheduler:
     ) -> None:
         started_at = self._clock()
         cancelled = False
+        sent_notes: list[dict] = []
 
         for cue in plan.cues:
             if not self._wait_until(started_at + cue.offset_s, cancel):
@@ -568,6 +571,9 @@ class PlaybackScheduler:
             # MIDI를 먼저 전송한다. 표시/진단 작업은 전송 뒤, 별도 publisher에서.
             dispatched = self._clock()
             results = self._safe_send(cue.notes)
+            if isinstance(results, list):
+                sent_notes.extend(result for result in results
+                                  if isinstance(result, dict) and result.get("ok"))
             finished = self._clock()
             self._record_timing(
                 run_id, cue, started_at + cue.offset_s, dispatched, finished, results,
@@ -586,6 +592,14 @@ class PlaybackScheduler:
 
         if not cancelled:
             cancelled = not self._wait_until(started_at + plan.duration_s, cancel)
+
+        # End sustained DFESTA notes too. This runs after any in-flight send,
+        # off the game runtime thread, and before publishing playback/end.
+        if cancelled and plan.mode is PlaybackMode.DFESTA and self._stop_notes is not None:
+            try:
+                self._stop_notes(sent_notes)
+            except Exception:
+                LOGGER.exception("scheduler MIDI stop failed")
 
         self._safe_publish(
             {

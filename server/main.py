@@ -246,9 +246,12 @@ def get_playback_scheduler() -> PlaybackScheduler:
     global _playback_scheduler
     with _scheduler_lock:
         if _playback_scheduler is None:
+            from server.inout.midi_out import stop_notes
+
             _playback_scheduler = PlaybackScheduler(
                 send_notes=_scheduler_send_notes,
                 publish_event=_scheduler_publish_event,
+                stop_notes=stop_notes,
             )
         return _playback_scheduler
 
@@ -365,6 +368,14 @@ def get_game_runtime() -> GameRuntime:
 
 
 def _on_game_snapshot(previous: dict, current: dict, action: str) -> None:
+    if action in ("add_orb", "remove_orb") and current.get("is_correct") is False:
+        with _scheduler_lock:
+            scheduler = _playback_scheduler
+        playback = scheduler.display_snapshot() if scheduler is not None else {}
+        if playback.get("active") and playback.get("mode") == PlaybackMode.DFESTA.value:
+            run_id = playback["run_id"]
+            _hint_led.cancel_dfesta(run_id)
+            scheduler.cancel(run_id=run_id)
     _hint_led.observe_snapshot(previous, current, action)
     if _game_events is not None:
         _game_events.observe(previous, current, action)

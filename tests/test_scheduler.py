@@ -207,6 +207,43 @@ def test_close_is_idempotent_and_rejects_new_playback():
         scheduler.start("listen", parse_melody(melody_raw()))
 
 
+def test_dfesta_cancel_closes_in_flight_notes_before_end_without_next_beat():
+    entered, release, ended = threading.Event(), threading.Event(), threading.Event()
+    batches, stopped, events = [], [], []
+    handles = [{"ok": True, "generation": 1}]
+
+    def send(notes):
+        batches.append(notes)
+        entered.set()
+        assert release.wait(2)
+        return handles
+
+    def publish(event):
+        events.append(event)
+        if event['type'] == 'end':
+            events.append({'stopped_at_end': list(stopped)})
+            ended.set()
+
+    scheduler = PlaybackScheduler(send_notes=send, publish_event=publish, stop_notes=stopped.extend)
+    try:
+        started = scheduler.start('dfesta', parse_melody(melody_raw()), cells())
+        assert entered.wait(1)
+        scheduler.cancel(run_id=started['run_id'] - 1)
+        assert scheduler.display_snapshot()['active']
+        scheduler.cancel(run_id=started['run_id'])
+        assert not scheduler.display_snapshot()['active']
+        assert not stopped  # Wait for the in-flight send, without blocking cancel().
+        release.set()
+        assert ended.wait(1)
+        assert len(batches) == 1
+        assert stopped == handles
+        assert events[-2]['cancelled'] is True
+        assert events[-1]['stopped_at_end'] == handles
+    finally:
+        release.set()
+        scheduler.close()
+
+
 @pytest.mark.parametrize("blocked_event", ["start", "beat"])
 def test_slow_display_cannot_hold_up_midi(blocked_event):
     entered = threading.Event()

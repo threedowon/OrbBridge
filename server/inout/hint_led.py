@@ -1,9 +1,20 @@
 """Map hints and PLAY beat cursors to timed slot ring commands."""
 import time
+import threading
+from functools import wraps
+
+
+def _serialized(method):
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return wrapped
 
 
 class HintLedBridge:
     def __init__(self, send_line, clock=time.perf_counter, *, fade_ms=600, tray_easing="none"):
+        self._lock = threading.RLock()
         if type(fade_ms) is not int or not 0 <= fade_ms <= 3000:
             raise ValueError("hint_led_fade_ms must be an integer from 0 to 3000")
         self.send_line = lambda command: send_line(f"{command},{fade_ms}" if command.startswith('H') else command)
@@ -19,6 +30,7 @@ class HintLedBridge:
         self.breath_command = None
         self.breath_sent_at = 0
 
+    @_serialized
     def sync_ready(self, snapshot, playback, inspection=False):
         columns = ['0'] * 12
         if (not inspection and not self.dfesta_held and snapshot.get('completion', {}).get('waiting_for_dfesta')
@@ -35,6 +47,18 @@ class HintLedBridge:
             if self.send_line(command):
                 self.breath_command, self.breath_sent_at = command, now
 
+    @_serialized
+    def cancel_dfesta(self, run_id):
+        # The scheduler's start/beat callbacks may still be queued. Invalidate
+        # this run before releasing the lights so delayed cues cannot relight it.
+        if run_id < self.latest_run:
+            return
+        self.latest_run = run_id
+        self.run_id = None
+        self.dfesta_held = False
+        self.send_line('H0,0,5')
+
+    @_serialized
     def observe_snapshot(self, previous, current, action):
         game_tray_removed = previous.get('state') == 'RUNNING' and (current.get('end_reason') or current.get('cleanup_end_reason')) == 'tray_removed'
         if (self.dfesta_held and action == 'reset') or game_tray_removed:
@@ -43,13 +67,14 @@ class HintLedBridge:
             self.dfesta_held = False
             self.tray_active = False
             self.send_line('H0,0,4')
-        elif self.dfesta_held and current.get('state') == 'RUNNING' and current.get('is_correct') is False:
+        elif self.dfesta_held and current.get('is_correct') is False:
             # Stop this run's visual cues, including queued beats/end, while the
             # slave fades the accumulated result back to ordinary orb sensing.
             self.run_id = None
             self.dfesta_held = False
             self.send_line('H0,0,5')
 
+    @_serialized
     def tray_transition(self, previous, current, snapshot):
         if current == 'RUNNING' and previous != 'RUNNING':
             initial = snapshot.get('initial_hint') or {}
@@ -62,6 +87,7 @@ class HintLedBridge:
             self.tray_active = False
             self.send_line('H0,0,0')
 
+    @_serialized
     def handle(self, event):
         run = int(event["run_id"])
         kind = event["type"]

@@ -726,7 +726,9 @@ void runEffectAnim() {
     if (uint32_t(millis() - breathFrame) < 30) return;
     breathFrame = millis();
     const float phase = float(uint32_t(breathFrame - breathStarted) % 2000) / 2000.0f;
-    const uint8_t level = 32 + uint8_t(223 * (0.5f - 0.5f * cosf(phase * 6.2831853f)));
+    // Enter at the normal occupied level (255), then dim smoothly. Starting
+    // at the trough makes every reactivation look like a brief blackout.
+    const uint8_t level = 32 + uint8_t(223 * (0.5f + 0.5f * cosf(phase * 6.2831853f)));
     for (int i = 0; i < BUS_COUNT; ++i)
       if (breathMask & (uint16_t(1) << i))
         setRing(i, hasLast[i] && !missing[i] ? orbGold(level) : 0);

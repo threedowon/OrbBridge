@@ -42,7 +42,9 @@ class FakeScheduler:
             "mode": self.starts[-1]["mode"] if self.starts else None,
         }
 
-    def cancel(self):
+    def cancel(self, *, run_id=None):
+        if run_id is not None and run_id != len(self.starts):
+            return
         self.cancel_count += 1
 
     def display_snapshot(self):
@@ -276,6 +278,85 @@ def test_dfesta_release_allows_new_placements_then_combined_tray_cleanup(tray_ma
     assert writes[-1]["text"] == "GOODBYE"
 
 
+@pytest.mark.parametrize('break_solution', ['remove', 'wrong_add'])
+def test_broken_dfesta_stops_sound_and_leds_then_allows_play(tray_main, monkeypatch, tmp_path, break_solution):
+    import threading
+    from server.game.game_engine import GameEngine
+    from server.game.scheduler import parse_melody
+    from server.inout.hint_led import HintLedBridge
+    from test_midi_out import _load_midi, _mapping_file
+
+    main, clock, _ = tray_main
+    monkeypatch.setattr(main, '_new_game_engine', lambda: GameEngine(
+        {'1': 'C', '2': 'D'}, time_over_s=60, idle_s=30, clock=lambda: clock[0]))
+    main.set_tray({'present': True})
+    main._update_matrix_display()
+    runtime = main.get_game_runtime()
+    runtime.add_orb(orb_id='a', slave=1, cell=1, voice='test_1')
+    runtime.add_orb(orb_id='b', slave=1, cell=10, voice='test_2')
+    midi, fake = _load_midi(monkeypatch, ['voice'])
+    mapping = _mapping_file(tmp_path, {'test_1': {'port': 'voice', 'channel': 1},
+                                      'test_2': {'port': 'voice', 'channel': 2}})
+    assert midi.ensure_init(mapping)[0]
+    sent = []
+    bridge = HintLedBridge(lambda command: sent.append(command) or True)
+    monkeypatch.setattr(main, '_hint_led', bridge)
+    monkeypatch.setattr(main, 'playback_melody', parse_melody({
+        'bpm': 60, 'steps': [{'note': 'C4'}, {'note': 'D4'}]}))
+    first_beat, ended = threading.Event(), threading.Event()
+    events = []
+    publish = main._scheduler_publish_event
+    def on_event(event):
+        publish(event)
+        events.append(event)
+        if event['type'] == 'beat':
+            first_beat.set()
+        if event['type'] == 'end':
+            ended.set()
+    monkeypatch.setattr(main, '_scheduler_publish_event', on_event)
+    main._playback_scheduler = None  # Exercise the production scheduler and MIDI wiring.
+    try:
+        assert main.request_dfesta()['ok']
+        assert first_beat.wait(1)
+        assert any(command.startswith('Q') for command in sent)
+        if break_solution == 'remove':
+            runtime.remove_orb(slave=1, cell=1)
+        else:
+            runtime.add_orb(orb_id='wrong', slave=1, cell=2, voice='test_1')
+        assert ended.wait(1)
+        assert events[-1]['cancelled'] is True
+        assert len([e for e in events if e['type'] == 'beat']) == 1
+        assert sent[-1] == 'H0,0,5,600'
+        assert not bridge.dfesta_held
+        assert not main._playback_scheduler.display_snapshot()['active']
+        assert not midi._active_notes
+        assert len([m for m in fake.ports['voice'].messages if m.type == 'note_off']) == 2
+        assert runtime.snapshot()['state'] == 'RUNNING'
+        assert main.request_play()['ok']
+        if break_solution == 'remove':
+            runtime.add_orb(orb_id='a', slave=1, cell=1, voice='test_1')
+        else:
+            runtime.remove_orb(slave=1, cell=2)
+        assert main.request_dfesta()['ok']
+    finally:
+        if main._playback_scheduler is not None:
+            main._playback_scheduler.close()
+        midi.shutdown()
+
+
+@pytest.mark.parametrize('mode', ['play', 'listen'])
+def test_breaking_solution_does_not_cancel_other_playback(tray_main, mode):
+    main, _, _ = tray_main
+    main.set_tray({'present': True})
+    main._update_matrix_display()
+    runtime = main.get_game_runtime()
+    runtime.add_orb(orb_id='a', slave=1, cell=1)
+    (main.request_play if mode == 'play' else main.request_listen)()
+    before = main._playback_scheduler.cancel_count
+    runtime.remove_orb(slave=1, cell=1)
+    assert main._playback_scheduler.cancel_count == before
+
+
 @pytest.mark.parametrize("return_at", [0.5, 4.5, None])
 def test_admin_tray_end_to_end_cleanup_and_next_player(tray_main, return_at):
     main, clock, writes = tray_main
@@ -359,8 +440,9 @@ def test_placing_tray_during_cleanup_does_not_queue_a_later_start(tray_main):
     assert main.get_game_state()["state"] == "RUNNING"
 
 
-@pytest.mark.parametrize("melody_id", ["dynamite", "Iam", "biplane"])
-def test_completed_game_starts_harmony_plan_and_keeps_final_dfesta(monkeypatch, melody_id):
+@pytest.mark.parametrize("melody_id", ["BTS-DYNAMITE", "IVE-I_AM", "CORTIS-JOYRIDE"])
+def test_completed_game_keeps_final_dfesta_until_orbs_are_removed(monkeypatch, melody_id):
+    from server.game.game_engine import GameEngine
     from server.game.scheduler import build_plan
 
     main = _load_main_module()
@@ -368,6 +450,8 @@ def test_completed_game_starts_harmony_plan_and_keeps_final_dfesta(monkeypatch, 
     config["melody"] = melody_id
     config["melody_rotation"] = {"mode": "fixed", "playlist": [melody_id]}
     monkeypatch.setattr(main, "load_config", lambda: deepcopy(config))
+    monkeypatch.setattr(main, "_new_game_engine", lambda: GameEngine(
+        main.answer_sequence, time_over_s=None, idle_s=None))
     monkeypatch.setattr(main, "load_mapping", lambda: {
         f"ORB-{i}": {"voice": f"voice_{i}"} for i in range(12)
     })
@@ -395,7 +479,7 @@ def test_completed_game_starts_harmony_plan_and_keeps_final_dfesta(monkeypatch, 
                 assert len(cue.notes) == result["game"]["cell_count"]
         main.collect_all_orbs()
         assert main.get_game_state()["state"] == "READY"
-        assert scheduler.cancel_count == previous_cancels
+        assert scheduler.cancel_count > previous_cancels
     finally:
         if main._game_runtime is not None:
             main._game_runtime.close()

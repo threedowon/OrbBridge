@@ -149,6 +149,35 @@ def test_retrigger_invalidates_the_previous_note_off(monkeypatch, tmp_path):
         midi_out.shutdown()
 
 
+def test_stop_playback_notes_preserves_retriggered_notes_and_event_gate(monkeypatch, tmp_path):
+    midi, fake = _load_midi(monkeypatch, ['voice', 'event'])
+    mapping = _mapping_file(tmp_path, {'test_1': {'port': 'voice', 'channel': 1},
+                                      '_event': {'port': 'event', 'channel': 1}})
+    try:
+        assert midi.ensure_init(mapping)[0]
+        old = midi.trigger_many([{'voice': 'test_1', 'pitch': 0, 'duration_ms': 60},
+                                 {'voice': 'test_1', 'pitch': 2, 'duration_ms': 2000}])
+        new = midi.trigger('test_1', 0, duration_ms=2000)
+        unrelated = midi.trigger('test_1', 4, duration_ms=2000)
+        midi.event_note(64, duration_ms=None)
+        port = fake.ports['voice']
+        before = len(port.messages)
+        midi.stop_notes(old)
+        assert [(m.type, m.note) for m in port.messages[before:]] == [('note_off', 38)]
+        assert ('voice', 0, 36) in midi._active_notes
+        assert ('voice', 0, 40) in midi._active_notes
+        assert ('event', 0, 64) in midi._active_notes
+        assert ('voice', 0, 38) not in midi._active_notes
+        time.sleep(0.09)  # The cancelled note's old timer must not stop its replacement.
+        assert len(port.messages) == before + 1
+        midi.stop_notes(old)
+        assert len(port.messages) == before + 1
+        midi.stop_notes([new, unrelated])
+        assert [(m.type, m.note) for m in port.messages[-2:]] == [('note_off', 36), ('note_off', 40)]
+    finally:
+        midi.shutdown()
+
+
 def test_trigger_many_sends_different_ports_concurrently(monkeypatch, tmp_path):
     barrier = threading.Barrier(2)
     midi_out, fake = _load_midi(monkeypatch, ["alpha", "beta"], barrier)

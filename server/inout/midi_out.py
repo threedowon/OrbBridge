@@ -436,6 +436,7 @@ def _send_port_group(group: list[_PreparedNote]) -> None:
         for item in group:
             key = (item.port_name, item.channel, item.note)
             generation, was_active = _activate_note(key, item.duration_ms)
+            item.meta["generation"] = generation
             try:
                 # 같은 음 재트리거 전에 이전 음을 닫아 Ableton의 note 상태를 정리한다.
                 if was_active:
@@ -458,6 +459,35 @@ def _send_port_group(group: list[_PreparedNote]) -> None:
                 _invalidate_generation(key, generation)
                 item.meta["ok"] = False
                 item.meta["error"] = str(exc)
+
+
+def stop_notes(notes: list[dict]) -> None:
+    """Stop only the MIDI note instances emitted by a cancelled playback run."""
+    if not notes:
+        return
+    import mido
+
+    with _init_lock:
+        for item in notes:
+            generation = item.get("generation")
+            if generation is None:
+                continue
+            key = (item["port"], item["channel"] - 1, item["note"])
+            port = _ports.get(key[0])
+            lock = _port_locks.get(key[0])
+            if port is None or lock is None:
+                continue
+            with lock:
+                with _note_condition:
+                    # A newer playback or orb placement may have retriggered it.
+                    if _active_notes.get(key) != generation:
+                        continue
+                try:
+                    port.send(mido.Message("note_off", note=key[2], velocity=0, channel=key[1]))
+                except Exception as exc:
+                    print(f"[midi] stop failed: {key}: {exc}")
+                    continue  # Keep the original scheduled note-off as a retry.
+                _invalidate_generation(key, generation)
 
 
 def trigger(

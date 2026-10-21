@@ -268,6 +268,29 @@ def test_reset_clears_dfesta_during_playback_and_ignores_end():
     assert sent[-1] == 'H0,0,4,600'
 
 
+@pytest.mark.parametrize('start_delivered', [False, True])
+def test_cancel_dfesta_rejects_queued_start_beats_and_end(start_delivered):
+    sent = []
+    bridge = HintLedBridge(sent.append, lambda: 10)
+    if start_delivered:
+        bridge.handle(start(mode='dfesta'))
+    bridge.cancel_dfesta(1)
+    assert sent[-1] == 'H0,0,5,600'
+    count = len(sent)
+    bridge.handle(start(mode='dfesta'))
+    bridge.handle(dict(beat(), answer_pitch=4))
+    bridge.handle(dict(type='end', run_id=1, cancelled=True))
+    assert len(sent) == count
+    assert not bridge.dfesta_held
+    bridge.handle(start(run=2, mode='dfesta'))
+    bridge.handle(dict(beat(run=2), answer_pitch=4))
+    assert sent[-1] == 'Q1,1,31,460'
+    count = len(sent)
+    bridge.cancel_dfesta(1)
+    assert len(sent) == count
+    assert bridge.dfesta_held
+
+
 def test_natural_completion_state_does_not_clear_dfesta():
     sent = []
     bridge = HintLedBridge(sent.append)
