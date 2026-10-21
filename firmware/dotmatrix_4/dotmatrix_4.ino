@@ -141,14 +141,11 @@ void drawStatus(const char *raw) {
 }
 
 void drawButtonPrompt(const char *raw) {
-  String text(raw);
-  text.toUpperCase();
-  display->clearScreen();
-  drawName(text.c_str());
-  // Use the countdown region for a fixed guide, independent of text length.
-  const int width = min(18 * FONT_SIZE, COUNTDOWN_MAX_CHARS * CHAR_W * FONT_SIZE);
-  const int right = DISPLAY_WIDTH - PADDING_RIGHT - 1 + TEXT_OFFSET_X;
-  const int centerY = PADDING_TOP + STATUS_GLYPH_H * FONT_SIZE / 2 + TEXT_OFFSET_Y;
+  drawStatus(raw);  // Center the text itself across the entire panel.
+  const int width = 28 * FONT_SIZE;
+  const int right = DISPLAY_WIDTH - 5 + TEXT_OFFSET_X;  // Four-pixel right margin.
+  const int centerY = (PANEL_HEIGHT - STATUS_GLYPH_H * FONT_SIZE) / 2
+                      + STATUS_GLYPH_H * FONT_SIZE / 2 + TEXT_OFFSET_Y;
   const int bend = 6 * FONT_SIZE;
   const uint16_t color = display->color565(255, 255, 255);
   // One-pixel guide: horizontal, then diagonally down-right, with no arrowhead.

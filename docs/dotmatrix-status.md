@@ -4,15 +4,17 @@ Game-event MIDI, configurable status text, and initial loading are documented in
 [game-event-midi.md](game-event-midi.md). Runtime phrases now come from
 `matrix_display.texts` in `data/config.json`.
 
-The DFESTA button prompt uses `{"type":"status","text":"PRESS DFESTA BUTTON!","arrow":"right"}`.
-In `dotmatrix_3` and `dotmatrix_4`, this places the text in the existing left name
-region and draws a one-pixel white line in the countdown region: horizontal,
-then bending diagonally down-right, with no arrowhead. The line replaces the
-countdown only on this prompt; changing the configured phrase does not move it.
+The DFESTA button prompt uses `{"type":"status","text":"DFESTA!","arrow":"right"}`.
+In `dotmatrix_3` and `dotmatrix_4`, the text itself is centered across the full
+panel, independently of the guide on its right. The one-pixel white guide runs
+horizontally, then diagonally down-right, with no arrowhead. At font size 1 it
+spans 28 pixels, with a 22-pixel horizontal segment and a 6-pixel diagonal run,
+ending four pixels from the right edge. `dotmatrix_4` applies its configured
+text offsets to both the text and guide. The guide replaces the countdown only
+on this prompt; changing the configured phrase does not move it.
 The protocol still uses `"arrow":"right"`. Flash the matrix sketch in use to
-apply the line shape change. Other status messages remain centered. Update the server and flash
-the matrix sketch in use to enable this layout. Older matrix firmware ignores
-the extra field and continues to display centered text.
+apply the centered prompt and longer guide. Older matrix firmware ignores the
+extra field and continues to display centered text.
 
 The former `COMPLETE` screen now uses the current `data/melodies/*.json` **title**
 alone. The server does not prepend `artist` or derive a name from `songId` or the

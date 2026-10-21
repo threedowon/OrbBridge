@@ -113,13 +113,10 @@ void drawStatus(const char *raw) {
 }
 
 void drawButtonPrompt(const char *raw) {
-  String text(raw);
-  text.toUpperCase();
-  display->clearScreen();
-  drawName(text.c_str());
-  const int width = min(18 * FONT_SIZE, COUNTDOWN_MAX_CHARS * CHAR_W * FONT_SIZE);
-  const int right = DISPLAY_WIDTH - PADDING_RIGHT - 1;
-  const int centerY = PADDING_TOP + 7 * FONT_SIZE / 2;
+  drawStatus(raw);  // Center the text itself across the entire panel.
+  const int width = 28 * FONT_SIZE;
+  const int right = DISPLAY_WIDTH - 5;  // Four pixels from the right edge.
+  const int centerY = (PANEL_HEIGHT - 7 * FONT_SIZE) / 2 + 7 * FONT_SIZE / 2;
   const int bend = 6 * FONT_SIZE;
   const uint16_t color = display->color565(255, 255, 255);
   // One-pixel guide: horizontal, then diagonally down-right, with no arrowhead.
