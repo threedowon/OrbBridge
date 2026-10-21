@@ -359,6 +359,15 @@ void setRing(int busIndex, uint32_t color) {
   strip.show();
 }
 
+// Keep PLAY's dim and bright rings on the same gold RGB ratio.
+// Avoid very low channel values, where rounding and LED response alter the hue.
+uint32_t playGold(uint8_t brightness) {
+  return Adafruit_NeoPixel::Color(
+    brightness,
+    (uint16_t(147) * brightness + 127) / 255,
+    (uint16_t(41) * brightness + 127) / 255);
+}
+
 // 슬롯 링을 지정한 밝기로 그린다. 이펙트 모드에서는 링을 건드리지 않지만
 // 밝기는 계속 추적해, 이펙트를 끄면 실제 배치와 다시 맞는다.
 void setSlotLevel(int i, uint8_t level) {
@@ -450,8 +459,8 @@ void applyHintCommand(const HintCommandParser& command) {
       for (int pitch = 0; pitch < 8; ++pitch) {
         const bool sounding = command.mask & (1 << pitch);
         setRing((command.cell - 1) * 8 + pitch, sounding
-          ? Adafruit_NeoPixel::Color(255, 147, 41)
-          : (dfestaCursor ? 0 : Adafruit_NeoPixel::Color(20, 12, 3)));
+          ? playGold(255)
+          : (dfestaCursor ? 0 : playGold(64)));
       }
     }
     return;
