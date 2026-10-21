@@ -205,7 +205,7 @@ def test_play_replaced_by_hint_ignores_stale_beats_and_end():
     bridge.handle(beat(run=2))
     assert sent[-1] == 'H1,1,460,600'
 
-def test_dfesta_natural_end_holds_and_tray_removal_blacks_out_ignoring_late_beats():
+def test_dfesta_natural_end_holds_until_tray_and_orbs_are_both_removed():
     sent = []
     bridge = HintLedBridge(sent.append, lambda: 10)
     bridge.handle(start(mode='dfesta', hint=False))
@@ -217,11 +217,45 @@ def test_dfesta_natural_end_holds_and_tray_removal_blacks_out_ignoring_late_beat
     bridge.sync_ready({'completion': {'waiting_for_dfesta': True}, 'cells': {
         '1:5': {'slave': 1, 'cell': 5, 'result': 'correct'}}}, {})
     assert sent[-1] == 'B000000000000'
-    bridge.observe_snapshot({'tray': {'present': True}}, {'tray': {'present': False}}, 'tray')
+    bridge.observe_snapshot({'state': 'RUNNING', 'tray': {'present': True}},
+                            {'state': 'RUNNING', 'is_correct': True, 'tray': {'present': False}}, 'tray')
+    assert sent[-1] == 'B000000000000'
+    bridge.observe_snapshot({'state': 'RUNNING'},
+                            {'state': 'READY', 'cleanup_end_reason': 'tray_removed'}, 'remove_orb')
     assert sent[-1] == 'H0,0,4,600'
     count = len(sent)
     bridge.handle(event)
     assert len(sent) == count
+
+
+@pytest.mark.parametrize('finished', [False, True])
+@pytest.mark.parametrize('action', ['remove_orb', 'add_orb'])
+def test_broken_solution_fades_dfesta_and_ignores_remaining_cues(finished, action):
+    sent = []
+    bridge = HintLedBridge(sent.append, lambda: 10)
+    bridge.handle(start(mode='dfesta', hint=False))
+    cue = dict(beat(step=0, pitch=4), answer_pitch=4)
+    bridge.handle(cue)
+    if finished:
+        bridge.handle(dict(type='end', run_id=1, cancelled=False))
+    previous = {'state': 'RUNNING', 'is_correct': True}
+    current = {'state': 'RUNNING', 'is_correct': False}
+    bridge.observe_snapshot(previous, current, action)
+    assert sent[-1] == 'H0,0,5,600'
+    count = len(sent)
+    bridge.observe_snapshot(current, current, 'tick')
+    bridge.handle(cue)
+    bridge.handle(dict(type='end', run_id=1, cancelled=False))
+    assert len(sent) == count
+    assert not bridge.dfesta_held
+    # Normal PLAY and a newly completed DFESTA can start after the fade request.
+    bridge.handle(start(run=2, mode='play'))
+    bridge.handle(beat(run=2))
+    assert sent[-1].startswith('P')
+    bridge.handle(start(run=3, mode='dfesta'))
+    assert sent[-1] == 'H0,0,1,600'
+    bridge.handle(dict(cue, run_id=3))
+    assert sent[-1].startswith('Q')
 
 
 def test_reset_clears_dfesta_during_playback_and_ignores_end():

@@ -4,6 +4,14 @@ Game-event MIDI, configurable status text, and initial loading are documented in
 [game-event-midi.md](game-event-midi.md). Runtime phrases now come from
 `matrix_display.texts` in `data/config.json`.
 
+The DFESTA button prompt uses `{"type":"status","text":"PRESS DFESTA BUTTON!","arrow":"right"}`.
+In `dotmatrix_3` and `dotmatrix_4`, this places the text in the existing left name
+region and draws a white right arrow in the countdown region. The arrow replaces
+the countdown only on this prompt; changing the configured phrase does not move
+the arrow. Other status messages remain centered. Update the server and flash
+the matrix sketch in use to enable this layout. Older matrix firmware ignores
+the extra field and continues to display centered text.
+
 The tray cleanup flow builds on dotmatrix_revision at 887e5bf.
 
 For the tray update, install the Python server and flash firmware/master/master.ino

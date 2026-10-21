@@ -5,7 +5,7 @@
   "hint_led_fade_ms": 600,
   "game_rules": {
     "time_over_s": 120.0,
-    "idle_s": 60.0,
+    "idle_s": 999.0,
     "initial_hint_delay_s": 3.0
   },
   "melody_rotation": {
@@ -30,7 +30,7 @@
       "hint": "HINT",
       "playing": "PLAYING",
       "complete": "COMPLETE",
-      "press_dfesta": "PRESS DFESTA!",
+      "press_dfesta": "PRESS DFESTA BUTTON!",
       "time_over": "TIME OVER",
       "clear_table": "PLEASE RETURN ORB AND TRAY",
       "farewell": "GOODBYE",

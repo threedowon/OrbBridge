@@ -132,6 +132,10 @@ bool hintActive = false;
 bool playbackCursor = false;
 bool dfestaCursor = false;
 uint8_t dfestaMasks[2] = {0, 0};
+bool dfestaReleasing = false;
+bool dfestaBlocked = false;
+uint32_t dfestaReleaseStarted = 0;
+uint8_t dfestaReleaseLevels[BUS_COUNT] = {};
 uint16_t breathMask = 0;
 uint32_t breathStarted = 0, breathRenewed = 0, breathFrame = 0;
 bool hintNoteLit = false;
@@ -165,6 +169,8 @@ void applyEffectOnce();   // 전방 선언
 void runEffectAnim();
 
 void applyLedCommand(int effect) {
+  dfestaReleasing = false;
+  dfestaBlocked = true;
   dfestaCursor = false;
   dfestaMasks[0] = dfestaMasks[1] = 0;
   breathMask = 0;
@@ -395,7 +401,7 @@ void setSlotLevel(int i, uint8_t level) {
   // During ready breathing, a missing contact must not compete with the pulse.
   if (!hintActive && (breathMask & (uint16_t(1) << i)) && missing[i]) level = 0;
   ringLevel[i] = level;
-  if (hintActive && dfestaCursor && dfestaAnswer(i / 8) == i) {
+  if (hintActive && dfestaCursor && !dfestaReleasing && dfestaAnswer(i / 8) == i) {
     drawDfestaColumn(i / 8);
     ringLow.show(); ringHigh.show();
   }
@@ -412,6 +418,7 @@ void fillAll(uint32_t color) {
 }
 
 void stopHint() {
+  dfestaReleasing = false;
   dfestaMasks[0] = dfestaMasks[1] = 0;
   dfestaCursor = false;
   if (!hintActive) return;
@@ -422,6 +429,22 @@ void stopHint() {
   memset(hintRingLit, 0, sizeof(hintRingLit));
   if (ledEffect != 0) fillAll(0);
   applyEffectOnce();
+}
+
+void releaseDfesta() {
+  // Late beats from the cancelled visual run cannot rebuild the columns.
+  // A new DFESTA run always sends H0,0,1 before its first Q command.
+  dfestaBlocked = true;
+  if (dfestaReleasing) return;
+  if (!hintActive || !dfestaCursor) { stopHint(); return; }
+  for (int i = 0; i < BUS_COUNT; ++i) {
+    const int answer = dfestaAnswer(i / 8);
+    dfestaReleaseLevels[i] = answer >= 0 && (dfestaMasks[i / 8] & (1 << (i % 8)))
+      ? ringLevel[answer] : 0;
+  }
+  breathMask = 0;
+  dfestaReleaseStarted = millis();
+  dfestaReleasing = true;
 }
 
 void applyHintCommand(const HintCommandParser& command) {
@@ -441,6 +464,8 @@ void applyHintCommand(const HintCommandParser& command) {
     return;
   }
   if (command.tray) {
+    dfestaReleasing = false;
+    dfestaBlocked = true;
     dfestaCursor = false;
     dfestaMasks[0] = dfestaMasks[1] = 0;
     trayGlow = true;
@@ -463,10 +488,17 @@ void applyHintCommand(const HintCommandParser& command) {
   if (!command.duration) { stopHint(); return; }
   // H4: clear accumulated result and hold blackout until a new LED session.
   if (!command.playback && !command.slave && command.duration == 4) {
+    dfestaReleasing = false;
+    dfestaBlocked = true;
     dfestaMasks[0] = dfestaMasks[1] = 0;
     breathMask = 0;
     hintActive = playbackCursor = dfestaCursor = true;
     fillAll(0);
+    return;
+  }
+  // H5: fade the result away and resume ordinary orb sensing.
+  if (!command.playback && !command.slave && command.duration == 5) {
+    releaseDfesta();
     return;
   }
   // Control values: 1=new session, 2=skip expired cue, 3=finish after tails.
@@ -476,6 +508,7 @@ void applyHintCommand(const HintCommandParser& command) {
     return;
   }
   if (command.dfesta) {
+    if (dfestaBlocked) return;
     if (!dfestaCursor) dfestaMasks[0] = dfestaMasks[1] = 0;
     hintActive = playbackCursor = dfestaCursor = true;
     hintEnding = false;
@@ -491,6 +524,9 @@ void applyHintCommand(const HintCommandParser& command) {
     ringLow.show(); ringHigh.show();
     return;
   }
+  dfestaReleasing = false;
+  if (!command.playback && !command.slave && command.duration == 1)
+    dfestaBlocked = false;
   dfestaMasks[0] = dfestaMasks[1] = 0;
   const bool resetRings = !hintActive || playbackCursor || command.playback || !command.slave;
   if (resetRings) {
@@ -536,6 +572,20 @@ void applyHintCommand(const HintCommandParser& command) {
 
 void updateHint() {
   if (!hintActive) return;
+  if (dfestaReleasing) {
+    const uint32_t age = uint32_t(millis() - dfestaReleaseStarted);
+    if (age >= REMOVE_DEBOUNCE_MS) { stopHint(); return; }
+    if (uint32_t(millis() - hintFrameAt) < FADE_STEP_MS) return;
+    hintFrameAt = millis();
+    for (int i = 0; i < BUS_COUNT; ++i) {
+      uint8_t level = uint32_t(dfestaReleaseLevels[i]) * (REMOVE_DEBOUNCE_MS - age) / REMOVE_DEBOUNCE_MS;
+      // Keep actual orbs visible, including new placements during the fade.
+      if (ringLevel[i] > level) level = ringLevel[i];
+      setRing(i, orbGold(level), false);
+    }
+    ringLow.show(); ringHigh.show();
+    return;
+  }
   if (dfestaCursor) return;  // Result remains until egg removal or explicit reset.
   const uint32_t elapsed = uint32_t(millis() - hintStarted);
   if (trayGlow) {
@@ -711,7 +761,7 @@ void onAdded(int i, const byte addr[8]) {
 void onRemoved(int i, const byte addr[8]) {
   // Clear locally before waiting for the server to revoke the ready effect.
   breathMask &= ~(uint16_t(1) << i);
-  if (hintActive && dfestaCursor) {
+  if (hintActive && dfestaCursor && !dfestaReleasing) {
     const int column = i / 8;
     int answer = -1;
     for (int pitch = 0; pitch < 8; ++pitch)

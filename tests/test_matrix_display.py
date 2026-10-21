@@ -96,8 +96,26 @@ def test_configured_texts_keep_semantic_events_and_offline_protocol(rig):
     game["initial_hint"]["pending"] = False
     matrix.update(game, playback("LISTEN"))
     assert device.writes[-1]["text"] == "PRESS BUTTON"
+    assert device.writes[-1]["arrow"] == "right"
     matrix.update(game, playback("DFESTA"))
     assert device.writes[-1]["text"] == "COMPLETE"
+    assert "arrow" not in device.writes[-1]
+
+
+def test_dfesta_prompt_replaces_countdown_with_arrow_then_restores_timer(rig):
+    matrix, device, _, now = rig
+    matrix.texts["press_dfesta"] = "PRESS DFESTA BUTTON!"
+    matrix.update({**running(45), "is_correct": True})
+    assert device.writes[-1] == {
+        "type": "status", "text": "PRESS DFESTA BUTTON!", "arrow": "right"}
+    count = len(device.writes)
+    matrix.update({**running(44), "is_correct": True})
+    assert len(device.writes) == count
+    now[0] += 1
+    matrix.update({**running(44), "is_correct": True})
+    assert device.writes[-1]["arrow"] == "right"
+    matrix.update({**running(43), "is_correct": False})
+    assert device.writes[-1] == {"type": "display", "text": "", "seconds": 43}
 
 
 @pytest.mark.parametrize("text", ["가나다", "X" * 33, "A\nB", 12])
@@ -420,7 +438,7 @@ def test_late_cleanup_does_not_repeat_timeout(rig):
     assert device.writes[-1]["text"] == "GOODBYE"
 
 @pytest.mark.parametrize('occupied', [False, True])
-def test_tray_removal_shows_goodbye_even_with_orbs(rig, occupied):
+def test_tray_removal_shows_goodbye_only_when_orbs_are_also_gone(rig, occupied):
     from server.game.game_engine import GameEngine
     matrix, device, _, now = rig
     game = GameEngine({'1': 'C'}, time_over_s=60, idle_s=30, clock=lambda: now[0])
@@ -431,10 +449,12 @@ def test_tray_removal_shows_goodbye_even_with_orbs(rig, occupied):
         game.add_orb(orb_id='a', slave=1, cell=1)
     game.set_tray(False, False)
     matrix.update(game.snapshot(), playback('PLAY'))
+    if occupied:
+        assert game.snapshot()['state'] == 'RUNNING'
+        assert device.writes[-1]['text'] != 'GOODBYE'
+        game.remove_orb(slave=1, cell=1)
+        matrix.update(game.snapshot())
     assert device.writes[-1]['text'] == 'GOODBYE'
     now[0] += matrix.farewell_duration_s
     matrix.update(game.snapshot())
-    if occupied:
-        assert device.writes[-1]['text'] == 'PLEASE CLEAR TABLE'
-    else:
-        assert device.writes[-1] == {'type': 'clear'}
+    assert device.writes[-1] == {'type': 'clear'}

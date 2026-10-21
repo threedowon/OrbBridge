@@ -222,6 +222,44 @@ def test_admin_status_exposes_matrix_connection(tray_main, monkeypatch):
     assert main.get_status()["matrix"] is None
 
 
+def test_dfesta_release_allows_new_placements_then_combined_tray_cleanup(tray_main, monkeypatch):
+    from server.inout.hint_led import HintLedBridge
+
+    main, clock, writes = tray_main
+    sent = []
+    bridge = HintLedBridge(lambda command: sent.append(command) or True, lambda: clock[0])
+    monkeypatch.setattr(main, "_hint_led", bridge)
+    main.set_tray({"present": True})
+    main._update_matrix_display()  # Claim the first hint so buttons are enabled.
+    runtime = main.get_game_runtime()
+    main._publish_transition(runtime.add_orb(orb_id="a", slave=1, cell=1))
+    assert main.request_dfesta()["ok"]
+    main._scheduler_publish_event({"type": "start", "run_id": 10, "mode": "dfesta", "step_count": 12})
+    main._scheduler_publish_event({"type": "beat", "run_id": 10, "mode": "dfesta",
+                                   "step": 0, "duration_ms": 460, "answer_pitch": 0})
+    main._scheduler_publish_event({"type": "end", "run_id": 10, "mode": "dfesta", "cancelled": False})
+    assert bridge.dfesta_held
+    main._publish_transition(runtime.remove_orb(slave=1, cell=1))
+    assert "H0,0,5,600" in sent
+    assert not bridge.dfesta_held
+    assert main.get_game_state()["state"] == "RUNNING"
+    main._publish_transition(runtime.add_orb(orb_id="a", slave=1, cell=3))
+    assert main.request_play()["ok"]
+    assert main._playback_scheduler.starts[-1]["cells"]["1:3"]["orb_id"] == "a"
+    cancellations = main._playback_scheduler.cancel_count
+    main.set_tray({"present": False})
+    main._update_matrix_display()
+    assert main.get_game_state()["state"] == "RUNNING"
+    assert main._playback_scheduler.cancel_count == cancellations
+    assert writes[-1].get("text") != "GOODBYE"
+    main._publish_transition(runtime.remove_orb(slave=1, cell=3))
+    main._update_matrix_display()
+    assert main.get_game_state()["state"] == "READY"
+    assert main._playback_scheduler.cancel_count > cancellations
+    assert "H0,0,4,600" in sent
+    assert writes[-1]["text"] == "GOODBYE"
+
+
 @pytest.mark.parametrize("return_at", [0.5, 4.5, None])
 def test_admin_tray_end_to_end_cleanup_and_next_player(tray_main, return_at):
     main, clock, writes = tray_main

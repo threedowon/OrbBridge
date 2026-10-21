@@ -36,16 +36,19 @@ class HintLedBridge:
                 self.breath_command, self.breath_sent_at = command, now
 
     def observe_snapshot(self, previous, current, action):
-        tray_before = previous.get('tray', {})
-        tray_after = current.get('tray', {})
-        removed = (tray_before.get('present') is True and tray_after.get('present') is not True)
         game_tray_removed = previous.get('state') == 'RUNNING' and (current.get('end_reason') or current.get('cleanup_end_reason')) == 'tray_removed'
-        if (self.dfesta_held and (action == 'reset' or removed)) or game_tray_removed:
+        if (self.dfesta_held and action == 'reset') or game_tray_removed:
             # Ignore subsequent queued beats/end from this run. H4 holds blackout.
             self.run_id = None
             self.dfesta_held = False
             self.tray_active = False
             self.send_line('H0,0,4')
+        elif self.dfesta_held and current.get('state') == 'RUNNING' and current.get('is_correct') is False:
+            # Stop this run's visual cues, including queued beats/end, while the
+            # slave fades the accumulated result back to ordinary orb sensing.
+            self.run_id = None
+            self.dfesta_held = False
+            self.send_line('H0,0,5')
 
     def tray_transition(self, previous, current, snapshot):
         if current == 'RUNNING' and previous != 'RUNNING':
@@ -67,7 +70,7 @@ class HintLedBridge:
                 return
             self.latest_run = run
             self.tray_active = False
-            was_active = self.run_id is not None
+            was_active = self.run_id is not None or self.dfesta_held
             self.mode = event["mode"]
             self.dfesta_held = self.mode == "dfesta"
             enabled = self.mode in ("play", "dfesta") or (event.get("hint_led") and self.mode == "listen")

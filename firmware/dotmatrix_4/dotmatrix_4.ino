@@ -137,6 +137,23 @@ void drawStatus(const char *raw) {
              (PANEL_HEIGHT - STATUS_GLYPH_H * size) / 2);
 }
 
+void drawButtonPrompt(const char *raw) {
+  String text(raw);
+  text.toUpperCase();
+  display->clearScreen();
+  drawName(text.c_str());
+  // Use the countdown region for a fixed arrow, independent of text length.
+  const int width = min(18 * FONT_SIZE, COUNTDOWN_MAX_CHARS * CHAR_W * FONT_SIZE);
+  const int right = DISPLAY_WIDTH - PADDING_RIGHT - 1 + TEXT_OFFSET_X;
+  const int centerY = PADDING_TOP + STATUS_GLYPH_H * FONT_SIZE / 2 + TEXT_OFFSET_Y;
+  const int head = 5 * FONT_SIZE;
+  const uint16_t color = display->color565(255, 255, 255);
+  display->fillRect(right - width + 1, centerY - FONT_SIZE,
+                    width - head, 2 * FONT_SIZE + 1, color);
+  display->fillTriangle(right, centerY, right - head, centerY - 4 * FONT_SIZE,
+                        right - head, centerY + 4 * FONT_SIZE, color);
+}
+
 String offlineText = "OFFLINE";
 
 void drawRuntime() {
@@ -149,7 +166,9 @@ void drawRuntime() {
   if (deserializeJson(message, lastCommand)) return;
   const char *type = message["type"] | "";
   if (!strcmp(type, "status")) {
-    drawStatus(message["text"].as<const char *>());
+    const char *arrow = message["arrow"] | "";
+    if (!strcmp(arrow, "right")) drawButtonPrompt(message["text"].as<const char *>());
+    else drawStatus(message["text"].as<const char *>());
   } else if (!strcmp(type, "display")) {
     String text = formatName(message["text"].as<const char *>());
     drawName(text.c_str());

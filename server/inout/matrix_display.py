@@ -144,7 +144,10 @@ class MatrixDisplay:
 
     def _status(self, key: str) -> dict:
         self._screen = key
-        return {"type": "status", "text": self.texts[key]}
+        payload = {"type": "status", "text": self.texts[key]}
+        if key == "press_dfesta":
+            payload["arrow"] = "right"
+        return payload
 
     def _payload(self, snapshot: dict, playback: dict, now: float) -> dict:
         self._screen = "blank"

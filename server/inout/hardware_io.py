@@ -365,7 +365,7 @@ def send_line(command: str) -> bool:
     with _lock:
         targets = list(_connections.values())
         mode = _mode
-    if mode == "direct" and not (re.fullmatch(r"B[0-8]{12}", command) or re.fullmatch(r"Q[1-6],[12],(?:[0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]),(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|60000)", command) or re.fullmatch(r"T(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|60000)(?:,[012])?", command) or re.fullmatch(r"H(?:0,0,[013]|[1-6],(?:[1-9]|1[0-6]),(?:[1-9][0-9]{0,2}|1[0-9]{3}|2000)),(?:0|[1-9][0-9]{0,2}|[12][0-9]{3}|3000)", command) or re.fullmatch(r"C[0-9]|H0,0,[013]|H[1-6],(?:[1-9]|1[0-6]),(?:[1-9][0-9]{0,2}|1[0-9]{3}|2000)|P[1-6],[12],(?:[0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]),(?:[1-9][0-9]{0,2}|1[0-9]{3}|2000)", command)):
+    if mode == "direct" and not (re.fullmatch(r"B[0-8]{12}", command) or re.fullmatch(r"Q[1-6],[12],(?:[0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]),(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|60000)", command) or re.fullmatch(r"T(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|60000)(?:,[012])?", command) or re.fullmatch(r"H(?:0,0,[0-5]|[1-6],(?:[1-9]|1[0-6]),(?:[1-9][0-9]{0,2}|1[0-9]{3}|2000)),(?:0|[1-9][0-9]{0,2}|[12][0-9]{3}|3000)", command) or re.fullmatch(r"C[0-9]|H0,0,[0-5]|H[1-6],(?:[1-9]|1[0-6]),(?:[1-9][0-9]{0,2}|1[0-9]{3}|2000)|P[1-6],[12],(?:[0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]),(?:[1-9][0-9]{0,2}|1[0-9]{3}|2000)", command)):
         return False  # Master-only D commands never reach slave USB ports.
     results = [_write(c, command) if not c.get("error") and
                (mode == "master" or c.get("ready", False)) else False

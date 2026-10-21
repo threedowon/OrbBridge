@@ -169,7 +169,7 @@ def test_runtime_engine_reload_preserves_tray_and_original_expiry(engine):
 
 
 @pytest.mark.parametrize("occupied", [False, True])
-def test_removing_tray_ends_running_game(engine, occupied):
+def test_removing_tray_waits_for_last_orb(engine, occupied):
     game, _ = engine
     game.set_tray(True, True)
     game.start()
@@ -177,11 +177,63 @@ def test_removing_tray_ends_running_game(engine, occupied):
         game.add_orb(orb_id="a", slave=1, cell=1)
     game.set_tray(False, False)
     snapshot = game.snapshot()
-    assert snapshot["state"] == ("RESETTING" if occupied else "READY")
-    assert (snapshot["end_reason"] or snapshot["cleanup_end_reason"]) == "tray_removed"
+    assert snapshot["state"] == ("RUNNING" if occupied else "READY")
     if occupied:
+        assert snapshot["end_reason"] is None
         game.remove_orb(slave=1, cell=1)
         assert game.snapshot()["state"] == "READY"
+    assert game.snapshot()["cleanup_end_reason"] == "tray_removed"
+
+
+@pytest.mark.parametrize("tray_first", [False, True])
+def test_running_game_ends_after_both_tray_and_orbs_removed(engine, tray_first):
+    game, _ = engine
+    game.set_tray(True, True)
+    game.start()
+    game.add_orb(orb_id="a", slave=1, cell=1)
+    game.add_orb(orb_id="b", slave=1, cell=2)
+    if tray_first:
+        game.set_tray(False, False)
+    game.remove_orb(slave=1, cell=1)
+    assert game.snapshot()["state"] == "RUNNING"
+    game.remove_orb(slave=1, cell=2)
+    if not tray_first:
+        assert game.snapshot()["state"] == "RUNNING"
+        game.set_tray(False, False)
+    assert game.snapshot()["state"] == "READY"
+    assert game.snapshot()["cleanup_end_reason"] == "tray_removed"
+
+
+def test_replacing_tray_cancels_pending_exit_and_game_remains_playable(engine):
+    game, _ = engine
+    game.set_tray(True, True)
+    game.start()
+    game.add_orb(orb_id="a", slave=1, cell=1)
+    assert game.press_dfesta()
+    game.set_tray(False, False)
+    assert game.snapshot()["state"] == "RUNNING"
+    game.set_tray(True, True)
+    game.remove_orb(slave=1, cell=1)
+    assert game.snapshot()["state"] == "RUNNING"
+    game.add_orb(orb_id="a", slave=1, cell=3)
+    assert not game.snapshot()["is_correct"]
+    assert game.record_activity()
+    game.remove_orb(slave=1, cell=3)
+    game.add_orb(orb_id="a", slave=1, cell=1)
+    assert game.press_dfesta()
+
+
+def test_unknown_tray_does_not_finish_pending_exit(engine):
+    game, clock = engine
+    game.set_tray(True, True)
+    game.start()
+    game.add_orb(orb_id="a", slave=1, cell=1)
+    game.set_tray(False, False, ttl_s=3)
+    clock.value = 4
+    game.remove_orb(slave=1, cell=1)
+    assert game.snapshot()["state"] == "RUNNING"
+    game.set_tray(False, False, ttl_s=3)
+    assert game.snapshot()["state"] == "READY"
 
 
 def test_sensor_unknown_does_not_end_game_but_confirmed_absence_does(engine):

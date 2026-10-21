@@ -142,6 +142,7 @@ class GameEngine:
         self.tray_present = tray_present
         self.tray_seated = tray_present
         self._tray_expires_at: float | None = None
+        self._tray_removal_pending = False
         self._table_cleared_at: float | None = None
         self._cleanup_end_reason: str | None = None
 
@@ -166,8 +167,12 @@ class GameEngine:
         if previous != (present, seated):
             self._revision += 1
         self._end_if_needed(now)
-        if self.state is GameState.RUNNING and present is False and previous[0] is not False:
-            self._enter_resetting(EndReason.TRAY_REMOVED, now)
+        if self.state is GameState.RUNNING:
+            if present is True:
+                self._tray_removal_pending = False
+            elif present is False and previous[0] is not False:
+                self._tray_removal_pending = True
+            self._end_after_tray_cleanup(now)
         # Expiry wins at the deadline. Only known physical changes are activity;
         # reconnect/unknown reports and periodic copies must not postpone Idle.
         if (self.state is GameState.RUNNING and previous != (present, seated)
@@ -179,6 +184,13 @@ class GameEngine:
 
     def _cleanup_is_clear(self) -> bool:
         return self._table_is_clear() and self._tray_state(self._now())[0] is False
+
+    def _end_after_tray_cleanup(self, now: float) -> None:
+        # A tray removal ends play only after the last orb has also been removed.
+        # Keep manual/software starts with no tray from ending immediately.
+        if (self.state is GameState.RUNNING and self._tray_removal_pending
+                and self._cleanup_is_clear()):
+            self._enter_resetting(EndReason.TRAY_REMOVED, now)
 
     @staticmethod
     def _normalize_answers(
@@ -270,6 +282,7 @@ class GameEngine:
         self._last_activity_at = now
         self._ended_at = None
         self._dfesta_presses = 0
+        self._tray_removal_pending = False
         self._set_state(GameState.RUNNING)
         return self.state
 
@@ -441,7 +454,8 @@ class GameEngine:
         if self.state is GameState.RUNNING:
             self._last_activity_at = now
             self._reset_completion_progress_if_incorrect()
-        elif self.state is GameState.RESETTING and self._cleanup_is_clear():
+            self._end_after_tray_cleanup(now)
+        if self.state is GameState.RESETTING and self._cleanup_is_clear():
             self._enter_ready()
         return True
 
