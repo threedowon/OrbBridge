@@ -7,9 +7,11 @@ Game-event MIDI, configurable status text, and initial loading are documented in
 The DFESTA button prompt uses `{"type":"status","text":"DFESTA!","arrow":"right"}`.
 In `dotmatrix_3` and `dotmatrix_4`, the text itself is centered across the full
 panel, independently of the guide on its right. The one-pixel white guide runs
-horizontally, then diagonally down-right, with no arrowhead. At font size 1 it
-spans 28 pixels, with a 22-pixel horizontal segment and a 6-pixel diagonal run,
-ending four pixels from the right edge. `dotmatrix_4` applies its configured
+horizontally, then diagonally down-right, with no arrowhead. On the 192x32 panel
+it starts at (128, 15), runs horizontally to (173, 15), then diagonally to
+(187, 29), matching the reference's long line and extended downward bend.
+This leaves four blank columns on the right and two rows below the tip; the
+guide's geometry is independent of font size. `dotmatrix_4` applies its configured
 text offsets to both the text and guide. The guide replaces the countdown only
 on this prompt; changing the configured phrase does not move it.
 The protocol still uses `"arrow":"right"`. Flash the matrix sketch in use to

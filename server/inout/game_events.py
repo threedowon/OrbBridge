@@ -33,6 +33,9 @@ class GameEvents:
         self._send = send_note or midi_out.event_note
         self._queue = Queue()
         self._observed_correct = False
+        self._eligible_correct = False
+        self._playback_run_id = 0
+        self._playback_active = False
         self._desired_correct = False
         self._gate_pending = False
         self._closed = False
@@ -54,7 +57,7 @@ class GameEvents:
                    and not current.get("completion", {}).get("dfesta_presses", 0))
         if correct != self._observed_correct:
             self._observed_correct = correct
-            self._queue.put(("gate", correct))
+            self._queue.put(("correct", correct))
         before_tray, tray = previous.get("tray", {}), current.get("tray", {})
         if action == "tray":
             if before_tray.get("seated") is False and tray.get("seated") is True:
@@ -72,6 +75,15 @@ class GameEvents:
         if screen in ("ready", "farewell"):
             self.emit(screen)
 
+    def playback_started(self, run_id: int) -> None:
+        """Queue suppression before the scheduler starts sending notes."""
+        if self.enabled and not self._closed:
+            self._queue.put(("playback_start", run_id))
+
+    def playback_ended(self, run_id: int) -> None:
+        if self.enabled and not self._closed:
+            self._queue.put(("playback_end", run_id))
+
     def flush(self, timeout=2.0) -> None:
         barrier = threading.Event()
         self._queue.put(("barrier", barrier))
@@ -84,6 +96,12 @@ class GameEvents:
                             duration_ms=None, active=self._desired_correct)
         self._gate_pending = not result.get("ok")
         return result
+
+    def _update_gate(self) -> None:
+        desired = self._eligible_correct and not self._playback_active
+        if desired != self._desired_correct:
+            self._desired_correct = desired
+            self._send_gate()
 
     def _run(self) -> None:
         while True:
@@ -104,9 +122,19 @@ class GameEvents:
                     return
                 if kind == "barrier":
                     value.set()
-                elif kind == "gate":
-                    self._desired_correct = value
-                    self._send_gate()
+                elif kind == "correct":
+                    self._eligible_correct = value
+                    self._update_gate()
+                elif kind == "playback_start":
+                    if value > self._playback_run_id:
+                        self._playback_run_id = value
+                        self._playback_active = True
+                        self._update_gate()
+                elif kind == "playback_end":
+                    # A replaced run can finish after its successor starts.
+                    if value == self._playback_run_id:
+                        self._playback_active = False
+                        self._update_gate()
                 else:
                     result = self._send(self.notes[value], velocity=self.velocity,
                                         duration_ms=self.duration_ms)

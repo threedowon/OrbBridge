@@ -10,7 +10,7 @@ Instrument Rack의 Key Zone을 한 음씩 나누어 각각의 Simpler에 연결�
 | 트레이 완전 배치 | C#3 | 61 | 30 ms 후 Note Off |
 | 트레이 완전 제거 | D3 | 62 | 30 ms 후 Note Off |
 | 게임 최초 로딩 시작 | D#3 | 63 | 30 ms 후 Note Off |
-| 전체 정답 유지 | E3 | 64 | 정답 해제·DFESTA·종료 시 Note Off |
+| 전체 정답 유지 | E3 | 64 | 정답 해제·재생 시작·종료 시 Note Off |
 | 시간초과 또는 무입력 종료 | F3 | 65 | 30 ms 후 Note Off |
 | GOODBYE 표시 시작 | F#3 | 66 | 30 ms 후 Note Off |
 
@@ -21,6 +21,10 @@ Instrument Rack의 Key Zone을 한 음씩 나누어 각각의 Simpler에 연결�
 일반 이벤트는 Simpler **One-Shot / Trigger**로 설정한다. 짧은 Note Off 이후에도 샘플이 끝까지 재생된다.
 정답 유지음은 **Classic / Loop**로 설정하고 앰프 Sustain을 유지하며 Release를 짧게 설정한다.
 Note On은 정답 진입 시 한 번 전송한다. 반복 상태 보고는 다시 트리거하지 않는다.
+Play·다시 듣기(최초 힌트 포함) 재생 전에는 유지음을 Note Off로 잠시 끈다.
+시퀀스가 끝나면 현재도 정답이고 아직 DFESTA를 누르지 않은 경우에만 Note On으로 복귀한다.
+재생 중 정답이 깨지거나 게임이 종료되면 복귀하지 않는다. 연속 입력으로 재생이 교체되면
+새 시퀀스가 끝날 때까지 끈 상태를 유지하며, 이전 시퀀스의 늦은 종료 이벤트는 무시한다.
 DFESTA가 수락되면 최종 합창 재생 전에 유지음을 해제한다. 디버그처럼 게임이 계속되어도
 같은 정답 배치로 유지음을 다시 켜지 않는다. 배치가 틀어졌다가 다시 맞으면 다시 켠다.
 

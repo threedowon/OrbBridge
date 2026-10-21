@@ -114,14 +114,15 @@ void drawStatus(const char *raw) {
 
 void drawButtonPrompt(const char *raw) {
   drawStatus(raw);  // Center the text itself across the entire panel.
-  const int width = 28 * FONT_SIZE;
+  const int left = DISPLAY_WIDTH * 2 / 3;
   const int right = DISPLAY_WIDTH - 5;  // Four pixels from the right edge.
-  const int centerY = (PANEL_HEIGHT - 7 * FONT_SIZE) / 2 + 7 * FONT_SIZE / 2;
-  const int bend = 6 * FONT_SIZE;
+  const int centerY = (PANEL_HEIGHT - 1) / 2;
+  const int bottom = PANEL_HEIGHT - 3;  // Leave two rows below the tip.
+  const int bend = bottom - centerY;
   const uint16_t color = display->color565(255, 255, 255);
-  // One-pixel guide: horizontal, then diagonally down-right, with no arrowhead.
-  display->drawFastHLine(right - width + 1, centerY, width - bend, color);
-  display->drawLine(right - bend, centerY, right, centerY + bend, color);
+  // Reference layout: long horizontal guide, then 45 degrees down-right.
+  display->drawFastHLine(left, centerY, right - bend - left + 1, color);
+  display->drawLine(right - bend, centerY, right, bottom, color);
 }
 
 void drawTitle(const char *raw) {
