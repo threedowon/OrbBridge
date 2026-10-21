@@ -137,6 +137,7 @@ bool hintNoteLit = false;
 uint32_t hintStarted = 0;
 uint16_t hintDuration = 0;
 uint16_t hintFadeMs = 600;
+bool trayGlow = false;
 bool hintEnding = false;
 uint32_t hintEndStarted = 0;
 bool hintRingLit[BUS_COUNT] = {};
@@ -388,6 +389,7 @@ void stopHint() {
   hintActive = false;
   playbackCursor = false;
   hintEnding = false;
+  trayGlow = false;
   memset(hintRingLit, 0, sizeof(hintRingLit));
   if (ledEffect != 0) fillAll(0);
   applyEffectOnce();
@@ -409,6 +411,7 @@ void applyHintCommand(const HintCommandParser& command) {
     return;
   }
   if (command.tray) {
+    trayGlow = true;
     hintActive = true;
     playbackCursor = false;
     hintEnding = false;
@@ -424,6 +427,7 @@ void applyHintCommand(const HintCommandParser& command) {
     fillAll(Adafruit_NeoPixel::Color(255, 147, 41));
     return;
   }
+  trayGlow = false;
   if (!command.playback) hintFadeMs = command.fadeMs;
   if (!command.duration) { stopHint(); return; }
   // Control values: 1=new session, 2=skip expired cue, 3=finish after tails.
@@ -505,8 +509,11 @@ void updateHint() {
         const uint32_t fadeAge = age - hintRingDuration[i];
         level = fadeAge >= hintFadeMs ? 0 : uint32_t(255) * (hintFadeMs - fadeAge) / hintFadeMs;
       }
+      // setBrightness(50) quantizes the channels a second time. Stop before
+      // the blue component vanishes and only a red/orange tail remains.
+      if (trayGlow && level < 40) level = 0;
       if (level != hintRingBrightness[i]) {
-        setRing(i, Adafruit_NeoPixel::Color(level, uint16_t(147) * level / 255, uint16_t(41) * level / 255));
+        setRing(i, trayGlow ? orbGold(level) : Adafruit_NeoPixel::Color(level, uint16_t(147) * level / 255, uint16_t(41) * level / 255));
         hintRingBrightness[i] = level;
       }
       hintRingLit[i] = level > 0;
