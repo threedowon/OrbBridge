@@ -148,6 +148,11 @@ uint16_t trayRiseMs = 0;
 uint8_t trayEasing = 0;
 bool hintEnding = false;
 uint32_t hintEndStarted = 0;
+// Restore the displayed hint levels before resuming the ready breathing cycle.
+const uint16_t HINT_RESTORE_MS = 600;
+bool hintRestoring = false;
+uint32_t hintRestoreStarted = 0;
+uint8_t hintRestoreLevels[BUS_COUNT] = {};
 bool hintRingLit[BUS_COUNT] = {};
 uint32_t hintRingStarted[BUS_COUNT] = {};
 uint16_t hintRingDuration[BUS_COUNT] = {};
@@ -182,6 +187,7 @@ void updateServerLease() {
   dfestaCursor = false;
   dfestaMasks[0] = dfestaMasks[1] = 0;
   breathMask = 0;
+  hintRestoring = false;
   hintActive = playbackCursor = hintNoteLit = hintEnding = trayGlow = false;
   memset(hintRingLit, 0, sizeof(hintRingLit));
   ledAckPending = false;
@@ -197,6 +203,7 @@ void applyLedCommand(int effect) {
   dfestaCursor = false;
   dfestaMasks[0] = dfestaMasks[1] = 0;
   breathMask = 0;
+  hintRestoring = false;
   hintActive = false;
   ledReceivedMs = millis();
   ledEffect = effect;
@@ -440,7 +447,7 @@ void setSlotLevel(int i, uint8_t level) {
     drawDfestaColumn(i / 8);
     ringLow.show(); ringHigh.show();
   }
-  if (ledEffect != 0 || hintActive) return;
+  if (ledEffect != 0 || hintActive || hintRestoring) return;
   setRing(i, orbGold(level));
 }
 
@@ -453,16 +460,30 @@ void fillAll(uint32_t color) {
   ringHigh.show();
 }
 
-void stopHint() {
+void stopHint(bool smooth = false) {
+  const bool wasRestoring = hintRestoring;
+  hintRestoring = false;
   dfestaReleasing = false;
   dfestaMasks[0] = dfestaMasks[1] = 0;
   dfestaCursor = false;
-  if (!hintActive) return;
+  if (!hintActive && !wasRestoring) return;
   hintActive = false;
   playbackCursor = false;
   hintEnding = false;
   trayGlow = false;
   memset(hintRingLit, 0, sizeof(hintRingLit));
+  if (smooth && ledEffect == 0) {
+    // Do not paint occupied rings at 255 here: after a dark hint tail that
+    // creates a full-brightness flash before runEffectAnim draws breathing.
+    for (int i = 0; i < BUS_COUNT; ++i) {
+      const LedMap& m = LED_MAP[i];
+      Adafruit_NeoPixel& strip = m.strip == 0 ? ringLow : ringHigh;
+      hintRestoreLevels[i] = m.strip < 0 ? 0 : uint8_t(strip.getPixelColor(m.offset) >> 16);
+    }
+    hintRestoreStarted = millis();
+    hintRestoring = true;
+    return;
+  }
   if (ledEffect != 0) fillAll(0);
   applyEffectOnce();
 }
@@ -497,10 +518,11 @@ void applyHintCommand(const HintCommandParser& command) {
     const bool changed = mask != breathMask;
     if (mask && !breathMask) breathStarted = millis();
     breathMask = mask; breathRenewed = millis();
-    if (changed && !hintActive) applyEffectOnce();
+    if (changed && !hintActive && !hintRestoring) applyEffectOnce();
     return;
   }
   if (command.tray) {
+    hintRestoring = false;
     dfestaReleasing = false;
     dfestaBlocked = true;
     dfestaCursor = false;
@@ -525,6 +547,7 @@ void applyHintCommand(const HintCommandParser& command) {
   if (!command.duration) { stopHint(); return; }
   // H4: clear accumulated result and hold blackout until a new LED session.
   if (!command.playback && !command.slave && command.duration == 4) {
+    hintRestoring = false;
     dfestaReleasing = false;
     dfestaBlocked = true;
     dfestaMasks[0] = dfestaMasks[1] = 0;
@@ -546,6 +569,7 @@ void applyHintCommand(const HintCommandParser& command) {
   }
   if (command.dfesta) {
     if (dfestaBlocked) return;
+    hintRestoring = false;
     if (!dfestaCursor) dfestaMasks[0] = dfestaMasks[1] = 0;
     hintActive = playbackCursor = dfestaCursor = true;
     hintEnding = false;
@@ -561,6 +585,7 @@ void applyHintCommand(const HintCommandParser& command) {
     ringLow.show(); ringHigh.show();
     return;
   }
+  hintRestoring = false;  // A new PLAY/hint owns the rings immediately.
   dfestaReleasing = false;
   if (!command.playback && !command.slave && command.duration == 1)
     dfestaBlocked = false;
@@ -608,7 +633,13 @@ void applyHintCommand(const HintCommandParser& command) {
 }
 
 void updateHint() {
-  if (!slotLedsOnline || !hintActive) return;
+  if (!slotLedsOnline) return;
+  if (!hintActive) {
+    // Called between individual OneWire scans too, so the return does not
+    // wait for all 16 slots before drawing its next fade frame.
+    if (hintRestoring) runEffectAnim();
+    return;
+  }
   if (dfestaReleasing) {
     const uint32_t age = uint32_t(millis() - dfestaReleaseStarted);
     if (age >= REMOVE_DEBOUNCE_MS) { stopHint(); return; }
@@ -681,7 +712,7 @@ void updateHint() {
       hintRingLit[i] = level > 0;
       anyLit |= hintRingLit[i];
     }
-    if (hintEnding && !anyLit && uint32_t(millis() - hintEndStarted) >= hintFadeMs) { stopHint(); return; }
+    if (hintEnding && !anyLit && uint32_t(millis() - hintEndStarted) >= hintFadeMs) { stopHint(true); return; }
   }
   // Recover if the server disconnects and the explicit end command is lost.
   if (elapsed >= 120000UL) stopHint();
@@ -720,7 +751,31 @@ void applyEffectOnce() {
 void runEffectAnim() {
   if (!slotLedsOnline || hintActive) return;
   if (breathMask && uint32_t(millis() - breathRenewed) > 2500) {
-    breathMask = 0; applyEffectOnce();
+    breathMask = 0;
+    if (!hintRestoring) applyEffectOnce();
+  }
+  if (hintRestoring) {
+    const uint32_t now = millis();
+    if (uint32_t(now - breathFrame) < FADE_STEP_MS) return;
+    breathFrame = now;
+    const uint32_t age = uint32_t(now - hintRestoreStarted);
+    const float progress = age >= HINT_RESTORE_MS ? 1.0f : float(age) / HINT_RESTORE_MS;
+    const float blend = 0.5f - 0.5f * cosf(progress * 3.14159265f);
+    for (int i = 0; i < BUS_COUNT; ++i) {
+      const bool ready = breathMask & (uint16_t(1) << i);
+      const uint8_t target = ready ? (hasLast[i] && !missing[i] ? 255 : 0) : ringLevel[i];
+      uint8_t level = uint8_t(hintRestoreLevels[i] + (int(target) - hintRestoreLevels[i]) * blend + 0.5f);
+      if (ready && (!hasLast[i] || missing[i])) level = 0;
+      setRing(i, orbGold(level), false);
+    }
+    ringLow.show(); ringHigh.show();
+    if (age >= HINT_RESTORE_MS) {
+      hintRestoring = false;
+      // Begin at the peak we just reached, not part-way through a cycle
+      // timed from a B command that arrived while the hint was still fading.
+      breathStarted = now;
+    }
+    return;
   }
   if (breathMask) {
     if (uint32_t(millis() - breathFrame) < 30) return;
