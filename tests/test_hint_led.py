@@ -1,4 +1,101 @@
 from server.inout.hint_led import HintLedBridge
+import pytest
+
+
+def test_ready_breathing_only_correct_slots_and_playback_priority():
+    sent = []
+    now = [10.0]
+    def send(command):
+        sent.append(command)
+        return True
+    bridge = HintLedBridge(send, lambda: now[0])
+    state = {'completion': {'waiting_for_dfesta': True}, 'cells': {
+        '1:5': {'slave':1, 'cell':5, 'result':'correct'},
+        '6:16': {'slave':6, 'cell':16, 'result':'correct'},
+        '2:1': {'slave':2, 'cell':1, 'result':'wrong'}}}
+    bridge.sync_ready(state, {})
+    assert sent == ['B500000000008']
+    bridge.sync_ready(state, {})
+    assert len(sent) == 1
+    now[0] += 0.5
+    bridge.sync_ready(state, {})
+    assert len(sent) == 2
+    bridge.sync_ready(state, {'active': True})
+    assert sent[-1] == 'B000000000000'
+    bridge.sync_ready(state, {})
+    assert sent[-1] == 'B500000000008'
+    state['completion']['waiting_for_dfesta'] = False
+    bridge.sync_ready(state, {})
+    assert sent[-1] == 'B000000000000'
+
+
+def test_breathing_failed_send_retries_and_inspection_disables():
+    sent = []
+    bridge = HintLedBridge(lambda command: sent.append(command) or False)
+    bridge.sync_ready({}, {})
+    bridge.sync_ready({}, {})
+    assert sent == ['B000000000000'] * 2
+    state = {'completion': {'waiting_for_dfesta': True}, 'cells': {'1:1': {'slave':1,'cell':1,'result':'correct'}}}
+    bridge.sync_ready(state, {}, inspection=True)
+    assert sent[-1] == 'B000000000000'
+
+
+def test_dfesta_fills_only_below_answer_not_harmony_or_occupied_notes():
+    sent = []
+    bridge = HintLedBridge(sent.append, lambda: 10)
+    bridge.handle(start(mode='dfesta', hint=False))
+    for step in range(12):
+        for pitch in range(8):
+            event = beat(step=step, pitch=7)
+            event.update(mode='dfesta', answer_pitch=pitch)
+            bridge.handle(event)
+            assert sent[-1] == f'Q{step // 2 + 1},{step % 2 + 1},{(1 << (pitch + 1)) - 1},460'
+    event.update(step=4, answer_pitch=4, duration_ms=4000)
+    bridge.handle(event)
+    assert sent[-1] == 'Q3,1,31,4000'
+    event.update(answer_pitch=None)
+    bridge.handle(event)
+    assert sent[-1] == 'Q3,1,0,4000'
+    bridge.handle(dict(type='end', run_id=1, cancelled=True))
+    assert sent[-1] == 'H0,0,0,600'
+
+
+@pytest.mark.parametrize('delay,expected', [(3, 'T2000'), (2, 'T1000'), (1.5, 'T500'), (1, None), (0, None)])
+def test_tray_light_finishes_one_second_before_hint(delay, expected):
+    sent = []
+    bridge = HintLedBridge(sent.append)
+    snapshot = {'initial_hint': {'pending': True, 'remaining_s': delay}}
+    bridge.tray_transition('READY', 'RUNNING', snapshot)
+    bridge.tray_transition('RUNNING', 'RUNNING', snapshot)
+    assert sent == ([expected] if expected else [])
+    bridge.tray_transition('RUNNING', 'RESETTING', {})
+    if expected:
+        assert sent[-1] == 'H0,0,0,600'
+
+
+def test_initial_hint_replaces_tray_light_without_later_cancelling_it():
+    sent = []
+    bridge = HintLedBridge(sent.append)
+    bridge.tray_transition('READY', 'RUNNING', {'initial_hint': {'pending': True, 'remaining_s': 3}})
+    bridge.handle(start())
+    assert sent == ['T2000', 'H0,0,1,600']
+    assert not bridge.tray_active
+
+
+@pytest.mark.parametrize('fade', [0, 300, 600, 1200, 3000])
+def test_configured_fade_is_carried_on_notes_and_controls(fade):
+    sent = []
+    bridge = HintLedBridge(sent.append, lambda: 10, fade_ms=fade)
+    bridge.handle(start())
+    bridge.handle(beat())
+    bridge.handle(dict(type='end', run_id=1))
+    assert sent == [f'H0,0,1,{fade}', f'H1,1,460,{fade}', f'H0,0,3,{fade}']
+
+
+@pytest.mark.parametrize('fade', [-1, 3001, True, '600', 0.6])
+def test_invalid_fade_rejected(fade):
+    with pytest.raises(ValueError, match='hint_led_fade_ms'):
+        HintLedBridge(lambda _: None, fade_ms=fade)
 
 
 def start(run=1, hint=True, mode="listen"):
@@ -19,9 +116,9 @@ def test_only_enabled_hint_lights_rings():
     assert sent == []
     bridge.handle(start(run=2))
     bridge.handle(beat(run=2))
-    assert sent == ["H0,0,1", "H1,1,460"]
+    assert sent == ["H0,0,1,600", "H1,1,460,600"]
     bridge.handle(dict(type="end", run_id=2))
-    assert sent[-1] == "H0,0,0"
+    assert sent[-1] == "H0,0,3,600"
 
 
 def test_all_96_slot_addresses():
@@ -31,7 +128,7 @@ def test_all_96_slot_addresses():
     for step in range(12):
         for pitch in range(8):
             bridge.handle(beat(step, pitch))
-            assert sent[-1] == f"H{step // 2 + 1},{step % 2 * 8 + pitch + 1},460"
+            assert sent[-1] == f"H{step // 2 + 1},{step % 2 * 8 + pitch + 1},460,600"
     assert len(set(sent)) == 97
 
 
@@ -40,12 +137,14 @@ def test_rest_delay_and_cancel_restore():
     bridge = HintLedBridge(sent.append, lambda: 10.1)
     bridge.handle(start())
     bridge.handle(beat())
-    assert sent[-1] in ("H1,1,360", "H1,1,359")
+    assert sent[-1] in ("H1,1,360,600", "H1,1,359,600")
+    count = len(sent)
     bridge.handle(beat(pitch=None))
-    assert sent[-1] == "H0,0,1"
+    assert len(sent) == count  # Rests leave the previous note fading independently.
     bridge.handle(beat(emitted=9))
-    assert sent[-1] == "H0,0,1"
+    assert len(sent) == count
     bridge.handle(dict(type="end", run_id=1, cancelled=True))
+    assert sent[-1] == "H0,0,0,600"
     assert bridge.run_id is None
 
 
@@ -55,7 +154,7 @@ def test_disabled_playback_cancels_hint_and_ignores_old_events():
     bridge.handle(start())
     bridge.handle(beat())
     bridge.handle(start(run=2, hint=False))
-    assert sent[-1] == "H0,0,0"
+    assert sent[-1] == "H0,0,0,600"
     count = len(sent)
     bridge.handle(beat(run=1))
     bridge.handle(dict(type="end", run_id=1))
@@ -72,9 +171,9 @@ def test_hint_stays_exclusive_through_rests_and_replacement():
     bridge.handle(start(run=2))
     bridge.handle(dict(type="end", run_id=1))
     bridge.handle(beat(step=2, run=2))
-    assert sent == ["H0,0,1", "H1,1,460", "H0,0,1", "H0,0,1", "H2,1,460"]
+    assert sent == ["H0,0,1,600", "H1,1,460,600", "H0,0,1,600", "H2,1,460,600"]
     bridge.handle(dict(type="end", run_id=2))
-    assert sent[-1] == "H0,0,0"
+    assert sent[-1] == "H0,0,3,600"
 
 
 def test_play_cursor_includes_silent_beats_and_all_sounding_pitches():
@@ -90,7 +189,7 @@ def test_play_cursor_includes_silent_beats_and_all_sounding_pitches():
     bridge.handle(event)
     assert sent[-1] == 'P6,2,129,460'
     bridge.handle(dict(type='end', run_id=1))
-    assert sent[-1] == 'H0,0,0'
+    assert sent[-1] == 'H0,0,0,600'
 
 
 def test_play_replaced_by_hint_ignores_stale_beats_and_end():
@@ -103,4 +202,4 @@ def test_play_replaced_by_hint_ignores_stale_beats_and_end():
     bridge.handle(dict(type='end', run_id=1))
     assert sent == before
     bridge.handle(beat(run=2))
-    assert sent[-1] == 'H1,1,460'
+    assert sent[-1] == 'H1,1,460,600'

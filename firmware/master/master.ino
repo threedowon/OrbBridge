@@ -86,6 +86,9 @@ unsigned long lastBusRxMs = 0;
 LedBroadcast ledBroadcast;
 HintCommandParser hintCommand;
 bool hintPending = false;
+bool breathPending = false;
+char breathLine[13] = {};
+uint32_t breathQueuedAt = 0;
 uint32_t hintQueuedAt = 0;
 
 // 바이너리 프레임 조립 버퍼
@@ -267,14 +270,22 @@ void pollUsbCommand() {
   while (Serial.available()) {
     char c = (char)Serial.read();
     if (c == '\n') {
+      HintCommandParser parsed;
       if (usbLine.length() == 2 && usbLine[0] == 'C' &&
           usbLine[1] >= '0' && usbLine[1] <= '9') {
         ledBroadcast.queue(usbLine[1] - '0', millis());
         hintPending = false;
-      } else if (hintCommand.parse(usbLine.c_str())) {
+      } else if (parsed.parse(usbLine.c_str())) {
         ledBroadcast.stop();  // Old effect retries must not overwrite this cue.
-        hintPending = true;
-        hintQueuedAt = millis();
+        if (parsed.breathing) {
+          memcpy(breathLine, parsed.breathColumns, sizeof(breathLine));
+          breathPending = true;
+          breathQueuedAt = millis();
+        } else {
+          hintCommand = parsed;
+          hintPending = true;
+          hintQueuedAt = millis();
+        }
       } else if (usbLine.length() >= 2 && usbLine[0] == 'D') {
         // Button LEDs are disabled; keep accepting legacy activation commands.
       }
@@ -308,7 +319,15 @@ void pollLedBroadcast() {
 }
 
 void pollHintCommand() {
-  if (!hintPending) return;
+  if (!hintPending) {
+    if (breathPending && uint32_t(millis() - lastBusRxMs) >= 2) {
+      if (uint32_t(millis() - breathQueuedAt) <= 1000) {
+        RS485.print("\nB"); RS485.print(breathLine); RS485.print("\n"); RS485.flush(true);
+      }
+      breathPending = false;
+    }
+    return;
+  }
   const uint32_t now = millis();
   const uint32_t age = now - hintQueuedAt;
   // A busy bus must not delay an obsolete note into the following note.
@@ -316,12 +335,18 @@ void pollHintCommand() {
   if (now - lastBusRxMs < 2) return;
   uint16_t remaining = hintCommand.duration > age ? hintCommand.duration - age : 0;
   char line[24];
-  if (!hintCommand.duration) snprintf(line, sizeof(line), "\nH0,0,0\n");
-  else if (!remaining || !hintCommand.slave) snprintf(line, sizeof(line), "\nH0,0,1\n");
-  else if (hintCommand.playback) snprintf(line, sizeof(line), "\nP%u,%u,%u,%u\n",
+  if (hintCommand.breathing) snprintf(line, sizeof(line), "\nB%s\n", hintCommand.breathColumns);
+  else if (hintCommand.tray) {
+    if (!remaining) { hintPending = false; return; }
+    snprintf(line, sizeof(line), "\nT%u\n", remaining);
+  }
+  else if (!hintCommand.duration) snprintf(line, sizeof(line), "\nH0,0,0,%u\n", hintCommand.fadeMs);
+  else if (!hintCommand.slave) snprintf(line, sizeof(line), "\nH0,0,%u,%u\n", hintCommand.duration, hintCommand.fadeMs);
+  else if (!remaining) snprintf(line, sizeof(line), "\nH0,0,2,%u\n", hintCommand.fadeMs);  // Preserve existing fades.
+  else if (hintCommand.playback) snprintf(line, sizeof(line), "\n%c%u,%u,%u,%u\n", hintCommand.dfesta ? 'Q' : 'P',
                 hintCommand.slave, hintCommand.cell, hintCommand.mask, remaining);
-  else snprintf(line, sizeof(line), "\nH%u,%u,%u\n", hintCommand.slave,
-                hintCommand.cell, remaining);
+  else snprintf(line, sizeof(line), "\nH%u,%u,%u,%u\n", hintCommand.slave,
+                hintCommand.cell, remaining, hintCommand.fadeMs);
   RS485.print(line);
   RS485.flush(true);
   hintPending = false;

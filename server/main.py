@@ -37,13 +37,13 @@ from server.orb_inspection import OrbInspection
 
 _orb_inspection = OrbInspection()
 
-_hint_led = HintLedBridge(lambda command: hardware_io.send_line(command))
 
 ensure_data_files()
 
 # ── 설정 로드 ──────────────────────────────────────────
 config = load_config()
 hall_sensor_count(config)  # Reject invalid hardware policy at startup.
+_hint_led = HintLedBridge(lambda command: hardware_io.send_line(command), fade_ms=config.get("hint_led_fade_ms", 600))
 orb_mapping = load_mapping()
 
 _melody_manager = MelodyManager(melodies_dir())
@@ -333,6 +333,7 @@ def _on_state_change(previous: str, current: str, snapshot: dict) -> None:
     )
     if current != GameState.RUNNING.value and not keep_final_dfesta:
         _cancel_playback()
+    _hint_led.tray_transition(previous, current, snapshot)
 
     # admin 실시간 로그와 저장 로그가 같은 상태 전이만 사용하게 한다.
     _record_event(
@@ -1412,8 +1413,6 @@ def stop_serial_input() -> None:
 # ── 진입점 ─────────────────────────────────────────────
 def _update_matrix_display() -> None:
     _start_initial_hint_if_due()
-    if _matrix_display is None:
-        return
     # Do not expose the brief READY + tray-on snapshot during automatic start.
     with _tray_lock:
         snapshot = get_game_state()
@@ -1421,7 +1420,9 @@ def _update_matrix_display() -> None:
         with _scheduler_lock:
             scheduler = _playback_scheduler
         playback = scheduler.display_snapshot() if scheduler is not None else {}
-    _matrix_display.update(snapshot, playback)
+    _hint_led.sync_ready(snapshot, playback, _orb_inspection.active)
+    if _matrix_display is not None:
+        _matrix_display.update(snapshot, playback)
 
 
 def orb_action(data: dict) -> dict:

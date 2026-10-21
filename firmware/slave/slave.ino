@@ -130,9 +130,20 @@ HintCommandParser hintParser;
 HintCommandParser usbHintParser;
 bool hintActive = false;
 bool playbackCursor = false;
+bool dfestaCursor = false;
+uint16_t breathMask = 0;
+uint32_t breathStarted = 0, breathRenewed = 0, breathFrame = 0;
 bool hintNoteLit = false;
 uint32_t hintStarted = 0;
 uint16_t hintDuration = 0;
+uint16_t hintFadeMs = 600;
+bool hintEnding = false;
+uint32_t hintEndStarted = 0;
+bool hintRingLit[BUS_COUNT] = {};
+uint32_t hintRingStarted[BUS_COUNT] = {};
+uint16_t hintRingDuration[BUS_COUNT] = {};
+uint8_t hintRingBrightness[BUS_COUNT] = {};
+uint32_t hintFrameAt = 0;
 String usbCmdLine;
 bool ledAckPending = false;
 uint8_t ledAckEffect = 0;
@@ -187,7 +198,7 @@ void pollUsb() {
       }
       usbCmdLine = "";
     } else if (c != '\r') {
-      if (usbCmdLine.length() < 16) usbCmdLine += c;
+      if (usbCmdLine.length() < 24) usbCmdLine += c;
       else usbCmdLine = "!";
     }
   }
@@ -371,21 +382,67 @@ void stopHint() {
   if (!hintActive) return;
   hintActive = false;
   playbackCursor = false;
+  hintEnding = false;
+  memset(hintRingLit, 0, sizeof(hintRingLit));
   fillAll(0);
   applyEffectOnce();
 }
 
 void applyHintCommand(const HintCommandParser& command) {
+  if (command.breathing) {
+    uint16_t mask = 0;
+    if (slaveId >= 1 && slaveId <= 6) {
+      for (int column = 0; column < 2; ++column) {
+        int pitch = command.breathColumns[(slaveId - 1) * 2 + column] - '0';
+        if (pitch > 0) mask |= uint16_t(1) << (column * 8 + pitch - 1);
+      }
+    }
+    const bool changed = mask != breathMask;
+    if (mask && !breathMask) breathStarted = millis();
+    breathMask = mask; breathRenewed = millis();
+    if (changed && !hintActive) applyEffectOnce();
+    return;
+  }
+  if (command.tray) {
+    hintActive = true;
+    playbackCursor = false;
+    hintEnding = false;
+    hintStarted = millis();
+    hintFadeMs = command.duration < 800 ? command.duration : 800;
+    const uint16_t holdMs = command.duration - hintFadeMs;
+    for (int i = 0; i < BUS_COUNT; ++i) {
+      hintRingLit[i] = true;
+      hintRingStarted[i] = hintStarted;
+      hintRingDuration[i] = holdMs;
+      hintRingBrightness[i] = 255;
+    }
+    fillAll(Adafruit_NeoPixel::Color(255, 147, 41));
+    return;
+  }
+  if (!command.playback) hintFadeMs = command.fadeMs;
   if (!command.duration) { stopHint(); return; }
+  // Control values: 1=new session, 2=skip expired cue, 3=finish after tails.
+  if (!command.playback && !command.slave && command.duration == 2) return;
+  if (!command.playback && !command.slave && command.duration == 3) {
+    if (hintActive && !playbackCursor) { hintEnding = true; hintEndStarted = millis(); }
+    return;
+  }
+  const bool resetRings = !hintActive || playbackCursor || command.playback || !command.slave;
+  if (resetRings) {
+    memset(hintRingLit, 0, sizeof(hintRingLit));
+    fillAll(0);
+  }
+  hintEnding = false;
   hintActive = true;
   hintStarted = millis();
   hintDuration = command.duration;
   playbackCursor = command.playback;
+  dfestaCursor = command.dfesta;
   hintNoteLit = command.slave == slaveId;
   if (playbackCursor) {
     // Restore the previous column to its tracked occupancy, then overlay this beat.
     for (int i = 0; i < BUS_COUNT; ++i) {
-      uint8_t level = ringLevel[i];
+      uint8_t level = dfestaCursor ? 0 : ringLevel[i];
       setRing(i, Adafruit_NeoPixel::Color(level, uint16_t(147) * level / 255,
                                         uint16_t(41) * level / 255));
     }
@@ -394,23 +451,50 @@ void applyHintCommand(const HintCommandParser& command) {
         const bool sounding = command.mask & (1 << pitch);
         setRing((command.cell - 1) * 8 + pitch, sounding
           ? Adafruit_NeoPixel::Color(255, 147, 41)
-          : Adafruit_NeoPixel::Color(20, 20, 20));
+          : (dfestaCursor ? 0 : Adafruit_NeoPixel::Color(20, 12, 3)));
       }
     }
     return;
   }
-  fillAll(0);
-  if (command.slave == slaveId)
+  if (command.slave == slaveId) {
+    const int slot = command.cell - 1;
+    hintRingLit[slot] = true;
+    hintRingStarted[slot] = hintStarted;
+    hintRingDuration[slot] = command.duration;
+    hintRingBrightness[slot] = 255;
     setRing(command.cell - 1, Adafruit_NeoPixel::Color(255, 147, 41));  // 오브 인식과 같은 따뜻한 색
+  }
 }
 
 void updateHint() {
   if (!hintActive) return;
   const uint32_t elapsed = uint32_t(millis() - hintStarted);
-  if (playbackCursor && elapsed >= hintDuration) { stopHint(); return; }
-  if (hintNoteLit && elapsed >= hintDuration) {
-    hintNoteLit = false;
-    fillAll(0);  // Stay dark between notes; occupancy returns only at session end.
+  if (playbackCursor && elapsed >= hintDuration) {
+    if (dfestaCursor) {
+      if (hintNoteLit) { fillAll(0); hintNoteLit = false; }
+      if (elapsed >= 120000UL) stopHint();
+    } else stopHint();
+    return;
+  }
+  if (!playbackCursor && uint32_t(millis() - hintFrameAt) >= 20) {
+    hintFrameAt = millis();
+    bool anyLit = false;
+    for (int i = 0; i < BUS_COUNT; ++i) {
+      if (!hintRingLit[i]) continue;
+      const uint32_t age = uint32_t(hintFrameAt - hintRingStarted[i]);
+      uint8_t level = 255;
+      if (age >= hintRingDuration[i]) {
+        const uint32_t fadeAge = age - hintRingDuration[i];
+        level = fadeAge >= hintFadeMs ? 0 : uint32_t(255) * (hintFadeMs - fadeAge) / hintFadeMs;
+      }
+      if (level != hintRingBrightness[i]) {
+        setRing(i, Adafruit_NeoPixel::Color(level, uint16_t(147) * level / 255, uint16_t(41) * level / 255));
+        hintRingBrightness[i] = level;
+      }
+      hintRingLit[i] = level > 0;
+      anyLit |= hintRingLit[i];
+    }
+    if (hintEnding && !anyLit && uint32_t(millis() - hintEndStarted) >= hintFadeMs) { stopHint(); return; }
   }
   // Recover if the server disconnects and the explicit end command is lost.
   if (elapsed >= 120000UL) stopHint();
@@ -446,6 +530,19 @@ void applyEffectOnce() {
 // 애니메이션 이펙트 (loop 에서 ~30ms 마다 호출)
 void runEffectAnim() {
   if (hintActive) return;
+  if (breathMask && uint32_t(millis() - breathRenewed) > 2500) {
+    breathMask = 0; applyEffectOnce();
+  }
+  if (breathMask) {
+    if (uint32_t(millis() - breathFrame) < 30) return;
+    breathFrame = millis();
+    const float phase = float(uint32_t(breathFrame - breathStarted) % 2000) / 2000.0f;
+    const uint8_t level = 32 + uint8_t(223 * (0.5f - 0.5f * cosf(phase * 6.2831853f)));
+    for (int i = 0; i < BUS_COUNT; ++i)
+      if (breathMask & (uint16_t(1) << i))
+        setRing(i, Adafruit_NeoPixel::Color(level, uint16_t(147) * level / 255, uint16_t(41) * level / 255));
+    return;
+  }
   if (ledEffect < 7) return;
   if (millis() - lastAnimMs < 30) return;
   lastAnimMs = millis();

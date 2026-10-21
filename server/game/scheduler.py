@@ -79,6 +79,7 @@ class PlaybackCue:
     offset_s: float
     duration_ms: int
     notes: tuple[dict, ...]
+    answer_pitch: int | None = None
 
 
 @dataclass(frozen=True)
@@ -329,6 +330,7 @@ def build_plan(
                 offset_s=offset_s,
                 duration_ms=duration_ms,
                 notes=tuple(notes),
+                answer_pitch=step.pitch,
             )
         )
         offset_s += slot_s
@@ -577,6 +579,7 @@ class PlaybackScheduler:
                 "step": cue.step,
                 "duration_ms": cue.duration_ms,
                 "notes": [dict(note) for note in cue.notes],
+                "answer_pitch": cue.answer_pitch,
                 "emitted_at": self._clock(),
             }
             self._safe_publish(event)

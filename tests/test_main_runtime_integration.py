@@ -1162,7 +1162,7 @@ def test_orb_inspection_stops_game_and_blocks_playback(tray_main, monkeypatch, t
     main.start_game()
     main.orb_action({"action":"start"})
     assert stopped == [True]
-    assert "H0,0,0" in sent and "D0" in sent
+    assert "H0,0,0,600" in sent and "D0" in sent
     assert main.get_game_state()["state"] != "RUNNING"
     for fn in (main.start_game, main.request_play, main.request_listen, main.request_dfesta):
         with pytest.raises(RuntimeError): fn()

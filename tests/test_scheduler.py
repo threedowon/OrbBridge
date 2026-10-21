@@ -118,6 +118,7 @@ def test_play_uses_placed_column_voice_and_physical_pitch():
 
 def test_dfesta_deduplicates_voices_and_uses_target_pitch():
     plan = build_plan("dfesta", parse_melody(melody_raw()), cells())
+    assert [cue.answer_pitch for cue in plan.cues] == [0, None, 4]
 
     assert plan.cues[0].notes == (
         {"voice": "aespa_1", "pitch": 0, "duration_ms": 250, "velocity": 127},
