@@ -36,7 +36,7 @@ from PIL import Image, ImageDraw, ImageFont
 # =====================================
 # 2. 사용자 설정
 # =====================================
-PC_NAME = "VoiceOrb-3"
+PC_NAME = "voiceorb-pc-1"
 FONT_SIZE = 200
 FONT_COLOR = (255, 255, 255)
 BACKGROUND_COLOR = (0, 0, 0)
