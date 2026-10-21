@@ -145,6 +145,9 @@ class GameEngine:
         self._tray_removal_pending = False
         self._table_cleared_at: float | None = None
         self._cleanup_end_reason: str | None = None
+        # Runtime supplies whether a sequence is still draining. The deadline
+        # itself never moves, and expired timers still reject new button input.
+        self.hold_time_over = False
 
     def _tray_state(self, now: float) -> tuple[bool | None, bool | None]:
         if self._tray_expires_at is not None and now >= self._tray_expires_at:
@@ -303,7 +306,7 @@ class GameEngine:
         now = self._now()
         if self.state is not GameState.RUNNING:
             raise InvalidTransition(f"END is invalid from {self.state.value}")
-        if self._end_if_needed(now):
+        if self._end_if_needed(now) and self.state is not GameState.RUNNING:
             return self.state
         try:
             normalized_reason = EndReason(reason)
@@ -318,7 +321,11 @@ class GameEngine:
         now = self._now()
         if self.state is GameState.READY and self._cleanup_is_clear():
             return self.state
-        if self.state is GameState.RUNNING and self._end_if_needed(now):
+        if (
+            self.state is GameState.RUNNING
+            and self._end_if_needed(now)
+            and self.state is not GameState.RUNNING
+        ):
             return self.state
         reason = EndReason.MANUAL if self.state is GameState.RUNNING else None
         self._enter_resetting(reason, now)
@@ -626,7 +633,7 @@ class GameEngine:
         self._set_state(GameState.READY)
 
     def _end_if_needed(self, now: float) -> bool:
-        """IsTimeOver와 IsIdle을 검사하고 RESETTING으로 직접 전이한다."""
+        """만료 여부를 반환하고, 재생 중인 TIME OVER 외에는 RESETTING으로 전이한다."""
 
         if self.state is not GameState.RUNNING:
             return False
@@ -653,6 +660,10 @@ class GameEngine:
             return False
 
         _, _, reason = min(expired)
+        if reason is EndReason.TIME_OVER and self.hold_time_over:
+            # True means this input is too late even while the current sequence
+            # keeps RUNNING alive until its final note. Manual end/reset wins.
+            return True
         self._enter_resetting(reason, now)
         return True
 

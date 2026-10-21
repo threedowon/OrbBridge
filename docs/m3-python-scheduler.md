@@ -34,6 +34,11 @@ Windows의 낮은 해상도 monotonic clock 및 화면 callback과의 결합을 
 ## 동시 실행과 취소
 
 - 새 Listen·Play·DFesta 요청은 기존 playback을 취소하고 새 run을 만든다.
+- 제한시간이 끝날 때 Listen·Play·DFesta가 재생 중이면 현재 시퀀스의 마지막
+  음과 LED 박자까지 유지한 뒤 `TIME OVER`로 종료한다. 대기 중 타이머는 0이며
+  새 버튼 요청은 무시한다. 재생이 없으면 기존처럼 즉시 종료한다.
+- 관리자 종료·리셋, DFesta 재생 중 정답 조건 해제는 제한시간 이후에도
+  기존처럼 재생을 중단한다. Idle 종료 규칙은 유지한다.
 - `RUNNING`을 벗어나는 `RESETTING` 전이와 `READY` 복귀는 실행 중 playback을 취소한다.
 - MIDI 오류가 나도 Scheduler thread와 beat 표시 이벤트는 계속 진행한다.
 - 종료 시 `PlaybackScheduler.close()`로 worker를 정리한다.
@@ -56,4 +61,6 @@ Windows의 낮은 해상도 monotonic clock 및 화면 callback과의 결합을 
 - 250ms 준비 시간과 duration 누적 offset
 - start·beat·MIDI·end 이벤트 순서
 - 새 실행의 이전 실행 취소
+- 세 모드의 제한시간 만료 후 마지막 음·LED 유지, 추가 입력 차단, 종료 안내 순서
+- 교체된 이전 run의 종료 이벤트 격리 및 만료 후 수동 중단
 - close 멱등성과 종료 후 start 거부
