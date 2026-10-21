@@ -217,6 +217,122 @@ def test_game_end_releases_gate_before_terminal_sound(event_main, reason):
     assert notes[-1:] == [(64, False)] if reason == "manual" else notes[-2:] == [(64, False), (65, True)]
 
 
+def _prepare_correct_game(event_main):
+    main, clock, _, events, _, held = event_main
+    main.set_tray({"present": True})
+    clock[0] = 3
+    runtime = main.get_game_runtime()
+    runtime.barrier()
+    main._update_matrix_display()
+    runtime.add_orb(orb_id="a", slave=1, cell=1, voice="test_1")
+    events.flush()
+    assert held == {64}
+    return runtime
+
+
+@pytest.mark.parametrize("mode", ["play", "listen"])
+def test_real_playback_mutes_prompt_before_first_note_then_restores(event_main, monkeypatch, mode):
+    from server.game.scheduler import parse_melody
+
+    main, _, _, events, notes, held = event_main
+    _prepare_correct_game(event_main)
+    monkeypatch.setattr(main, "playback_melody", parse_melody({
+        "bpm": 6000, "steps": [{"note": "C4"}]}))
+    sent, ended = [], threading.Event()
+    def send(batch):
+        assert not held
+        sent.extend(batch)
+    publish = main._scheduler_publish_event
+    def on_event(event):
+        publish(event)
+        if event["type"] == "end":
+            ended.set()
+    monkeypatch.setattr(main, "_scheduler_send_notes", send)
+    monkeypatch.setattr(main, "_scheduler_publish_event", on_event)
+    main._playback_scheduler = None
+    try:
+        result = getattr(main, "request_" + mode)()
+        assert result["ok"]
+        assert not held
+        assert ended.wait(2)
+        events.flush()
+        assert sent
+        assert held == {64}
+        assert [note for note in notes if note[0] == 64] == [
+            (64, True), (64, False), (64, True)]
+    finally:
+        main._playback_scheduler.close()
+
+
+def test_replaced_playback_does_not_restore_prompt_between_sequences(event_main):
+    main, _, _, events, notes, held = event_main
+    runtime = _prepare_correct_game(event_main)
+    main._scheduler_before_start({"run_id": 2, "mode": "play"})
+    assert not held
+    main._scheduler_before_start({"run_id": 3, "mode": "listen"})
+    main._scheduler_publish_event({"type": "end", "run_id": 2, "mode": "play", "cancelled": True})
+    # New placements can change eligibility during playback without reopening the gate.
+    runtime.remove_orb(slave=1, cell=1)
+    runtime.add_orb(orb_id="a", slave=1, cell=1)
+    events.flush()
+    assert not held
+    assert [note for note in notes if note[0] == 64] == [(64, True), (64, False)]
+    main._scheduler_publish_event({"type": "end", "run_id": 3, "mode": "listen"})
+    events.flush()
+    assert held == {64}
+    main._scheduler_publish_event({"type": "end", "run_id": 2, "mode": "play", "cancelled": True})
+    events.flush()
+    assert [note for note in notes if note[0] == 64] == [(64, True), (64, False), (64, True)]
+
+
+@pytest.mark.parametrize("action", ["remove", "reset", "time_over", "dfesta"])
+def test_playback_end_does_not_restore_ineligible_prompt(event_main, action):
+    main, clock, _, events, notes, held = event_main
+    runtime = _prepare_correct_game(event_main)
+    main._scheduler_before_start({"run_id": 2, "mode": "listen"})
+    if action == "remove":
+        runtime.remove_orb(slave=1, cell=1)
+    elif action == "reset":
+        main.reset_game()
+    elif action == "time_over":
+        clock[0] = 70
+        runtime.barrier()
+    else:
+        assert runtime.press_dfesta().value
+    main._scheduler_publish_event({"type": "end", "run_id": 2, "mode": "listen"})
+    events.flush()
+    assert not held
+    assert [note for note in notes if note[0] == 64] == [(64, True), (64, False)]
+
+
+def test_failed_playback_start_restores_eligible_prompt(event_main, monkeypatch):
+    main, _, _, events, _, held = event_main
+    _prepare_correct_game(event_main)
+    ended = threading.Event()
+    prepare = main._scheduler_before_start
+    def fail(event):
+        prepare(event)
+        assert not held
+        raise RuntimeError("prepare failed")
+    publish = main._scheduler_publish_event
+    def on_event(event):
+        publish(event)
+        if event["type"] == "end":
+            ended.set()
+    monkeypatch.setattr(main, "_scheduler_before_start", fail)
+    monkeypatch.setattr(main, "_scheduler_publish_event", on_event)
+    main._playback_scheduler = None
+    try:
+        with pytest.raises(RuntimeError, match="prepare failed"):
+            main.request_play()
+        assert ended.wait(2)
+        events.flush()
+        assert held == {64}
+        assert not main._playback_scheduler.display_snapshot()["active"]
+    finally:
+        main._playback_scheduler.close()
+
+
 def test_configured_delay_extends_existing_timer_grace(monkeypatch):
     from test_main_runtime_integration import _load_main_module
     import sys

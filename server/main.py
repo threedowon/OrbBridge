@@ -211,8 +211,16 @@ def _send_game_notes(notes: list[dict]) -> list[dict]:
     return results
 
 
+def _scheduler_before_start(event: dict) -> None:
+    if _game_events is not None:
+        _game_events.playback_started(int(event["run_id"]))
+        _game_events.flush()  # Deliver the prompt Note Off before any melody notes.
+
+
 def _scheduler_publish_event(event: dict) -> None:
     """Scheduler callback을 브라우저 WebSocket 이벤트로 변환한다."""
+    if event["type"] == "end" and _game_events is not None:
+        _game_events.playback_ended(int(event["run_id"]))
     if not _orb_inspection.active:
         _hint_led.handle(event)
     event_type = event["type"]
@@ -252,6 +260,7 @@ def get_playback_scheduler() -> PlaybackScheduler:
                 send_notes=_scheduler_send_notes,
                 publish_event=_scheduler_publish_event,
                 stop_notes=stop_notes,
+                before_start=_scheduler_before_start,
             )
         return _playback_scheduler
 

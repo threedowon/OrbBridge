@@ -347,15 +347,19 @@ class PlaybackScheduler:
         send_notes: Callable[[list[dict]], object],
         publish_event: Callable[[dict], object],
         stop_notes: Callable[[list[dict]], object] | None = None,
+        before_start: Callable[[dict], object] | None = None,
         clock: Callable[[], float] = time.perf_counter,
     ) -> None:
         if not callable(send_notes) or not callable(publish_event):
             raise TypeError("send_notes and publish_event must be callable")
         if not callable(clock):
             raise TypeError("clock must be callable")
+        if before_start is not None and not callable(before_start):
+            raise TypeError("before_start must be callable")
         self._send_notes = send_notes
         self._publish_event = publish_event
         self._stop_notes = stop_notes
+        self._before_start = before_start
         self._clock = clock
         self._lock = threading.Lock()
         self._run_id = 0
@@ -436,8 +440,7 @@ class PlaybackScheduler:
         with self._lock:
             if self._closed:
                 raise RuntimeError("scheduler is closed")
-            if self._cancel is not None:
-                self._cancel.set()
+            previous_cancel = self._cancel
             self._run_id += 1
             run_id = self._run_id
             with self._timing_lock:
@@ -455,13 +458,34 @@ class PlaybackScheduler:
             self._thread = thread
             self._mode = plan.mode
             self._workers.add(thread)
-            # start는 run 순서로 먼저 queue에 넣고 MIDI worker를 시작한다.
-            self._safe_publish({
+            start_event = {
                 "type": "start", "run_id": run_id, "mode": plan.mode.value,
                 "step_count": len(plan.cues),
                 "hint_led": bool(hint_led and plan.mode is PlaybackMode.LISTEN),
-            })
-            thread.start()
+            }
+            try:
+                # This hook releases the held prompt note, without depending on
+                # the asynchronous display publisher or delaying individual beats.
+                if self._before_start is not None:
+                    self._before_start(dict(start_event))
+                # Reserve the new gate before cancellation can publish the old
+                # run's end; otherwise the prompt could briefly turn back on.
+                if previous_cancel is not None:
+                    previous_cancel.set()
+                self._safe_publish(start_event)
+                thread.start()
+            except Exception:
+                if previous_cancel is not None:
+                    previous_cancel.set()
+                self._workers.discard(thread)
+                self._thread = None
+                self._cancel = None
+                self._mode = None
+                self._safe_publish({
+                    "type": "end", "run_id": run_id, "mode": plan.mode.value,
+                    "cancelled": True,
+                })
+                raise
         return {
             "run_id": run_id,
             "mode": plan.mode.value,

@@ -225,7 +225,7 @@ def test_admin_status_exposes_matrix_connection(tray_main, monkeypatch):
 
 
 def test_matrix_completion_uses_current_json_title_not_artist_or_filename(tray_main, monkeypatch):
-    main, _, writes = tray_main
+    main, clock, writes = tray_main
     monkeypatch.setattr(main, "melody_document", {
         **main.melody_document, "title": "BTS - DYNAMITE", "artist": "DO NOT PREPEND"})
     main.set_tray({"present": True})
@@ -236,6 +236,24 @@ def test_matrix_completion_uses_current_json_title_not_artist_or_filename(tray_m
     assert writes[-1] == {"type": "status", "text": "BTS - DYNAMITE", "scroll": True}
     assert main.get_game_state()["state"] == "RUNNING"
     main._playback_scheduler.close()
+    clock[0] += 10
+    main._update_matrix_display()
+    assert writes[-1] == {"type": "status", "text": "BTS - DYNAMITE", "scroll": True}
+
+    runtime = main.get_game_runtime()
+    runtime.remove_orb(slave=1, cell=1)
+    main._update_matrix_display()
+    assert writes[-1] == {"type": "display", "text": "", "seconds": 50}
+    runtime.add_orb(orb_id="a", slave=1, cell=1)
+    main._update_matrix_display()
+    assert writes[-1] == {"type": "status", "text": "PRESS DFESTA!", "arrow": "right"}
+
+    assert main.request_dfesta()["ok"]
+    main._update_matrix_display()
+    assert writes[-1]["text"] == "BTS - DYNAMITE"
+    # A quick remove/replacement must clear the title even between display polls.
+    runtime.remove_orb(slave=1, cell=1)
+    runtime.add_orb(orb_id="a", slave=1, cell=1)
     main._update_matrix_display()
     assert writes[-1] == {"type": "status", "text": "PRESS DFESTA!", "arrow": "right"}
 

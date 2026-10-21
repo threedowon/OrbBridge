@@ -141,20 +141,16 @@ void drawStatus(const char *raw) {
 }
 
 void drawButtonPrompt(const char *raw) {
-  String text(raw);
-  text.toUpperCase();
-  display->clearScreen();
-  drawName(text.c_str());
-  // Use the countdown region for a fixed arrow, independent of text length.
-  const int width = min(18 * FONT_SIZE, COUNTDOWN_MAX_CHARS * CHAR_W * FONT_SIZE);
-  const int right = DISPLAY_WIDTH - PADDING_RIGHT - 1 + TEXT_OFFSET_X;
-  const int centerY = PADDING_TOP + STATUS_GLYPH_H * FONT_SIZE / 2 + TEXT_OFFSET_Y;
-  const int head = 5 * FONT_SIZE;
+  drawStatus(raw);  // Center the text itself across the entire panel.
+  const int left = DISPLAY_WIDTH * 2 / 3 + TEXT_OFFSET_X;
+  const int right = DISPLAY_WIDTH - 5 + TEXT_OFFSET_X;  // Four-pixel right margin.
+  const int centerY = (PANEL_HEIGHT - 1) / 2 + TEXT_OFFSET_Y;
+  const int bottom = PANEL_HEIGHT - 3 + TEXT_OFFSET_Y;  // Two rows below the tip.
+  const int bend = bottom - centerY;
   const uint16_t color = display->color565(255, 255, 255);
-  // Thin, open arrow: one-pixel shaft and head, retaining the same bounds.
-  display->drawFastHLine(right - width + 1, centerY, width, color);
-  display->drawLine(right - head, centerY - 4 * FONT_SIZE, right, centerY, color);
-  display->drawLine(right - head, centerY + 4 * FONT_SIZE, right, centerY, color);
+  // Reference layout: long horizontal guide, then 45 degrees down-right.
+  display->drawFastHLine(left, centerY, right - bend - left + 1, color);
+  display->drawLine(right - bend, centerY, right, bottom, color);
 }
 
 void drawTitle(const char *raw) {

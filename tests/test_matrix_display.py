@@ -227,6 +227,65 @@ def test_missing_title_falls_back_to_configured_complete(rig, title):
     assert device.writes[-1] == {"type": "status", "text": "WELL DONE"}
 
 
+@pytest.mark.parametrize("time_over_s", [60, None])
+@pytest.mark.parametrize("title", ["BTS - DYNAMITE", ""])
+def test_dfesta_title_remains_while_correct_after_playback(rig, time_over_s, title):
+    from server.game.game_engine import GameEngine
+
+    matrix, device, _, now = rig
+    screens = []
+    matrix._on_screen_change = screens.append
+    game = GameEngine({1: "C"}, time_over_s=time_over_s, idle_s=None,
+                      tray_present=True, clock=lambda: now[0])
+    game.start()
+    game.claim_initial_hint()
+    game.add_orb(orb_id="a", slave=1, cell=1)
+
+    def update(current_playback=None):
+        matrix.update({**game.snapshot(), "melody_title": title}, current_playback)
+
+    update()
+    assert device.writes[-1]["text"] == "PRESS DFESTA!"
+    assert game.press_dfesta()
+    update(playback("DFESTA"))
+    expected = {"type": "status", "text": title, "scroll": True} if title else {
+        "type": "status", "text": "COMPLETE"}
+    assert device.writes[-1] == expected
+    for seconds in (1, 3, 10):
+        now[0] = seconds
+        update(playback("DFESTA", False))
+        assert device.writes[-1] == expected
+    assert screens == ["press_dfesta", "complete"]
+
+    game.remove_orb(slave=1, cell=1)
+    update()
+    if time_over_s is None:
+        assert device.writes[-1] == {"type": "status", "text": "PLEASE CLEAR TABLE"}
+    else:
+        assert device.writes[-1] == {"type": "display", "text": "", "seconds": 50}
+        game.add_orb(orb_id="a", slave=1, cell=1)
+        update()
+        assert device.writes[-1]["text"] == "PRESS DFESTA!"
+
+
+@pytest.mark.parametrize("reason,expected", [
+    ("manual", "PLEASE CLEAR TABLE"), ("idle", "TIME OVER"), ("time_over", "TIME OVER"),
+])
+def test_held_dfesta_title_does_not_override_game_exit(rig, reason, expected):
+    matrix, device, _, _ = rig
+    game = {**running(), "is_correct": True, "completion": {"dfesta_presses": 1},
+            "melody_title": "BTS - DYNAMITE"}
+    # The display can recover the title without having observed playback start.
+    matrix.update(game)
+    assert device.writes[-1]["text"] == "BTS - DYNAMITE"
+    matrix.update({**game, "state": "RESETTING", "end_reason": reason})
+    assert device.writes[-1] == {"type": "status", "text": expected}
+    matrix.update({"state": "READY"})
+    assert device.writes[-1]["text"] == "PLACE TRAY"
+    matrix.update({**game, "completion": {"dfesta_presses": 0}})
+    assert device.writes[-1]["text"] == "PRESS DFESTA!"
+
+
 def test_long_title_is_not_cut_to_32_and_new_song_does_not_reuse_old_title(rig):
     matrix, device, _, _ = rig
     title = "A VERY LONG SONG TITLE THAT MUST REMAIN ON ONE LINE"
