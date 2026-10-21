@@ -6,16 +6,23 @@ Game-event MIDI, configurable status text, and initial loading are documented in
 
 The DFESTA button prompt uses `{"type":"status","text":"PRESS DFESTA BUTTON!","arrow":"right"}`.
 In `dotmatrix_3` and `dotmatrix_4`, this places the text in the existing left name
-region and draws a white right arrow in the countdown region. The arrow replaces
-the countdown only on this prompt; changing the configured phrase does not move
-the arrow. Other status messages remain centered. Update the server and flash
+region and draws a one-pixel white line in the countdown region: horizontal,
+then bending diagonally down-right, with no arrowhead. The line replaces the
+countdown only on this prompt; changing the configured phrase does not move it.
+The protocol still uses `"arrow":"right"`. Flash the matrix sketch in use to
+apply the line shape change. Other status messages remain centered. Update the server and flash
 the matrix sketch in use to enable this layout. Older matrix firmware ignores
 the extra field and continues to display centered text.
 
 The former `COMPLETE` screen now uses the current `data/melodies/*.json` **title**
 alone. The server does not prepend `artist` or derive a name from `songId` or the
-filename. The normal DFESTA playback/cleanup timing and semantic `complete` event
-remain unchanged. A missing/blank title falls back to `matrix_display.texts.complete`.
+filename. After an accepted DFESTA press, the title stays visible after playback
+finishes while the placement remains correct. Breaking the solution restores the
+normal running screen; solving it again shows the button prompt until DFESTA is
+pressed again. Time-over, idle, and manual game exits still take precedence. The
+semantic screen remains `complete`; a missing/blank title falls back to
+`matrix_display.texts.complete`. This display timing change only requires a server
+restart, not another firmware upload.
 
 Title messages use `{"type":"status","text":"BTS - DYNAMITE","scroll":true}`.
 Updated `dotmatrix_3` and `dotmatrix_4` show a single uppercase line across the full
@@ -66,12 +73,12 @@ interrupt a diagnostic screen.
 | Initial tray start, before the automatic hint | LOADING... for game_rules.initial_hint_delay_s |
 | Accepted Listen, including the initial automatic Listen | HINT during playback |
 | Accepted Play | PLAYING during playback |
-| Accepted DFesta | Melody JSON title during playback (COMPLETE fallback) |
-| RUNNING without playback | Existing latest orb name and live countdown |
-| Correct complete placement after loading | PRESS DFESTA! (DFESTA playback still takes precedence) |
+| Accepted DFesta | Melody JSON title during playback and afterward while still correct (COMPLETE fallback) |
+| RUNNING without playback or a retained DFesta title | Existing latest orb name and live countdown |
+| Correct complete placement after loading, before DFesta is pressed | PRESS DFESTA! |
 | Idle or time-over exit | TIME OVER for 2 s, then PLEASE CLEAR TABLE |
 | Manual reset/end | PLEASE CLEAR TABLE immediately |
-| Completed game | Melody title through final DFesta and 2 s afterward, then PLEASE CLEAR TABLE |
+| Completed game without a time limit | Melody title while still correct; PLEASE CLEAR TABLE once the solution breaks |
 | All orbs AND tray removed / READY reached | GOODBYE for n seconds, blank for n seconds, then PLACE TRAY |
 | Next tray placed during GOODBYE or blank | Start immediately; LOADING..., initial HINT, then the usual running screen |
 | No valid host command for 5 s | OFFLINE until the next valid command |

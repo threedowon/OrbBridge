@@ -202,9 +202,12 @@ class MatrixDisplay:
             return self._status("ready")
         if state == "RESETTING":
             reason = snapshot.get("end_reason")
-            if reason == "complete" and playback.get("active") and mode == "DFESTA":
-                self._reset_at = now
-                return self._status("complete", title=snapshot.get("melody_title"))
+            if reason == "complete":
+                if snapshot.get("is_correct") is False:
+                    return self._status("clear_table")
+                if snapshot.get("is_correct") or (playback.get("active") and mode == "DFESTA"):
+                    self._reset_at = now
+                    return self._status("complete", title=snapshot.get("melody_title"))
             elapsed = now - self._reset_at
             if reason == "tray_removed" and elapsed < self.farewell_duration_s:
                 return self._status("farewell")
@@ -219,6 +222,10 @@ class MatrixDisplay:
         if (snapshot.get("initial_hint") or {}).get("pending"):
             return self._status("loading")
         if snapshot.get("is_correct") and not (playback.get("active") and mode == "DFESTA"):
+            # The engine clears this count when the solution breaks, even if
+            # removal and replacement happen between two display updates.
+            if (snapshot.get("completion") or {}).get("dfesta_presses", 0) > 0:
+                return self._status("complete", title=snapshot.get("melody_title"))
             return self._status("press_dfesta")
         if playback.get("active"):
             message = {"LISTEN": "hint", "PLAY": "playing",

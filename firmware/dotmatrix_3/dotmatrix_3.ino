@@ -120,12 +120,11 @@ void drawButtonPrompt(const char *raw) {
   const int width = min(18 * FONT_SIZE, COUNTDOWN_MAX_CHARS * CHAR_W * FONT_SIZE);
   const int right = DISPLAY_WIDTH - PADDING_RIGHT - 1;
   const int centerY = PADDING_TOP + 7 * FONT_SIZE / 2;
-  const int head = 5 * FONT_SIZE;
+  const int bend = 6 * FONT_SIZE;
   const uint16_t color = display->color565(255, 255, 255);
-  // Thin, open arrow: one-pixel shaft and head, retaining the same bounds.
-  display->drawFastHLine(right - width + 1, centerY, width, color);
-  display->drawLine(right - head, centerY - 4 * FONT_SIZE, right, centerY, color);
-  display->drawLine(right - head, centerY + 4 * FONT_SIZE, right, centerY, color);
+  // One-pixel guide: horizontal, then diagonally down-right, with no arrowhead.
+  display->drawFastHLine(right - width + 1, centerY, width - bend, color);
+  display->drawLine(right - bend, centerY, right, centerY + bend, color);
 }
 
 void drawTitle(const char *raw) {
