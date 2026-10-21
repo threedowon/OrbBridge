@@ -360,7 +360,7 @@ void setRing(int busIndex, uint32_t color, bool showNow = true) {
 }
 
 // Use the same gold RGB ratio for playback and occupancy.
-uint32_t playGold(uint8_t brightness) {
+uint32_t orbGold(uint8_t brightness) {
   return Adafruit_NeoPixel::Color(
     brightness,
     (uint16_t(147) * brightness + 127) / 255,
@@ -372,10 +372,7 @@ uint32_t playGold(uint8_t brightness) {
 void setSlotLevel(int i, uint8_t level) {
   ringLevel[i] = level;
   if (ledEffect != 0 || hintActive) return;
-  setRing(i, Adafruit_NeoPixel::Color(
-    (uint8_t)((uint16_t)255 * level / 255),
-    (uint8_t)((uint16_t)147 * level / 255),
-    (uint8_t)((uint16_t)41  * level / 255)));
+  setRing(i, orbGold(level));
 }
 
 // ── LED 테스트 이펙트 ───────────────────────────────────
@@ -450,7 +447,8 @@ void applyHintCommand(const HintCommandParser& command) {
   if (playbackCursor) {
     // Restore the previous column to its tracked occupancy, then overlay this beat.
     for (int i = 0; i < BUS_COUNT; ++i) {
-      uint8_t level = dfestaCursor ? 0 : ringLevel[i];
+      // Use confirmed occupancy, not the temporary fade caused by a missed ROM read.
+      uint8_t level = (!dfestaCursor && hasLast[i]) ? 255 : 0;
       setRing(i, Adafruit_NeoPixel::Color(level, uint16_t(147) * level / 255,
                                         uint16_t(41) * level / 255), false);
     }
@@ -458,7 +456,7 @@ void applyHintCommand(const HintCommandParser& command) {
       for (int pitch = 0; pitch < 8; ++pitch) {
         const bool sounding = command.mask & (1 << pitch);
         setRing((command.cell - 1) * 8 + pitch, (!dfestaCursor || sounding)
-          ? playGold(255)
+          ? orbGold(255)
           : 0, false);
       }
     }
@@ -483,7 +481,17 @@ void updateHint() {
     if (dfestaCursor) {
       if (hintNoteLit) { fillAll(0); hintNoteLit = false; }
       if (elapsed >= 120000UL) stopHint();
-    } else stopHint();
+    } else {
+      // Keep the PLAY override between beats. Brief sensor misses must not
+      // restore the normal contact-fade animation during playback.
+      if (hintNoteLit) {
+        for (int i = 0; i < BUS_COUNT; ++i)
+          setRing(i, hasLast[i] ? orbGold(255) : 0, false);
+        ringLow.show(); ringHigh.show();
+        hintNoteLit = false;
+      }
+      if (elapsed >= 2500UL + hintDuration) stopHint();
+    }
     return;
   }
   if (!playbackCursor && uint32_t(millis() - hintFrameAt) >= 20) {

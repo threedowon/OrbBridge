@@ -180,6 +180,7 @@ def test_play_cursor_includes_silent_beats_and_all_sounding_pitches():
     sent = []
     bridge = HintLedBridge(sent.append, lambda: 10)
     bridge.handle(start(mode="play", hint=False))
+    assert sent == []  # Do not blank occupied rings when PLAY begins.
     for step in range(12):
         event = beat(step=step, pitch=None)
         event['mode'] = 'play'

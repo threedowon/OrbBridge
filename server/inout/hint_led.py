@@ -56,7 +56,8 @@ class HintLedBridge:
             enabled = self.mode in ("play", "dfesta") or (event.get("hint_led") and self.mode == "listen")
             self.run_id = run if enabled else None
             if self.run_id is not None:
-                self.send_line("H0,0,1")
+                if self.mode != "play":
+                    self.send_line("H0,0,1")
             elif was_active:
                 self.send_line("H0,0,0")
             return
