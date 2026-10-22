@@ -2,7 +2,7 @@
   "current_stage": 1,
   "hall_sensor_count": 2,
   "tray_placement_delay_s": 0.5,
-  "tray_removal_delay_s": 1.5,
+  "tray_removal_delay_s": 1.0,
   "tray_led_easing": "easeout",
   "hint_led_fade_ms": 600,
   "game_rules": {
