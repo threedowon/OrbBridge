@@ -1,0 +1,11 @@
+{
+  "active": "original",
+  "mappings": {
+    "original": {
+      "2D:97:BD:34:57:00:00:07": {
+        "voice": "aespa_4"
+      }
+    },
+    "male": {}
+  }
+}

@@ -1,0 +1,895 @@
+{
+  "mode": "running",
+  "started": "2026-10-22T20:03:40",
+  "auto_register": true,
+  "auto_error": "",
+  "auto_next": "aespa_4",
+  "auto_recent": [
+    {
+      "id": "2D:A6:A1:34:57:00:00:80",
+      "voice": "bts_7"
+    },
+    {
+      "id": "2D:91:E8:34:57:00:00:F2",
+      "voice": "txt_5"
+    },
+    {
+      "id": "2D:A3:BC:34:57:00:00:FB",
+      "voice": "enhypen_2"
+    },
+    {
+      "id": "2D:BC:C0:34:57:00:00:C8",
+      "voice": "bts_3"
+    },
+    {
+      "id": "2D:C1:EA:34:57:00:00:5F",
+      "voice": "txt_1"
+    },
+    {
+      "id": "2D:B3:B9:34:57:00:00:72",
+      "voice": "enhypen_7"
+    },
+    {
+      "id": "2D:1D:A4:34:57:00:00:AD",
+      "voice": "enhypen_3"
+    },
+    {
+      "id": "2D:78:A9:34:57:00:00:69",
+      "voice": "txt_2"
+    },
+    {
+      "id": "2D:CF:AD:34:57:00:00:F4",
+      "voice": "riize_2"
+    },
+    {
+      "id": "2D:98:DF:34:57:00:00:B1",
+      "voice": "cortis_3"
+    },
+    {
+      "id": "2D:B8:E8:34:57:00:00:D2",
+      "voice": "ive_2"
+    },
+    {
+      "id": "2D:7A:DD:34:57:00:00:75",
+      "voice": "skz_6"
+    },
+    {
+      "id": "2D:02:FB:34:57:00:00:28",
+      "voice": "skz_3"
+    },
+    {
+      "id": "2D:7E:98:34:57:00:00:92",
+      "voice": "cortis_2"
+    },
+    {
+      "id": "2D:4D:E0:34:57:00:00:75",
+      "voice": "skz_7"
+    },
+    {
+      "id": "2D:BB:DD:34:57:00:00:DD",
+      "voice": "bts_5"
+    },
+    {
+      "id": "2D:7F:BB:34:57:00:00:13",
+      "voice": "enhypen_1"
+    },
+    {
+      "id": "2D:56:20:34:57:00:00:F4",
+      "voice": "cortis_4"
+    },
+    {
+      "id": "2D:06:FB:34:57:00:00:F4",
+      "voice": "skz_2"
+    },
+    {
+      "id": "2D:FB:FA:34:57:00:00:01",
+      "voice": "bts_2"
+    }
+  ],
+  "auto_target": 192,
+  "version": "original",
+  "target_count": 192,
+  "voices": {
+    "aespa_1": {
+      "color": "#f472b6",
+      "labels": {
+        "kr": "닝닝",
+        "en": "NINGNING"
+      }
+    },
+    "aespa_2": {
+      "color": "#5eead4",
+      "labels": {
+        "kr": "윈터",
+        "en": "WINTER"
+      }
+    },
+    "aespa_3": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "지젤",
+        "en": "GISELLE"
+      }
+    },
+    "aespa_4": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "카리나",
+        "en": "KARINA"
+      }
+    },
+    "bts_1": {
+      "color": "#60a5fa",
+      "labels": {
+        "kr": "뷔",
+        "en": "V"
+      }
+    },
+    "bts_2": {
+      "color": "#4ade80",
+      "labels": {
+        "kr": "슈가",
+        "en": "SUGA"
+      }
+    },
+    "bts_3": {
+      "color": "#5eead4",
+      "labels": {
+        "kr": "알엠",
+        "en": "RM"
+      }
+    },
+    "bts_4": {
+      "color": "#5eead4",
+      "labels": {
+        "kr": "정국",
+        "en": "JUNGKOOK"
+      }
+    },
+    "bts_5": {
+      "color": "#5eead4",
+      "labels": {
+        "kr": "제이홉",
+        "en": "j-hope"
+      }
+    },
+    "bts_6": {
+      "color": "#5eead4",
+      "labels": {
+        "kr": "지민",
+        "en": "JIMIN"
+      }
+    },
+    "bts_7": {
+      "color": "#5eead4",
+      "labels": {
+        "kr": "진",
+        "en": "JIN"
+      }
+    },
+    "cortis_1": {
+      "color": "#c084fc",
+      "labels": {
+        "kr": "건호",
+        "en": "KEONHO"
+      }
+    },
+    "cortis_2": {
+      "color": "#f472b6",
+      "labels": {
+        "kr": "마틴",
+        "en": "MARTIN"
+      }
+    },
+    "cortis_3": {
+      "color": "#5eead4",
+      "labels": {
+        "kr": "성현",
+        "en": "SEONGHYEON"
+      }
+    },
+    "cortis_4": {
+      "color": "#5eead4",
+      "labels": {
+        "kr": "제임스",
+        "en": "JAMES"
+      }
+    },
+    "cortis_5": {
+      "color": "#5eead4",
+      "labels": {
+        "kr": "주훈",
+        "en": "JUHOON"
+      }
+    },
+    "enhypen_1": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "니키",
+        "en": "NI-KI"
+      }
+    },
+    "enhypen_2": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "선우",
+        "en": "SUNOO"
+      }
+    },
+    "enhypen_3": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "성훈",
+        "en": "SUNGHOON"
+      }
+    },
+    "enhypen_4": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "정원",
+        "en": "JUNGWON"
+      }
+    },
+    "enhypen_5": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "제이",
+        "en": "JAY"
+      }
+    },
+    "enhypen_6": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "제이크",
+        "en": "JAKE"
+      }
+    },
+    "enhypen_7": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "희승",
+        "en": "HEESEUNG"
+      }
+    },
+    "ive_1": {
+      "color": "#60a5fa",
+      "labels": {
+        "kr": "가을",
+        "en": "GAEUL"
+      }
+    },
+    "ive_2": {
+      "color": "#4ade80",
+      "labels": {
+        "kr": "레이",
+        "en": "REI"
+      }
+    },
+    "ive_3": {
+      "color": "#fb923c",
+      "labels": {
+        "kr": "리즈",
+        "en": "LIZ"
+      }
+    },
+    "ive_4": {
+      "color": "#f87171",
+      "labels": {
+        "kr": "유진",
+        "en": "YUJIN"
+      }
+    },
+    "ive_5": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "이서",
+        "en": "LEESEO"
+      }
+    },
+    "ive_6": {
+      "color": "#fbbf24",
+      "labels": {
+        "kr": "원영",
+        "en": "WONYOUNG"
+      }
+    },
+    "riize_1": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "성찬",
+        "en": "SUNGCHAN"
+      }
+    },
+    "riize_2": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "소희",
+        "en": "SOHEE"
+      }
+    },
+    "riize_3": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "쇼타로",
+        "en": "SHOTARO"
+      }
+    },
+    "riize_4": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "앤톤",
+        "en": "ANTON"
+      }
+    },
+    "riize_5": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "원빈",
+        "en": "WONBIN"
+      }
+    },
+    "riize_6": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "은석",
+        "en": "EUNSEOK"
+      }
+    },
+    "skz_1": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "리노",
+        "en": "LEE KNOW"
+      }
+    },
+    "skz_2": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "방찬",
+        "en": "BANG CHAN"
+      }
+    },
+    "skz_3": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "승민",
+        "en": "SEUNGMIN"
+      }
+    },
+    "skz_4": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "아이엔",
+        "en": "I.N"
+      }
+    },
+    "skz_5": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "창빈",
+        "en": "CHANGBIN"
+      }
+    },
+    "skz_6": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "필릭스",
+        "en": "FELIX"
+      }
+    },
+    "skz_7": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "한",
+        "en": "HAN"
+      }
+    },
+    "skz_8": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "현진",
+        "en": "HYUNJIN"
+      }
+    },
+    "txt_1": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "범규",
+        "en": "BEOMGYU"
+      }
+    },
+    "txt_2": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "휴닝카이",
+        "en": "HUENINGKAI"
+      }
+    },
+    "txt_3": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "수빈",
+        "en": "SOOBIN"
+      }
+    },
+    "txt_4": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "태현",
+        "en": "TAEHYUN"
+      }
+    },
+    "txt_5": {
+      "color": "#a78bfa",
+      "labels": {
+        "kr": "연준",
+        "en": "YEONJUN"
+      }
+    }
+  },
+  "seen": [
+    "2D:00:B9:34:57:00:00:2C",
+    "2D:02:FB:34:57:00:00:28",
+    "2D:03:AA:34:57:00:00:47",
+    "2D:06:E0:34:57:00:00:F8",
+    "2D:06:FB:34:57:00:00:F4",
+    "2D:0A:DE:34:57:00:00:A3",
+    "2D:0D:A2:34:57:00:00:6A",
+    "2D:11:9C:34:57:00:00:6A",
+    "2D:12:A0:34:57:00:00:96",
+    "2D:19:C4:34:57:00:00:60",
+    "2D:1B:FB:34:57:00:00:E5",
+    "2D:1D:A4:34:57:00:00:AD",
+    "2D:28:BF:34:57:00:00:A7",
+    "2D:2D:FB:34:57:00:00:BA",
+    "2D:35:B4:34:57:00:00:C6",
+    "2D:46:E0:34:57:00:00:8D",
+    "2D:4D:E0:34:57:00:00:75",
+    "2D:51:E0:34:57:00:00:53",
+    "2D:56:20:34:57:00:00:F4",
+    "2D:56:AF:34:57:00:00:50",
+    "2D:62:A8:34:57:00:00:30",
+    "2D:68:DD:34:57:00:00:40",
+    "2D:6F:FA:34:57:00:00:6C",
+    "2D:78:A9:34:57:00:00:69",
+    "2D:79:FA:34:57:00:00:85",
+    "2D:7A:DD:34:57:00:00:75",
+    "2D:7E:98:34:57:00:00:92",
+    "2D:7F:BB:34:57:00:00:13",
+    "2D:80:E8:34:57:00:00:9E",
+    "2D:91:E8:34:57:00:00:F2",
+    "2D:97:BD:34:57:00:00:07",
+    "2D:98:DF:34:57:00:00:B1",
+    "2D:A1:C7:34:57:00:00:88",
+    "2D:A3:BC:34:57:00:00:FB",
+    "2D:A6:A1:34:57:00:00:80",
+    "2D:B3:B9:34:57:00:00:72",
+    "2D:B8:E8:34:57:00:00:D2",
+    "2D:BB:DD:34:57:00:00:DD",
+    "2D:BC:C0:34:57:00:00:C8",
+    "2D:C1:EA:34:57:00:00:5F",
+    "2D:C2:C0:34:57:00:00:43",
+    "2D:CB:BB:34:57:00:00:C8",
+    "2D:CE:FA:34:57:00:00:07",
+    "2D:CF:AD:34:57:00:00:F4",
+    "2D:CF:C6:33:57:00:00:13",
+    "2D:D0:E0:34:57:00:00:8E",
+    "2D:E2:DF:34:57:00:00:E6",
+    "2D:FB:FA:34:57:00:00:01"
+  ],
+  "mapping": {
+    "2D:00:B9:34:57:00:00:2C": {
+      "voice": "ive_5"
+    },
+    "2D:02:FB:34:57:00:00:28": {
+      "voice": "skz_3"
+    },
+    "2D:03:AA:34:57:00:00:47": {
+      "voice": "bts_1"
+    },
+    "2D:06:E0:34:57:00:00:F8": {
+      "voice": "bts_6"
+    },
+    "2D:06:FB:34:57:00:00:F4": {
+      "voice": "skz_2"
+    },
+    "2D:0A:DE:34:57:00:00:A3": {
+      "voice": "aespa_3"
+    },
+    "2D:0D:A2:34:57:00:00:6A": {
+      "voice": "ive_4"
+    },
+    "2D:11:9C:34:57:00:00:6A": {
+      "voice": "bts_4"
+    },
+    "2D:12:A0:34:57:00:00:96": {
+      "voice": "ive_3"
+    },
+    "2D:19:C4:34:57:00:00:60": {
+      "voice": "txt_4"
+    },
+    "2D:1B:FB:34:57:00:00:E5": {
+      "voice": "txt_3"
+    },
+    "2D:1D:A4:34:57:00:00:AD": {
+      "voice": "enhypen_3"
+    },
+    "2D:28:BF:34:57:00:00:A7": {
+      "voice": "skz_4"
+    },
+    "2D:2D:FB:34:57:00:00:BA": {
+      "voice": "skz_1"
+    },
+    "2D:35:B4:34:57:00:00:C6": {
+      "voice": "aespa_1"
+    },
+    "2D:46:E0:34:57:00:00:8D": {
+      "voice": "enhypen_6"
+    },
+    "2D:4D:E0:34:57:00:00:75": {
+      "voice": "skz_7"
+    },
+    "2D:51:E0:34:57:00:00:53": {
+      "voice": "skz_8"
+    },
+    "2D:56:20:34:57:00:00:F4": {
+      "voice": "cortis_4"
+    },
+    "2D:56:AF:34:57:00:00:50": {
+      "voice": "riize_5"
+    },
+    "2D:62:A8:34:57:00:00:30": {
+      "voice": "ive_1"
+    },
+    "2D:68:DD:34:57:00:00:40": {
+      "voice": "ive_6"
+    },
+    "2D:6F:FA:34:57:00:00:6C": {
+      "voice": "enhypen_5"
+    },
+    "2D:78:A9:34:57:00:00:69": {
+      "voice": "txt_2"
+    },
+    "2D:79:FA:34:57:00:00:85": {
+      "voice": "cortis_5"
+    },
+    "2D:7A:DD:34:57:00:00:75": {
+      "voice": "skz_6"
+    },
+    "2D:7E:98:34:57:00:00:92": {
+      "voice": "cortis_2"
+    },
+    "2D:7F:BB:34:57:00:00:13": {
+      "voice": "enhypen_1"
+    },
+    "2D:80:E8:34:57:00:00:9E": {
+      "voice": "skz_5"
+    },
+    "2D:91:E8:34:57:00:00:F2": {
+      "voice": "txt_5"
+    },
+    "2D:97:BD:34:57:00:00:07": {
+      "voice": "aespa_4"
+    },
+    "2D:98:DF:34:57:00:00:B1": {
+      "voice": "cortis_3"
+    },
+    "2D:A1:C7:34:57:00:00:88": {
+      "voice": "aespa_2"
+    },
+    "2D:A3:BC:34:57:00:00:FB": {
+      "voice": "enhypen_2"
+    },
+    "2D:A6:A1:34:57:00:00:80": {
+      "voice": "bts_7"
+    },
+    "2D:B3:B9:34:57:00:00:72": {
+      "voice": "enhypen_7"
+    },
+    "2D:B8:E8:34:57:00:00:D2": {
+      "voice": "ive_2"
+    },
+    "2D:BB:DD:34:57:00:00:DD": {
+      "voice": "bts_5"
+    },
+    "2D:BC:C0:34:57:00:00:C8": {
+      "voice": "bts_3"
+    },
+    "2D:C1:EA:34:57:00:00:5F": {
+      "voice": "txt_1"
+    },
+    "2D:C2:C0:34:57:00:00:43": {
+      "voice": "riize_1"
+    },
+    "2D:CB:BB:34:57:00:00:C8": {
+      "voice": "riize_4"
+    },
+    "2D:CE:FA:34:57:00:00:07": {
+      "voice": "riize_3"
+    },
+    "2D:CF:AD:34:57:00:00:F4": {
+      "voice": "riize_2"
+    },
+    "2D:CF:C6:33:57:00:00:13": {
+      "voice": "riize_6"
+    },
+    "2D:D0:E0:34:57:00:00:8E": {
+      "voice": "cortis_1"
+    },
+    "2D:E2:DF:34:57:00:00:E6": {
+      "voice": "enhypen_4"
+    },
+    "2D:FB:FA:34:57:00:00:01": {
+      "voice": "bts_2"
+    }
+  },
+  "cells": [
+    {
+      "slave": 1,
+      "cell": 1,
+      "id": "2D:97:BD:34:57:00:00:07"
+    },
+    {
+      "slave": 1,
+      "cell": 2,
+      "id": "2D:CE:FA:34:57:00:00:07"
+    },
+    {
+      "slave": 1,
+      "cell": 3,
+      "id": "2D:A1:C7:34:57:00:00:88"
+    },
+    {
+      "slave": 1,
+      "cell": 9,
+      "id": "2D:CF:C6:33:57:00:00:13"
+    },
+    {
+      "slave": 1,
+      "cell": 10,
+      "id": "2D:06:E0:34:57:00:00:F8"
+    },
+    {
+      "slave": 1,
+      "cell": 11,
+      "id": "2D:CB:BB:34:57:00:00:C8"
+    },
+    {
+      "slave": 2,
+      "cell": 1,
+      "id": "2D:6F:FA:34:57:00:00:6C"
+    },
+    {
+      "slave": 2,
+      "cell": 9,
+      "id": "2D:C2:C0:34:57:00:00:43"
+    },
+    {
+      "slave": 2,
+      "cell": 10,
+      "id": "2D:56:AF:34:57:00:00:50"
+    },
+    {
+      "slave": 2,
+      "cell": 2,
+      "id": "2D:D0:E0:34:57:00:00:8E"
+    },
+    {
+      "slave": 2,
+      "cell": 3,
+      "id": "2D:46:E0:34:57:00:00:8D"
+    },
+    {
+      "slave": 2,
+      "cell": 11,
+      "id": "2D:11:9C:34:57:00:00:6A"
+    },
+    {
+      "slave": 3,
+      "cell": 1,
+      "id": "2D:35:B4:34:57:00:00:C6"
+    },
+    {
+      "slave": 3,
+      "cell": 2,
+      "id": "2D:0D:A2:34:57:00:00:6A"
+    },
+    {
+      "slave": 3,
+      "cell": 3,
+      "id": "2D:2D:FB:34:57:00:00:BA"
+    },
+    {
+      "slave": 3,
+      "cell": 4,
+      "id": "2D:19:C4:34:57:00:00:60"
+    },
+    {
+      "slave": 3,
+      "cell": 9,
+      "id": "2D:79:FA:34:57:00:00:85"
+    },
+    {
+      "slave": 3,
+      "cell": 10,
+      "id": "2D:03:AA:34:57:00:00:47"
+    },
+    {
+      "slave": 3,
+      "cell": 11,
+      "id": "2D:E2:DF:34:57:00:00:E6"
+    },
+    {
+      "slave": 4,
+      "cell": 1,
+      "id": "2D:28:BF:34:57:00:00:A7"
+    },
+    {
+      "slave": 4,
+      "cell": 2,
+      "id": "2D:1B:FB:34:57:00:00:E5"
+    },
+    {
+      "slave": 4,
+      "cell": 3,
+      "id": "2D:68:DD:34:57:00:00:40"
+    },
+    {
+      "slave": 4,
+      "cell": 9,
+      "id": "2D:51:E0:34:57:00:00:53"
+    },
+    {
+      "slave": 4,
+      "cell": 10,
+      "id": "2D:0A:DE:34:57:00:00:A3"
+    },
+    {
+      "slave": 4,
+      "cell": 11,
+      "id": "2D:00:B9:34:57:00:00:2C"
+    },
+    {
+      "slave": 5,
+      "cell": 1,
+      "id": "2D:12:A0:34:57:00:00:96"
+    },
+    {
+      "slave": 5,
+      "cell": 2,
+      "id": "2D:80:E8:34:57:00:00:9E"
+    },
+    {
+      "slave": 1,
+      "cell": 4,
+      "id": "2D:62:A8:34:57:00:00:30"
+    },
+    {
+      "slave": 1,
+      "cell": 12,
+      "id": "2D:FB:FA:34:57:00:00:01"
+    },
+    {
+      "slave": 1,
+      "cell": 5,
+      "id": "2D:06:FB:34:57:00:00:F4"
+    },
+    {
+      "slave": 1,
+      "cell": 13,
+      "id": "2D:56:20:34:57:00:00:F4"
+    },
+    {
+      "slave": 2,
+      "cell": 4,
+      "id": "2D:7F:BB:34:57:00:00:13"
+    },
+    {
+      "slave": 2,
+      "cell": 5,
+      "id": "2D:BB:DD:34:57:00:00:DD"
+    },
+    {
+      "slave": 2,
+      "cell": 12,
+      "id": "2D:4D:E0:34:57:00:00:75"
+    },
+    {
+      "slave": 2,
+      "cell": 13,
+      "id": "2D:7E:98:34:57:00:00:92"
+    },
+    {
+      "slave": 2,
+      "cell": 6,
+      "id": "2D:02:FB:34:57:00:00:28"
+    },
+    {
+      "slave": 5,
+      "cell": 9,
+      "id": "2D:7A:DD:34:57:00:00:75"
+    },
+    {
+      "slave": 5,
+      "cell": 10,
+      "id": "2D:B8:E8:34:57:00:00:D2"
+    },
+    {
+      "slave": 5,
+      "cell": 11,
+      "id": "2D:98:DF:34:57:00:00:B1"
+    },
+    {
+      "slave": 3,
+      "cell": 12,
+      "id": "2D:CF:AD:34:57:00:00:F4"
+    },
+    {
+      "slave": 4,
+      "cell": 4,
+      "id": "2D:78:A9:34:57:00:00:69"
+    },
+    {
+      "slave": 4,
+      "cell": 12,
+      "id": "2D:1D:A4:34:57:00:00:AD"
+    },
+    {
+      "slave": 6,
+      "cell": 1,
+      "id": "2D:B3:B9:34:57:00:00:72"
+    },
+    {
+      "slave": 6,
+      "cell": 9,
+      "id": "2D:C1:EA:34:57:00:00:5F"
+    },
+    {
+      "slave": 6,
+      "cell": 2,
+      "id": "2D:BC:C0:34:57:00:00:C8"
+    },
+    {
+      "slave": 6,
+      "cell": 10,
+      "id": "2D:A3:BC:34:57:00:00:FB"
+    },
+    {
+      "slave": 1,
+      "cell": 14,
+      "id": "2D:91:E8:34:57:00:00:F2"
+    },
+    {
+      "slave": 1,
+      "cell": 6,
+      "id": "2D:A6:A1:34:57:00:00:80"
+    }
+  ],
+  "slaves": [
+    {
+      "slave": 1,
+      "online": true
+    },
+    {
+      "slave": 2,
+      "online": true
+    },
+    {
+      "slave": 3,
+      "online": true
+    },
+    {
+      "slave": 4,
+      "online": true
+    },
+    {
+      "slave": 5,
+      "online": true
+    },
+    {
+      "slave": 6,
+      "online": true
+    }
+  ],
+  "missing": []
+}
