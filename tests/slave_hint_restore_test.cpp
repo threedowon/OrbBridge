@@ -111,7 +111,50 @@ void checkSmoothReturn(bool readyBeforeEnd, unsigned fade) {
   assert(shown(0) == 32);
 }
 
+void checkRepeatedDfestaRelease() {
+  // Exercise the installed protocol as-is: no firmware changes for retries.
+  resetScene();
+  hasLast[4] = hasLast[12] = true;
+  ringLevel[4] = ringLevel[12] = 255;
+  command("H0,0,1,600");
+  command("Q1,1,31,400");
+  command("Q1,2,31,400");
+  assert(shown(9) == 255);  // Empty slot below the answer is latched gold.
+  hasLast[4] = false;
+  setSlotLevel(4, 0);
+
+  // Three lost return commands leave the other column latched indefinitely.
+  for (int i = 0; i < 3; ++i) {
+    clockMs += 300; updateHint();
+    assert(dfestaCursor && shown(9) == 255);
+  }
+  command("H0,0,5,600");
+  const uint32_t started = dfestaReleaseStarted;
+  clockMs += 150; updateHint();
+  const uint8_t halfway = shown(9);
+  assert(halfway >= 127 && halfway <= 128);
+  command("H0,0,5,600");  // Duplicate during the fade must not restart it.
+  assert(dfestaReleaseStarted == started && shown(9) == halfway);
+  clockMs += 150; updateHint();
+  assert(!hintActive && !dfestaCursor && !dfestaReleasing);
+  assert(shown(9) == 0 && shown(12) == 255);
+
+  // Later duplicates must not change ordinary occupancy or ready breathing.
+  command("B050000000000");
+  runEffectAnim();
+  const auto low = ringLow.pixels, high = ringHigh.pixels;
+  command("H0,0,5,600");
+  assert(low == ringLow.pixels && high == ringHigh.pixels);
+  assert(breathMask == (uint16_t(1) << 12));
+  hasLast[3] = true;
+  setSlotLevel(3, 255);
+  assert(shown(3) == 255);
+  command("Q1,1,31,400");  // A late beat cannot relatch the cancelled result.
+  assert(!hintActive && !dfestaCursor);
+}
+
 int main() {
+  checkRepeatedDfestaRelease();
   for (unsigned fade : {0U, 600U, 1200U}) {
     checkSmoothReturn(true, fade);
     checkSmoothReturn(false, fade);

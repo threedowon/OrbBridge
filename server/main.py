@@ -216,6 +216,7 @@ def _send_game_notes(notes: list[dict]) -> list[dict]:
 
 def _scheduler_before_start(event: dict) -> None:
     global _playback_deadline_run
+    _hint_led.prepare_playback(int(event["run_id"]))
     with _playback_deadline_lock:
         _playback_deadline_run = int(event["run_id"])
     if _game_events is not None:
@@ -1061,6 +1062,7 @@ def send_led_effect(effect) -> dict:
             f"effect must be {LED_EFFECT_MIN}-{LED_EFFECT_MAX}, got {value}"
         )
 
+    _hint_led.cancel_release('수동 LED 이펙트')
     sent_at = datetime.now().isoformat(sep=" ", timespec="milliseconds")
     if not _serial_writer.send_line(f"C{value}"):
         raise RuntimeError("일부 또는 전체 포트 전송 실패 — 하드웨어 연결 상태를 확인하세요")
@@ -1077,6 +1079,7 @@ def blackout_leds() -> None:
     L0/U0를 보낸다. 비정상 종료 시에는 보드의 5초 연결 만료로 소등한다.
     """
 
+    _hint_led.cancel_release('서버 소등')
     if not _serial_writer.send_line(f"C{LED_EFFECT_ALL_OFF}"):
         print("[led] 소등 생략 — 마스터 미연결")
         return
@@ -1457,6 +1460,7 @@ def configure_hardware(data: dict) -> dict:
         hardware_io.on_ready = lambda: _update_serial_status(True, "", "")
         _hardware_switching.set()
         try:
+            _hint_led.cancel_release('하드웨어 연결 변경')
             def prepare():
                 _clear_hardware_game()
                 _set_tray_source(mode == "master")
@@ -1471,6 +1475,7 @@ def disconnect_hardware() -> dict:
     with _hardware_control_lock:
         _hardware_switching.set()
         try:
+            _hint_led.cancel_release('하드웨어 연결 해제')
             hardware_io.stop_serial()
             _clear_hardware_game()
             _set_tray_source(False)
@@ -1491,6 +1496,7 @@ def start_serial_input():
 
 
 def stop_serial_input() -> None:
+    _hint_led.cancel_release('시리얼 종료')
     hardware_io.stop_serial()
 
 # ── 진입점 ─────────────────────────────────────────────
