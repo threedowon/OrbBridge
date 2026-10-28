@@ -1,0 +1,20 @@
+{
+  "active": "original",
+  "mappings": {
+    "original": {
+      "2D:1D:A4:34:57:00:00:AD": {
+        "voice": "aespa_4"
+      },
+      "2D:80:E8:34:57:00:00:9E": {
+        "voice": "riize_3"
+      },
+      "2D:FA:A5:34:57:00:00:CC": {
+        "voice": "ive_3"
+      },
+      "2D:FF:B2:34:57:00:00:0A": {
+        "voice": "enhypen_2"
+      }
+    },
+    "male": {}
+  }
+}
